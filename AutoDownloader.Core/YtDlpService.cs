@@ -1,211 +1,133 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace AutoDownloader.Core
 {
-    /// <summary>
-    /// This is our "engine". It knows nothing about the UI.
-    /// Its only job is to run yt-dlp.exe with the correct arguments
-    /// and report back what's happening.
-    /// </summary>
     public class YtDlpService
     {
-        // Event for sending live console output to the UI
-        public event Action<string?>? OnOutputReceived;
+        // Event to send live console output back to the UI
+        public event Action<string, bool>? OnOutputReceived;
+        // Event to signal completion
+        public event Action<bool>? OnDownloadComplete;
 
-        // Event for reporting when the download is fully complete
-        public event Action<bool, string>? OnDownloadComplete;
-
-        private static readonly HttpClient _httpClient = new HttpClient();
-
-        // We will keep the nightly build URL. This is the best version.
-        private const string YTDLP_URL = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe";
-
-        // This is the "ID Card" for a standard, modern Firefox browser on Windows.
-        private const string FIREFOX_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0";
-
-        private readonly string _ytDlpPath;
         private Process? _process;
+        private bool _isStopping = false;
+
+        // --- NEW: Our service now depends on the ToolManagerService ---
+        private readonly ToolManagerService _toolManager;
 
         public YtDlpService()
         {
-            _ytDlpPath = Path.Combine(AppContext.BaseDirectory, "yt-dlp.exe");
+            // --- NEW: Create an instance of the ToolManagerService ---
+            _toolManager = new ToolManagerService();
+
+            // --- NEW: "Bubble up" log messages from the tool manager to our UI ---
+            // This ensures "Downloading aria2c..." messages still appear in the log
+            _toolManager.OnLogMessage += (message, isError) =>
+            {
+                OnOutputReceived?.Invoke(message, isError);
+            };
         }
 
-        /// <summary>
-        /// Checks if yt-dlp.exe exists.
-        /// If it's older than 24 hours, it's deleted.
-        /// If it's missing (or was deleted), it's downloaded.
-        /// </summary>
-        private async Task EnsureToolsAvailableAsync()
+        public void StopDownload()
         {
-            // We check if the file exists and how old it is.
-            if (File.Exists(_ytDlpPath))
+            if (_process != null && !_process.HasExited)
             {
-                // Get file info
-                var fileInfo = new FileInfo(_ytDlpPath);
-
-                // Check if the file was written to more than 24 hours ago
-                if (fileInfo.LastWriteTimeUtc < DateTime.UtcNow.AddDays(-1))
-                {
-                    OnOutputReceived?.Invoke("yt-dlp.exe is older than 24 hours. Deleting to force update...");
-                    try
-                    {
-                        File.Delete(_ytDlpPath);
-                        OnOutputReceived?.Invoke("Old version deleted.");
-                    }
-                    catch (Exception ex)
-                    {
-                        // This can happen if the file is locked, etc.
-                        OnOutputReceived?.Invoke($"Could not delete old yt-dlp.exe: {ex.Message}. Will try to use it...");
-                        return; // Exit and try to use the old file, as we can't delete it.
-                    }
-                }
-                else
-                {
-                    // File exists and is recent. All good.
-                    return;
-                }
-            }
-
-            // File is missing (or was just deleted), let's download it.
-            OnOutputReceived?.Invoke("yt-dlp.exe not found. Downloading latest version...");
-            try
-            {
-                // Set a modern user-agent for our downloader, too, just in case.
-                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(FIREFOX_USER_AGENT);
-
-                using (var response = await _httpClient.GetAsync(YTDLP_URL, HttpCompletionOption.ResponseHeadersRead))
-                {
-                    response.EnsureSuccessStatusCode(); // Throw if we get a 404, 500, etc.
-
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    using (var fileStream = new FileStream(_ytDlpPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                    {
-                        await stream.CopyToAsync(fileStream);
-                    }
-                }
-                OnOutputReceived?.Invoke("Download complete: yt-dlp.exe");
-            }
-            catch (Exception ex)
-            {
-                OnOutputReceived?.Invoke($"Failed to download yt-dlp.exe: {ex.Message}");
-                // This is a critical failure, so we throw to stop the download.
-                throw new InvalidOperationException("Could not download required tool: yt-dlp.exe", ex);
-            }
-        }
-
-        /// <summary>
-        /// Starts the download process on a background thread.
-        /// </summary>
-        public async Task DownloadVideoAsync(string url, string outputFolder)
-        {
-            // First, make sure yt-dlp.exe exists (or download/update it).
-            await EnsureToolsAvailableAsync();
-
-            // Example: C:\Users\User\Videos\My Show\Season 01\My Show - s01e01 - Pilot.mp4
-            string outputTemplate = Path.Combine(outputFolder,
-                "%(series)s", // Show Name folder
-                "Season %(season_number)s", // Season subfolder
-                "%(series)s - s%(season_number)02de%(episode_number)02d - %(title)s.%(ext)s"); // Plex-friendly filename
-
-            var arguments = new StringBuilder();
-
-            // --- WE HAVE REVERTED TO A CLEAN, GENERIC COMMAND SET ---
-
-            // --- Download and Naming Arguments ---
-            arguments.Append($"--windows-filenames "); // Sanitize filenames
-            arguments.Append($"--all-subs "); // Get all subtitles
-            arguments.Append($"--sub-format srt "); // Prefer .srt format
-            arguments.Append($"--write-auto-subs "); // Get auto-generated subs if no others exist
-            arguments.Append($"-o \"{outputTemplate}\" "); // Set our output path/name template
-            arguments.Append($"\"{url}\""); // Finally, the URL to download
-
-            // We run the main download logic on a background thread
-            // using Task.Run() so we don't block the UI.
-            await Task.Run(() =>
-            {
+                _isStopping = true;
+                // Send "q" to the console, which yt-dlp interprets as "quit"
                 try
                 {
-                    _process = new Process
-                    {
-                        StartInfo = new ProcessStartInfo
-                        {
-                            FileName = _ytDlpPath,
-                            Arguments = arguments.ToString(),
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            CreateNoWindow = true,
-                            StandardOutputEncoding = Encoding.UTF8, // Tell C# how to READ the output
-                            StandardErrorEncoding = Encoding.UTF8
-                        },
-                        EnableRaisingEvents = true
-                    };
-
-                    _process.OutputDataReceived += (sender, args) => Process_OutputDataReceived(args.Data);
-                    _process.ErrorDataReceived += (sender, args) => Process_OutputDataReceived(args.Data); // We pipe both to the same log
-
-                    _process.Exited += (sender, args) => Process_Exited(string.Empty); // Handle normal exit
-
-                    _process.Start();
-
-                    // Begin reading the output streams asynchronously
-                    _process.BeginOutputReadLine();
-                    _process.BeginErrorReadLine();
-
-                    _process.WaitForExit(); // Wait for the process to complete
+                    _process.StandardInput.Write("q");
+                    _process.StandardInput.Flush();
                 }
                 catch (Exception ex)
                 {
-                    // This catches sync errors (like "process not found")
-                    Process_Exited($"Failed to start process: {ex.Message}");
+                    OnOutputReceived?.Invoke($"Failed to send 'q' command: {ex.Message}", true);
+                    // Fallback to force-kill
+                    _process.Kill();
                 }
-            });
+            }
         }
 
-        /// <summary>
-        /// Fires every time yt-dlp writes a line to its console.
-        /// </summary>
-        private void Process_OutputDataReceived(string? data)
+        public async Task DownloadVideoAsync(string url, string outputFolder)
         {
-            if (data != null)
+            _isStopping = false;
+
+            try
             {
-                // Send the line to our UI
-                OnOutputReceived?.Invoke(data);
+                // --- REFACTORED: All tool-checking logic is now one clean call ---
+                // We ask the tool manager to get everything ready and give us the paths.
+                var (ytDlpPath, aria2cPath) = await _toolManager.EnsureToolsAvailableAsync();
+
+                // Plex-friendly output template
+                string outputTemplate = Path.Combine(outputFolder,
+                    "%(series)s",
+                    "Season %(season_number)s",
+                    "%(series)s - s%(season_number)02de%(episode_number)02d - %(title)s.%(ext)s");
+
+                var arguments = new StringBuilder();
+                arguments.Append($"--windows-filenames ");
+                arguments.Append($"--all-subs ");
+                arguments.Append($"--sub-format srt ");
+                arguments.Append($"--user-agent \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36\" ");
+
+                // --- REFACTORED: Use the paths returned by our ToolManager ---
+                arguments.Append($"--downloader \"{aria2cPath}\" ");
+                arguments.Append($"--downloader-args \"aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M\" ");
+
+                arguments.Append($"-o \"{outputTemplate}\" ");
+                arguments.Append($"\"{url}\"");
+
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = ytDlpPath, // Use the path from our ToolManager
+                    Arguments = arguments.ToString(),
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    RedirectStandardInput = true, // Needed to send the 'q' command
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
+                };
+
+                using (_process = new Process { StartInfo = startInfo, EnableRaisingEvents = true })
+                {
+                    _process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null) OnOutputReceived?.Invoke(e.Data, false);
+                    };
+                    _process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null) OnOutputReceived?.Invoke(e.Data, true);
+                    };
+
+                    _process.Start();
+                    _process.BeginOutputReadLine();
+                    _process.BeginErrorReadLine();
+
+                    await _process.WaitForExitAsync();
+
+                    OnDownloadComplete?.Invoke(_isStopping ? false : _process.ExitCode == 0);
+                }
+            }
+            catch
+            {
+                OnDownloadComplete?.Invoke(false);
+                throw; // Re-throw the exception to be caught by the UI
+            }
+            finally
+            {
+                _process = null;
+                _isStopping = false;
             }
         }
 
-        /// <summary>
-        /// Fires when the process has fully exited.
-        /// </summary>
-        private void Process_Exited(string startupErrorMessage)
-        {
-            if (_process == null) return; // Guard clause
-
-            if (!string.IsNullOrEmpty(startupErrorMessage))
-            {
-                OnDownloadComplete?.Invoke(false, startupErrorMessage);
-                return;
-            }
-
-            int exitCode = _process.ExitCode;
-            _process.Dispose(); // Clean up resources
-            _process = null;
-
-            if (exitCode == 0)
-            {
-                OnDownloadComplete?.Invoke(true, "Download complete!");
-            }
-            else
-            {
-                OnDownloadComplete?.Invoke(false, $"Download failed. Process exited with code {exitCode}.");
-            }
-        }
+        // --- ALL THE 'EnsureToolsAvailableAsync' and 'DownloadFileAsync' METHODS ARE GONE ---
+        // --- They now live in ToolManagerService.cs ---
     }
 }
 

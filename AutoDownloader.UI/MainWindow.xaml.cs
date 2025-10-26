@@ -1,21 +1,26 @@
-﻿using System;
+﻿using AutoDownloader.Core;
+using Microsoft.WindowsAPICodePack.Dialogs;
+using System;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Documents;
 using System.Windows.Input;
-using AutoDownloader.Core;
-using Microsoft.WindowsAPICodePack.Dialogs; // For folder picker
+using System.Windows.Media;
+using System.Windows.Threading; // Added for the timer
 
 namespace AutoDownloader.UI
 {
     public partial class MainWindow : Window
     {
-        // We now have two services: one for downloading, one for searching
         private readonly YtDlpService _ytDlpService;
         private readonly SearchService _searchService;
 
-        // Base download directory
-        private readonly string _baseDownloadPath;
+        // --- NEW: For high-performance, non-blocking logging ---
+        private readonly StringBuilder _logBuffer = new StringBuilder();
+        private readonly DispatcherTimer _logUpdateTimer;
+        // ----------------------------------------------------
 
         public MainWindow()
         {
@@ -24,189 +29,248 @@ namespace AutoDownloader.UI
             _ytDlpService = new YtDlpService();
             _searchService = new SearchService();
 
-            // --- Set up our smart default paths ---
-            string preferredPath = @"E:\Downloads";
-            string fallbackPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Downloads");
+            // Subscribe to engine events
+            _ytDlpService.OnOutputReceived += YtDlpService_OnOutputReceived;
+            _ytDlpService.OnDownloadComplete += YtDlpService_OnDownloadComplete;
 
-            if (Directory.Exists(preferredPath))
+            // --- FIXED: Re-added your custom default path logic ---
+            string defaultPathE = @"E:\Downloads";
+            string defaultPathVideos = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                "AutoDownloader Outputs"
+            );
+
+            if (Directory.Exists(defaultPathE))
             {
-                _baseDownloadPath = preferredPath;
+                OutputFolderTextBox.Text = defaultPathE;
             }
             else
             {
-                _baseDownloadPath = fallbackPath;
-                // Ensure the fallback directory exists
-                Directory.CreateDirectory(_baseDownloadPath);
+                try
+                {
+                    if (!Directory.Exists(defaultPathVideos))
+                    {
+                        Directory.CreateDirectory(defaultPathVideos);
+                    }
+                    OutputFolderTextBox.Text = defaultPathVideos;
+                }
+                catch (Exception ex)
+                {
+                    // Fallback if we can't create the Videos directory
+                    OutputFolderTextBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                    AppendLogMessage($"Could not create default directory: {ex.Message}", Brushes.Yellow);
+                }
             }
+            // ----------------------------------------------------
 
-            // Set the default folder to "TV Shows"
-            OutputFolderTextBox.Text = Path.Combine(_baseDownloadPath, "TV Shows");
-            // --- End of path logic ---
-
-            // Wire up the events from our "engine" to our UI
-            _ytDlpService.OnOutputReceived += (logLine) =>
+            // --- NEW: Initialize the log-batching timer ---
+            _logUpdateTimer = new DispatcherTimer
             {
-                // This code runs on a background thread, so we must
-                // use Dispatcher.Invoke to safely update the UI.
-                Dispatcher.Invoke(() =>
-                {
-                    OutputLogTextBox.AppendText(logLine + Environment.NewLine);
-                    OutputLogTextBox.ScrollToEnd();
-                });
+                // Update the log 10 times per second
+                Interval = TimeSpan.FromMilliseconds(100)
             };
-
-            _ytDlpService.OnDownloadComplete += (isSuccess, message) =>
-            {
-                Dispatcher.Invoke(() =>
-                {
-                    StatusTextBlock.Text = message;
-                    SetUiLock(true); // Re-enable the UI
-                });
-            };
+            _logUpdateTimer.Tick += LogUpdateTimer_Tick;
+            // ----------------------------------------------
         }
 
         /// <summary>
-        /// Locks or unlocks the UI elements during download
+        /// This event fires 10x/sec. It takes all text from the buffer
+        /// and "flushes" it to the UI in a single, non-blocking operation.
         /// </summary>
-        private void SetUiLock(bool isEnabled)
+        private void LogUpdateTimer_Tick(object? sender, EventArgs e)
         {
-            StartDownloadButton.IsEnabled = isEnabled;
-            UrlTextBox.IsEnabled = isEnabled;
-            BrowseButton.IsEnabled = isEnabled;
-            OutputFolderTextBox.IsEnabled = isEnabled;
+            string bufferContent;
+            lock (_logBuffer)
+            {
+                if (_logBuffer.Length == 0)
+                    return;
+
+                bufferContent = _logBuffer.ToString();
+                _logBuffer.Clear();
+            }
+
+            // Append the entire batch of logs at once
+            AppendLogMessage(bufferContent, Brushes.Gray, false);
         }
 
         /// <summary>
-        /// This method is now the main "entry point" for starting the work.
+        /// This is now high-speed and non-blocking.
+        /// It just adds the log data to a buffer instead of updating the UI.
         /// </summary>
-        private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
+        private void YtDlpService_OnOutputReceived(string data, bool isError)
         {
-            string urlOrSearchTerm = UrlTextBox.Text;
-            if (string.IsNullOrWhiteSpace(urlOrSearchTerm))
+            // We lock the buffer to prevent a race condition with the timer
+            lock (_logBuffer)
             {
-                StatusTextBlock.Text = "Please enter a URL or search term.";
-                return;
+                _logBuffer.AppendLine(data);
             }
+        }
 
-            SetUiLock(false);
-            OutputLogTextBox.Clear();
-            StatusTextBlock.Text = "Starting...";
+        private void YtDlpService_OnDownloadComplete(bool success)
+        {
+            // Stop the log timer
+            _logUpdateTimer.Stop();
 
-            try
+            // --- NEW: Do one final flush ---
+            // This ensures any remaining messages in the buffer are displayed
+            LogUpdateTimer_Tick(null, EventArgs.Empty);
+            // -------------------------------
+
+            Dispatcher.Invoke(() =>
             {
-                // Check if the user entered a URL or a search term
-                if (urlOrSearchTerm.StartsWith("http://") || urlOrSearchTerm.StartsWith("https://"))
+                if (success)
                 {
-                    // --- This is the OLD logic ---
-                    // It's a URL, just download it.
-                    StatusTextBlock.Text = "URL detected. Starting download...";
-                    OutputLogTextBox.AppendText("URL detected. Starting download..." + Environment.NewLine);
-                    await _ytDlpService.DownloadVideoAsync(urlOrSearchTerm, OutputFolderTextBox.Text);
+                    AppendLogMessage("\n--- Download Complete! ---", Brushes.LimeGreen);
+                    StatusTextBlock.Text = "Download complete!";
                 }
                 else
                 {
-                    // --- This is the NEW logic ---
-                    // It's a search term.
-                    StatusTextBlock.Text = $"Searching for '{urlOrSearchTerm}'...";
+                    AppendLogMessage("\n--- Download Failed or Cancelled. ---", Brushes.OrangeRed);
+                    StatusTextBlock.Text = "Download failed or was cancelled.";
+                }
+                SetUiLock(false);
+            });
+        }
 
-                    // --- START: New logging ---
-                    OutputLogTextBox.AppendText($"--- Starting smart search for: '{urlOrSearchTerm}' ---" + Environment.NewLine);
-                    OutputLogTextBox.AppendText("Calling Gemini API..." + Environment.NewLine);
-                    // --- END: New logging ---
+        private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetUiLock(true);
+            OutputLogParagraph.Inlines.Clear(); // Clear the log
+            _logUpdateTimer.Start(); // Start the log timer
 
-                    var searchResult = await _searchService.FindShowUrlAsync(urlOrSearchTerm);
+            string searchTerm = UrlTextBox.Text.Trim();
+            string outputFolder = OutputFolderTextBox.Text;
 
-                    if (searchResult.Url == "not-found")
+            if (string.IsNullOrWhiteSpace(searchTerm))
+            {
+                AppendLogMessage("Please enter a search term or URL.", Brushes.Yellow);
+                SetUiLock(false);
+                _logUpdateTimer.Stop();
+                return;
+            }
+
+            try
+            {
+                string url;
+                string baseOutputFolder = outputFolder;
+                bool isSearch = !searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+
+                if (isSearch)
+                {
+                    AppendLogMessage($"--- Starting smart search for: '{searchTerm}' ---", Brushes.Cyan);
+                    StatusTextBlock.Text = "Searching...";
+
+                    (string type, string foundUrl) = await _searchService.FindShowUrlAsync(searchTerm);
+                    url = foundUrl;
+
+                    if (url == "not-found")
                     {
-                        string notFoundMsg = $"Could not find a download page for '{urlOrSearchTerm}'.";
-                        StatusTextBlock.Text = notFoundMsg;
-
-                        // --- START: New logging ---
-                        OutputLogTextBox.AppendText(notFoundMsg + Environment.NewLine);
-                        OutputLogTextBox.AppendText("--- Search failed. ---" + Environment.NewLine);
-                        // --- END: New logging ---
-
-                        SetUiLock(true);
+                        AppendLogMessage($"Could not find a download page for '{searchTerm}'.", Brushes.OrangeRed);
+                        AppendLogMessage("--- Search failed. ---", Brushes.Red);
+                        SetUiLock(false);
+                        _logUpdateTimer.Stop();
                         return;
                     }
 
-                    // --- We found it! Now, auto-configure the UI ---
-                    StatusTextBlock.Text = $"Found: {searchResult.Url}. Starting download...";
-
-                    // 1. Set the URL box to what we found
-                    UrlTextBox.Text = searchResult.Url;
-
-                    // 2. Set the output folder based on the type
-                    string categoryFolder = "TV Shows"; // Default
-                    if (searchResult.Type.Equals("Anime", StringComparison.OrdinalIgnoreCase))
+                    // Set the category subfolder
+                    string categoryFolder = type switch
                     {
-                        categoryFolder = "Anime TV Shows";
-                    }
-                    else if (searchResult.Type.Equals("Movie", StringComparison.OrdinalIgnoreCase))
+                        "Anime" => "Anime TV Shows",
+                        "TV Show" => "TV Shows",
+                        "Movie" => "Movies",
+                        _ => "Playlists & Misc"
+                    };
+                    baseOutputFolder = Path.Combine(outputFolder, categoryFolder);
+                    if (!Directory.Exists(baseOutputFolder))
                     {
-                        categoryFolder = "Movies";
-                    }
-                    else if (searchResult.Type.Equals("Playlist", StringComparison.OrdinalIgnoreCase))
-                    {
-                        categoryFolder = "Playlists";
+                        Directory.CreateDirectory(baseOutputFolder);
                     }
 
-                    OutputFolderTextBox.Text = Path.Combine(_baseDownloadPath, categoryFolder);
-                    Directory.CreateDirectory(OutputFolderTextBox.Text); // Ensure it exists
+                    AppendLogMessage($"Found URL: {url}", Brushes.Gray);
+                    AppendLogMessage($"Media Type: {type}", Brushes.Gray);
+                    AppendLogMessage($"Output Folder: {baseOutputFolder}", Brushes.Gray);
 
-                    // --- START: New logging ---
-                    OutputLogTextBox.AppendText($"Search complete. Found URL: {searchResult.Url}" + Environment.NewLine);
-                    OutputLogTextBox.AppendText($"Type classified as: {searchResult.Type}" + Environment.NewLine);
-                    OutputLogTextBox.AppendText($"Output folder set to: {OutputFolderTextBox.Text}" + Environment.NewLine);
-                    OutputLogTextBox.AppendText("--- Handing off to yt-dlp... ---" + Environment.NewLine);
-                    // --- END: New logging ---
-
-                    // 3. Start the download
-                    await _ytDlpService.DownloadVideoAsync(searchResult.Url, OutputFolderTextBox.Text);
+                    // Auto-update UI
+                    UrlTextBox.Text = url;
+                    OutputFolderTextBox.Text = baseOutputFolder;
                 }
+                else
+                {
+                    url = searchTerm;
+                }
+
+                AppendLogMessage("\n--- Starting download... ---", Brushes.LimeGreen);
+                StatusTextBlock.Text = "Download in progress...";
+
+                // --- CRITICAL FIX: We must 'await' this call! ---
+                // This keeps the try/catch block active and prevents
+                // the UI from thinking the work is "done."
+                await _ytDlpService.DownloadVideoAsync(url, baseOutputFolder);
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"An error occurred: {ex.Message}";
-
-                // --- START: New logging ---
-                OutputLogTextBox.AppendText($"---!! AN ERROR OCCURRED !!---" + Environment.NewLine);
-                OutputLogTextBox.AppendText(ex.Message + Environment.NewLine);
-                OutputLogTextBox.AppendText(ex.StackTrace ?? "No stack trace available." + Environment.NewLine);
-                OutputLogTextBox.AppendText($"-------------------------------" + Environment.NewLine);
-                // --- END: New logging ---
-
-                SetUiLock(true);
+                AppendLogMessage($"\n--- AN ERROR OCCURRED ---", Brushes.Red);
+                AppendLogMessage(ex.Message, Brushes.Red);
+                StatusTextBlock.Text = "Error!";
+                SetUiLock(false);
+                _logUpdateTimer.Stop();
             }
         }
 
-        /// <summary>
-        /// Opens the modern folder picker dialog
-        /// </summary>
-        private void BrowseButton_Click(object sender, RoutedEventArgs e)
+        private void StopDownloadButton_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new CommonOpenFileDialog
-            {
-                IsFolderPicker = true,
-                InitialDirectory = OutputFolderTextBox.Text
-            };
-
-            if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
-            {
-                OutputFolderTextBox.Text = dialog.FileName;
-            }
+            AppendLogMessage("\n--- Sending stop signal... ---", Brushes.Yellow);
+            _ytDlpService.StopDownload();
         }
 
-        /// <summary>
-        /// Handles the Enter key press in the URL text box
-        /// </summary>
         private void UrlTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
-                // This is a simple way to "click" the button
-                StartDownloadButton_Click(sender, new RoutedEventArgs());
+                StartDownloadButton_Click(sender, e);
             }
+        }
+
+        private void BrowseButton_Click(object sender, RoutedEventArgs e)
+        {
+            // This requires the 'Microsoft.WindowsAPICodePack-Shell' NuGet package
+            using (var dialog = new CommonOpenFileDialog())
+            {
+                dialog.IsFolderPicker = true;
+                if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
+                {
+                    OutputFolderTextBox.Text = dialog.FileName;
+                }
+            }
+        }
+
+        private void SetUiLock(bool isLocked)
+        {
+            UrlTextBox.IsEnabled = !isLocked;
+            OutputFolderTextBox.IsEnabled = !isLocked;
+            BrowseButton.IsEnabled = !isLocked;
+
+            // Swap button visibility
+            StartDownloadButton.Visibility = isLocked ? Visibility.Collapsed : Visibility.Visible;
+            StopDownloadButton.Visibility = isLocked ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Appends a message to the rich text log box.
+        /// </summary>
+        private void AppendLogMessage(string message, SolidColorBrush color, bool addNewLine = true)
+        {
+            // This must run on the UI thread
+            if (addNewLine)
+            {
+                message += Environment.NewLine;
+            }
+
+            var run = new Run(message) { Foreground = color };
+            OutputLogParagraph.Inlines.Add(run);
+
+            // Auto-scroll to the end
+            LogScrollViewer.ScrollToEnd();
         }
     }
 }

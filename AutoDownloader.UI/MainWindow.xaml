@@ -5,18 +5,20 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AutoDownloader.UI"
         mc:Ignorable="d"
-        Title="Auto Downloader v1.1" Height="600" Width="800" MinHeight="450" MinWidth="650"
+        Title="AutoDownloader v1.3" Height="800" Width="1280"
         FontFamily="Segoe UI"
-        Background="#f9f9f9">
+        Background="#FF1E1E1E">
 
-    <!-- This section is like a mini-stylesheet for our window -->
+    <!-- This section defines our modern styles -->
     <Window.Resources>
-        <!-- Style for all TextBoxes -->
+        <!-- Modern, rounded text box -->
         <Style TargetType="TextBox">
-            <Setter Property="Padding" Value="8"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Background" Value="#FF3A3A3A"/>
+            <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#ccc"/>
+            <Setter Property="BorderBrush" Value="#FF555555"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
@@ -24,160 +26,197 @@
                                 BorderBrush="{TemplateBinding BorderBrush}" 
                                 BorderThickness="{TemplateBinding BorderThickness}" 
                                 Background="{TemplateBinding Background}">
-                            <ScrollViewer x:Name="PART_ContentHost" />
+                            <ScrollViewer x:Name="PART_ContentHost"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <!-- Style for our main "Start Download" button -->
-        <Style x:Key="PrimaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#007aff"/>
+        <!-- Main "Go" Button -->
+        <Style x:Key="GoButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FF007ACC"/>
             <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Padding" Value="10 8"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border CornerRadius="5" 
+                        <Border x:Name="border" 
+                                CornerRadius="5" 
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#FF0099FF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#FF555555"/>
+                                <Setter Property="Foreground" Value="#FF999999"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <!-- Add a hover effect -->
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#0056b3"/>
-                </Trigger>
-                <!-- Add a pressed effect -->
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#004a99"/>
-                </Trigger>
-                <!-- Style for when the button is disabled -->
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#aaa"/>
-                    <Setter Property="Foreground" Value="#eee"/>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
-        <!-- Style for the "Browse" button -->
-        <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#e0e0e0"/>
-            <Setter Property="Foreground" Value="#333"/>
-            <Setter Property="Padding" Value="10 8"/>
+        <!-- *** NEW! *** Stop Button Style (Burgundy Red) -->
+        <Style x:Key="StopButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#C0392B"/>
+            <!-- Nice Burgundy -->
+            <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border CornerRadius="5" 
+                        <Border x:Name="border" 
+                                CornerRadius="5" 
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#A93226"/>
+                                <!-- Darker Red -->
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#c7c7c7"/>
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#b0b0b0"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#aaa"/>
-                    <Setter Property="Foreground" Value="#eee"/>
-                </Trigger>
-            </Style.Triggers>
         </Style>
 
+        <!-- Secondary "Browse" Button -->
+        <Style x:Key="BrowseButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FF4A4A4A"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="15,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" 
+                                CornerRadius="5" 
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#FF666666"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#FF555555"/>
+                                <Setter Property="Foreground" Value="#FF999999"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
-    <Grid>
-        <!-- Main layout is a DockPanel -->
-        <DockPanel>
+    <DockPanel Margin="10">
+        <!-- Status Bar at the bottom -->
+        <StatusBar DockPanel.Dock="Bottom" Background="#FF007ACC" Foreground="White">
+            <TextBlock x:Name="StatusTextBlock" Margin="5,2" Text="Ready."/>
+        </StatusBar>
 
-            <!-- 1. Status Bar at the bottom -->
-            <StatusBar DockPanel.Dock="Bottom" Background="#f0f0f0" BorderThickness="0 1 0 0" BorderBrush="#ddd">
-                <StatusBarItem>
-                    <TextBlock x:Name="StatusTextBlock" Text="Ready." Padding="5"/>
-                </StatusBarItem>
-            </StatusBar>
+        <!-- Input Panel at the top -->
+        <Border DockPanel.Dock="Top" Background="#FF2D2D2D" CornerRadius="5" Padding="15" Margin="0,0,0,10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-            <!-- 2. Control Panel at the top -->
-            <Border DockPanel.Dock="Top" Padding="15" BorderBrush="#ddd" BorderThickness="0 0 0 1" Background="White">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
+                <!-- Row 0: URL / Search Term -->
+                <Label Grid.Row="0" Grid.Column="0" Content="Search Term or URL:" Foreground="White" Margin="0,0,0,5"/>
+                <TextBox Grid.Row="1" Grid.Column="0" 
+                         x:Name="UrlTextBox" 
+                         FontSize="14" 
+                         Margin="0,0,10,10"
+                         KeyDown="UrlTextBox_KeyDown"/>
+
+                <!-- Download/Stop buttons -->
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,10">
+                    <Button x:Name="StartDownloadButton" 
+                            Content="Download" 
+                            Style="{StaticResource GoButtonStyle}"
+                            Click="StartDownloadButton_Click"
+                            Visibility="Visible"/>
+                    <!-- Visible by default -->
+
+                    <Button x:Name="StopDownloadButton" 
+                            Content="Stop Download" 
+                            Style="{StaticResource StopButtonStyle}"
+                            Click="StopDownloadButton_Click"
+                            Visibility="Collapsed"/>
+                    <!-- Hidden by default -->
+                </StackPanel>
+
+                <!-- Row 2: Output Folder (NOW VISIBLE) -->
+                <Label Grid.Row="2" Grid.Column="0" Content="Output Folder:" Foreground="White" Margin="0,5,0,5"/>
+
+                <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Row 0: URL/Search Term Input -->
-                    <Label Grid.Row="0" Grid.Column="0" Content="URL or Search Term (TV Show, Movie, Anime):" FontWeight="Bold" Foreground="#333"/>
+                    <TextBox Grid.Column="0" 
+                             x:Name="OutputFolderTextBox" 
+                             FontSize="14" 
+                             Margin="0,0,10,0" 
+                             IsReadOnly="True" />
 
-                    <TextBox x:Name="UrlTextBox" 
-                             Grid.Row="1" Grid.Column="0" 
-                             Margin="0 5 10 0" 
-                             KeyDown="UrlTextBox_KeyDown"/>
-                    <!-- Style is applied automatically -->
-
-                    <Button x:Name="StartDownloadButton" 
-                            Grid.Row="1" Grid.Column="1" 
-                            Content="  Download  " 
-                            Margin="0 5 0 0"
-                            Style="{StaticResource PrimaryButton}"
-                            Click="StartDownloadButton_Click"/>
-
-                    <!-- Row 2: Output Folder -->
-                    <Label Grid.Row="2" Grid.Column="0" Content="Output Folder:" Margin="0 15 0 0" FontWeight="Bold" Foreground="#333"/>
-                    <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0 5 0 0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="OutputFolderTextBox" 
-                                 Grid.Column="0" 
-                                 Margin="0 0 10 0" 
-                                 IsReadOnly="True" 
-                                 Background="#eee"/>
-                        <Button x:Name="BrowseButton" 
-                                Grid.Column="1" 
-                                Content="  Browse...  " 
-                                Style="{StaticResource SecondaryButton}"
-                                Click="BrowseButton_Click"/>
-                    </Grid>
+                    <Button Grid.Column="1" 
+                            x:Name="BrowseButton" 
+                            Content="Browse..." 
+                            Style="{StaticResource BrowseButtonStyle}"
+                            Click="BrowseButton_Click" />
                 </Grid>
-            </Border>
 
-            <!-- 3. Log Window fills the rest of the space -->
-            <TextBox x:Name="OutputLogTextBox" 
-                     FontFamily="Consolas" 
-                     FontSize="13"
-                     IsReadOnly="True" 
-                     VerticalScrollBarVisibility="Auto"
-                     HorizontalScrollBarVisibility="Auto"
-                     Background="#1e1e1e" 
-                     Foreground="#d4d4d4"
-                     BorderThickness="0"
-                     Padding="10"/>
+            </Grid>
+        </Border>
 
-        </DockPanel>
-    </Grid>
+        <!-- Log Output (fills the rest of the space) -->
+        <Border Background="#FF2D2D2D" CornerRadius="5" Padding="5">
+            <ScrollViewer x:Name="LogScrollViewer" VerticalScrollBarVisibility="Auto">
+                <!-- Use a RichTextBox for colored text -->
+                <RichTextBox x:Name="OutputLogTextBox" 
+                             Background="Black" 
+                             Foreground="#FFCCCCCC" 
+                             FontFamily="Consolas" 
+                             FontSize="12"
+                             BorderThickness="0"
+                             IsReadOnly="True"
+                             VerticalScrollBarVisibility="Disabled">
+                    <!-- Changed to Disabled to prevent double scrollbar -->
+                    <FlowDocument>
+                        <Paragraph x:Name="OutputLogParagraph">
+                            <Run Text="Welcome to AutoDownloader v1.3!"/>
+                        </Paragraph>
+                    </FlowDocument>
+                </RichTextBox>
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
 </Window>
 
