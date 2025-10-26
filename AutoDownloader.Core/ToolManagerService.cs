@@ -1,139 +1,154 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Net.Http;
 using System.Threading.Tasks;
 
 namespace AutoDownloader.Core
 {
     /// <summary>
-    /// Manages the acquisition and updating of external tools like yt-dlp and aria2c.
+    /// Manages the download, extraction, and updating of external CLI tools.
+    /// This class is now responsible for handling yt-dlp and aria2c.
     /// </summary>
     public class ToolManagerService
     {
-        // This event will be used to send log messages back to whoever is using this service.
-        public event Action<string, bool>? OnLogMessage;
+        // This event will be used by YtDlpService to pass logs up to the UI
+        public event Action<string>? OnToolLogReceived;
 
+        // A standard, modern Firefox User-Agent. This is now public.
+        public const string FIREFOX_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0";
+
+        private static readonly HttpClient _httpClient = new HttpClient();
+
+        // URLs for our tools
         private const string YTDLP_URL = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe";
-        private const string ARIA2C_URL = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
+        private const string ARIA2C_URL = "https://github.com/aria2/aria2/releases/latest/download/aria2-1.37.0-win-64bit-build1.zip"; // Example, may need updating
 
-        private readonly string _ytDlpPath;
-        private readonly string _aria2cPath;
-        private readonly string _tempDir;
-
-        public ToolManagerService()
-        {
-            _tempDir = Path.Combine(AppContext.BaseDirectory, "temp");
-            _ytDlpPath = Path.Combine(AppContext.BaseDirectory, "yt-dlp.exe");
-            _aria2cPath = Path.Combine(AppContext.BaseDirectory, "aria2c.exe");
-            Directory.CreateDirectory(_tempDir);
-        }
+        private string _ytDlpPath = "";
+        private string _aria2cPath = "";
 
         /// <summary>
-        /// Public method to ensure all required tools are present and up-to-date.
-        /// Returns the paths to the tools.
+        /// Ensures all required tools (yt-dlp, aria2c) are downloaded and ready.
         /// </summary>
+        /// <returns>A tuple containing the file paths to yt-dlp.exe and aria2c.exe.</returns>
         public async Task<(string YtDlpPath, string Aria2cPath)> EnsureToolsAvailableAsync()
         {
-            await EnsureYtDlpAsync();
-            await EnsureAria2cAsync();
+            // Set the expected paths
+            string appRoot = AppContext.BaseDirectory;
+            _ytDlpPath = Path.Combine(appRoot, "yt-dlp.exe");
+            _aria2cPath = Path.Combine(appRoot, "aria2c.exe");
+
+            // Run both checks in parallel for speed
+            await Task.WhenAll(
+                EnsureYtDlpAsync(),
+                EnsureAria2cAsync()
+            );
+
             return (_ytDlpPath, _aria2cPath);
         }
 
         /// <summary>
-        /// Checks for yt-dlp and downloads it if missing or old.
+        /// Checks for yt-dlp.exe, updating it if it's older than 24 hours.
         /// </summary>
         private async Task EnsureYtDlpAsync()
         {
-            if (File.Exists(_ytDlpPath) && (DateTime.UtcNow - File.GetLastWriteTimeUtc(_ytDlpPath)).TotalHours < 24)
+            bool shouldDownload = true;
+            if (File.Exists(_ytDlpPath))
             {
-                // File exists and is new, do nothing.
-                return;
+                // File exists, check if it's older than 24 hours
+                var lastWriteTime = File.GetLastWriteTimeUtc(_ytDlpPath);
+                if (DateTime.UtcNow - lastWriteTime < TimeSpan.FromHours(24))
+                {
+                    shouldDownload = false;
+                }
+                else
+                {
+                    OnToolLogReceived?.Invoke("yt-dlp.exe is older than 24 hours. Re-downloading...");
+                    File.Delete(_ytDlpPath);
+                }
             }
-            await DownloadFileAsync(YTDLP_URL, _ytDlpPath, "yt-dlp.exe");
+            else
+            {
+                OnToolLogReceived?.Invoke("yt-dlp.exe not found. Downloading latest version...");
+            }
+
+            if (shouldDownload)
+            {
+                await DownloadFileAsync(YTDLP_URL, _ytDlpPath);
+                OnToolLogReceived?.Invoke("yt-dlp.exe downloaded successfully.");
+            }
         }
 
         /// <summary>
-        /// Checks for aria2c and downloads/extracts it if missing.
+        /// Checks for aria2c.exe. If not found, downloads and extracts it.
         /// </summary>
         private async Task EnsureAria2cAsync()
         {
             if (File.Exists(_aria2cPath))
             {
-                // File exists, we're good.
-                return;
+                return; // All good
             }
 
-            OnLogMessage?.Invoke("aria2c.exe not found. Downloading...", false);
-            string zipPath = Path.Combine(_tempDir, "aria2.zip");
+            OnToolLogReceived?.Invoke("aria2c.exe not found. Downloading...");
+            string zipPath = Path.Combine(AppContext.BaseDirectory, "aria2c.zip");
 
-            await DownloadFileAsync(ARIA2C_URL, zipPath, "aria2c");
-
-            OnLogMessage?.Invoke("Extracting aria2c...", false);
             try
             {
-                string extractDir = Path.Combine(_tempDir, "aria2-extract");
-                if (Directory.Exists(extractDir))
+                // 1. Download the zip file
+                await DownloadFileAsync(ARIA2C_URL, zipPath);
+                OnToolLogReceived?.Invoke("aria2c.zip downloaded. Extracting...");
+
+                // 2. Extract the zip file
+                using (var archive = ZipFile.OpenRead(zipPath))
                 {
-                    Directory.Delete(extractDir, true);
+                    // Find the .exe file inside the zip (it's often in a subfolder)
+                    // OLD LINE TO DELETE: var exeEntry = archive.Entries.FirstOrDefault(e => e.Name.Equals("aria2c.exe", StringComparison.OrdinalIgnoreCase));
+
+                    // NEW LINE TO INSERT (Critical Fix for v1.5):
+                    var exeEntry = archive.Entries.FirstOrDefault(e => e.FullName.EndsWith("aria2c.exe", StringComparison.OrdinalIgnoreCase));
+
+                    if (exeEntry != null)
+                    {
+                        // Extract it directly to our app root path
+                        exeEntry.ExtractToFile(_aria2cPath, true);
+                        OnToolLogReceived?.Invoke("aria2c.exe extracted successfully.");
+                    }
+                    else
+                    {
+                        throw new FileNotFoundException("Could not find aria2c.exe inside the downloaded zip file.");
+                    }
                 }
-                Directory.CreateDirectory(extractDir);
-
-                System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, extractDir);
-
-                var exePath = Directory.GetFiles(extractDir, "aria2c.exe", SearchOption.AllDirectories);
-                if (exePath.Length == 0)
-                {
-                    throw new FileNotFoundException("Could not find aria2c.exe inside the downloaded zip.");
-                }
-
-                File.Move(exePath[0], _aria2cPath, true);
-                OnLogMessage?.Invoke("aria2c installed successfully.", false);
             }
             catch (Exception ex)
             {
-                OnLogMessage?.Invoke($"Failed to extract aria2c: {ex.Message}", true);
-                throw;
+                OnToolLogReceived?.Invoke($"--- ERROR: Failed to get aria2c: {ex.Message} ---");
             }
             finally
             {
-                // Clean up
-                if (File.Exists(zipPath)) File.Delete(zipPath);
-                if (Directory.Exists(Path.Combine(_tempDir, "aria2-extract")))
+                // 3. Clean up the zip file
+                if (File.Exists(zipPath))
                 {
-                    Directory.Delete(Path.Combine(_tempDir, "aria2-extract"), true);
+                    File.Delete(zipPath);
                 }
             }
         }
 
         /// <summary>
-        /// A helper function to download a file from a URL.
+        /// A simple helper to download a file from a URL.
         /// </summary>
-        private async Task DownloadFileAsync(string url, string destinationPath, string toolName)
+        private async Task DownloadFileAsync(string url, string destinationPath)
         {
-            OnLogMessage?.Invoke($"{toolName} not found or is old. Downloading latest version...", false);
-            try
+            using (var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
             {
-                using (var client = new HttpClient())
+                response.EnsureSuccessStatusCode();
+                using (var stream = await response.Content.ReadAsStreamAsync())
+                using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    client.DefaultRequestHeaders.Add("User-Agent", "AutoDownloaderApp");
-                    using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))
-                    {
-                        response.EnsureSuccessStatusCode();
-
-                        using (var stream = await response.Content.ReadAsStreamAsync())
-                        using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                        {
-                            await stream.CopyToAsync(fileStream);
-                        }
-                    }
+                    await stream.CopyToAsync(fileStream);
                 }
-                OnLogMessage?.Invoke($"{toolName} download complete.", false);
-            }
-            catch (Exception ex)
-            {
-                OnLogMessage?.Invoke($"Failed to download {toolName}: {ex.Message}", true);
-                throw; // Re-throw to stop the download process
             }
         }
     }
 }
+

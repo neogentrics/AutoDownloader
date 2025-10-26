@@ -1,6 +1,7 @@
 ﻿using AutoDownloader.Core;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -8,221 +9,153 @@ using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Threading; // Added for the timer
+using System.Windows.Threading;
 
 namespace AutoDownloader.UI
 {
     public partial class MainWindow : Window
     {
+        // --- Our Core "Engines" ---
         private readonly YtDlpService _ytDlpService;
         private readonly SearchService _searchService;
+        private readonly ToolManagerService _toolManagerService;
 
-        // --- NEW: For high-performance, non-blocking logging ---
-        private readonly StringBuilder _logBuffer = new StringBuilder();
+        // --- High-Performance Log Batching ---
         private readonly DispatcherTimer _logUpdateTimer;
-        // ----------------------------------------------------
+        private readonly List<string> _logQueue = new List<string>();
+        private readonly object _logLock = new object();
 
         public MainWindow()
         {
             InitializeComponent();
+            this.Title = "AutoDownloader v1.4"; // Updated version title
 
-            _ytDlpService = new YtDlpService();
+            // --- 1. Initialize Services (This fixes the build errors) ---
+            // Create the ToolManager first
+            _toolManagerService = new ToolManagerService();
+            // "Inject" it into the YtDlpService
+            _ytDlpService = new YtDlpService(_toolManagerService);
+            // Create the SearchService
             _searchService = new SearchService();
 
-            // Subscribe to engine events
-            _ytDlpService.OnOutputReceived += YtDlpService_OnOutputReceived;
-            _ytDlpService.OnDownloadComplete += YtDlpService_OnDownloadComplete;
-
-            // --- FIXED: Re-added your custom default path logic ---
-            string defaultPathE = @"E:\Downloads";
-            string defaultPathVideos = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
-                "AutoDownloader Outputs"
-            );
-
-            if (Directory.Exists(defaultPathE))
+            // --- 2. Set Up Default Download Path ---
+            string defaultPath = @"E:\Downloads";
+            if (!Directory.Exists(defaultPath))
             {
-                OutputFolderTextBox.Text = defaultPathE;
+                // Fallback to "Videos\Downloads"
+                defaultPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                    "Downloads"
+                );
             }
-            else
-            {
-                try
-                {
-                    if (!Directory.Exists(defaultPathVideos))
-                    {
-                        Directory.CreateDirectory(defaultPathVideos);
-                    }
-                    OutputFolderTextBox.Text = defaultPathVideos;
-                }
-                catch (Exception ex)
-                {
-                    // Fallback if we can't create the Videos directory
-                    OutputFolderTextBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                    AppendLogMessage($"Could not create default directory: {ex.Message}", Brushes.Yellow);
-                }
-            }
-            // ----------------------------------------------------
+            // Ensure the directory exists
+            Directory.CreateDirectory(defaultPath);
+            OutputFolderTextBox.Text = defaultPath;
 
-            // --- NEW: Initialize the log-batching timer ---
-            _logUpdateTimer = new DispatcherTimer
+
+            // --- 3. Set Up Event Handlers (This fixes the delegate errors) ---
+
+            // Subscribe to the download complete event
+            _ytDlpService.OnDownloadComplete += (exitCode) =>
             {
-                // Update the log 10 times per second
-                Interval = TimeSpan.FromMilliseconds(100)
+                // This event can come from a background thread, so we must use
+                // the Dispatcher to safely update the UI (the "main" thread).
+                Dispatcher.Invoke(() =>
+                {
+                    SetUiLock(false); // Re-enable the UI
+                    StatusTextBlock.Text = exitCode == 0 ? "Download complete" : "Download failed or stopped";
+                });
             };
+
+            // Subscribe to the log output event
+            _ytDlpService.OnOutputReceived += (logLine) =>
+            {
+                // This fires thousands of times. Instead of updating the UI
+                // directly, we add the log to a queue.
+                lock (_logLock)
+                {
+                    _logQueue.Add(logLine);
+                }
+            };
+
+            // Subscribe to the ToolManager's log event
+            _toolManagerService.OnToolLogReceived += (logLine) =>
+            {
+                // Also add tool logs to the same queue
+                lock (_logLock)
+                {
+                    _logQueue.Add(logLine);
+                }
+            };
+
+            // --- 4. Set Up Log Batching Timer (This fixes the UI freeze) ---
+            _logUpdateTimer = new DispatcherTimer();
+            _logUpdateTimer.Interval = TimeSpan.FromMilliseconds(100); // Update 10x per second
             _logUpdateTimer.Tick += LogUpdateTimer_Tick;
-            // ----------------------------------------------
+            _logUpdateTimer.Start();
         }
 
         /// <summary>
-        /// This event fires 10x/sec. It takes all text from the buffer
-        /// and "flushes" it to the UI in a single, non-blocking operation.
+        /// This method runs 10x per second to "flush" all queued logs
+        /// to the screen at once. This prevents the UI from freezing.
         /// </summary>
         private void LogUpdateTimer_Tick(object? sender, EventArgs e)
         {
-            string bufferContent;
-            lock (_logBuffer)
+            List<string> logsToFlush;
+            lock (_logLock)
             {
-                if (_logBuffer.Length == 0)
-                    return;
+                if (_logQueue.Count == 0) return;
 
-                bufferContent = _logBuffer.ToString();
-                _logBuffer.Clear();
+                // Copy the current queue and clear it in one atomic operation
+                logsToFlush = new List<string>(_logQueue);
+                _logQueue.Clear();
             }
 
-            // Append the entire batch of logs at once
-            AppendLogMessage(bufferContent, Brushes.Gray, false);
+            if (logsToFlush.Count > 0)
+            {
+                var sb = new StringBuilder();
+                foreach (var line in logsToFlush)
+                {
+                    sb.AppendLine(line);
+                }
+
+                // **** THIS IS THE FIX ****
+                // Create the Paragraph 'p' from the string builder
+                var p = new Paragraph(new Run(sb.ToString()));
+
+                // Smartly color-code the output
+                // We check the *raw string* for faster performance
+                string logText = sb.ToString();
+                if (!string.IsNullOrEmpty(logText))
+                {
+                    if (logText.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        p.Foreground = Brushes.Red;
+                    }
+                    else if (logText.StartsWith("[download]", StringComparison.OrdinalIgnoreCase))
+                    {
+                        p.Foreground = Brushes.Green;
+                    }
+                    else if (logText.StartsWith("---", StringComparison.OrdinalIgnoreCase))
+                    {
+                        p.Foreground = Brushes.Aqua;
+                    }
+                    else if (logText.StartsWith("Downloading tool:", StringComparison.OrdinalIgnoreCase) ||
+                             logText.StartsWith("Extracting tool:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        p.Foreground = Brushes.Orange;
+                    }
+                }
+
+                // Add the formatted paragraph to the log
+                OutputLogTextBox.Document.Blocks.Add(p);
+                LogScrollViewer.ScrollToEnd();
+            }
         }
 
         /// <summary>
-        /// This is now high-speed and non-blocking.
-        /// It just adds the log data to a buffer instead of updating the UI.
+        /// Handles the "Enter" key in the text box.
         /// </summary>
-        private void YtDlpService_OnOutputReceived(string data, bool isError)
-        {
-            // We lock the buffer to prevent a race condition with the timer
-            lock (_logBuffer)
-            {
-                _logBuffer.AppendLine(data);
-            }
-        }
-
-        private void YtDlpService_OnDownloadComplete(bool success)
-        {
-            // Stop the log timer
-            _logUpdateTimer.Stop();
-
-            // --- NEW: Do one final flush ---
-            // This ensures any remaining messages in the buffer are displayed
-            LogUpdateTimer_Tick(null, EventArgs.Empty);
-            // -------------------------------
-
-            Dispatcher.Invoke(() =>
-            {
-                if (success)
-                {
-                    AppendLogMessage("\n--- Download Complete! ---", Brushes.LimeGreen);
-                    StatusTextBlock.Text = "Download complete!";
-                }
-                else
-                {
-                    AppendLogMessage("\n--- Download Failed or Cancelled. ---", Brushes.OrangeRed);
-                    StatusTextBlock.Text = "Download failed or was cancelled.";
-                }
-                SetUiLock(false);
-            });
-        }
-
-        private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
-        {
-            SetUiLock(true);
-            OutputLogParagraph.Inlines.Clear(); // Clear the log
-            _logUpdateTimer.Start(); // Start the log timer
-
-            string searchTerm = UrlTextBox.Text.Trim();
-            string outputFolder = OutputFolderTextBox.Text;
-
-            if (string.IsNullOrWhiteSpace(searchTerm))
-            {
-                AppendLogMessage("Please enter a search term or URL.", Brushes.Yellow);
-                SetUiLock(false);
-                _logUpdateTimer.Stop();
-                return;
-            }
-
-            try
-            {
-                string url;
-                string baseOutputFolder = outputFolder;
-                bool isSearch = !searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase);
-
-                if (isSearch)
-                {
-                    AppendLogMessage($"--- Starting smart search for: '{searchTerm}' ---", Brushes.Cyan);
-                    StatusTextBlock.Text = "Searching...";
-
-                    (string type, string foundUrl) = await _searchService.FindShowUrlAsync(searchTerm);
-                    url = foundUrl;
-
-                    if (url == "not-found")
-                    {
-                        AppendLogMessage($"Could not find a download page for '{searchTerm}'.", Brushes.OrangeRed);
-                        AppendLogMessage("--- Search failed. ---", Brushes.Red);
-                        SetUiLock(false);
-                        _logUpdateTimer.Stop();
-                        return;
-                    }
-
-                    // Set the category subfolder
-                    string categoryFolder = type switch
-                    {
-                        "Anime" => "Anime TV Shows",
-                        "TV Show" => "TV Shows",
-                        "Movie" => "Movies",
-                        _ => "Playlists & Misc"
-                    };
-                    baseOutputFolder = Path.Combine(outputFolder, categoryFolder);
-                    if (!Directory.Exists(baseOutputFolder))
-                    {
-                        Directory.CreateDirectory(baseOutputFolder);
-                    }
-
-                    AppendLogMessage($"Found URL: {url}", Brushes.Gray);
-                    AppendLogMessage($"Media Type: {type}", Brushes.Gray);
-                    AppendLogMessage($"Output Folder: {baseOutputFolder}", Brushes.Gray);
-
-                    // Auto-update UI
-                    UrlTextBox.Text = url;
-                    OutputFolderTextBox.Text = baseOutputFolder;
-                }
-                else
-                {
-                    url = searchTerm;
-                }
-
-                AppendLogMessage("\n--- Starting download... ---", Brushes.LimeGreen);
-                StatusTextBlock.Text = "Download in progress...";
-
-                // --- CRITICAL FIX: We must 'await' this call! ---
-                // This keeps the try/catch block active and prevents
-                // the UI from thinking the work is "done."
-                await _ytDlpService.DownloadVideoAsync(url, baseOutputFolder);
-            }
-            catch (Exception ex)
-            {
-                AppendLogMessage($"\n--- AN ERROR OCCURRED ---", Brushes.Red);
-                AppendLogMessage(ex.Message, Brushes.Red);
-                StatusTextBlock.Text = "Error!";
-                SetUiLock(false);
-                _logUpdateTimer.Stop();
-            }
-        }
-
-        private void StopDownloadButton_Click(object sender, RoutedEventArgs e)
-        {
-            AppendLogMessage("\n--- Sending stop signal... ---", Brushes.Yellow);
-            _ytDlpService.StopDownload();
-        }
-
         private void UrlTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
@@ -231,19 +164,113 @@ namespace AutoDownloader.UI
             }
         }
 
+        /// <summary>
+        /// Handles the "Browse..." button click.
+        /// </summary>
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
         {
-            // This requires the 'Microsoft.WindowsAPICodePack-Shell' NuGet package
-            using (var dialog = new CommonOpenFileDialog())
+            // This requires the Microsoft.WindowsAPICodePack-Shell NuGet package
+            var dialog = new CommonOpenFileDialog
             {
-                dialog.IsFolderPicker = true;
-                if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
-                {
-                    OutputFolderTextBox.Text = dialog.FileName;
-                }
+                IsFolderPicker = true,
+                InitialDirectory = OutputFolderTextBox.Text
+            };
+
+            if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
+            {
+                // **** THIS IS THE FIX ****
+                // This line was wrong and caused the build error.
+                OutputFolderTextBox.Text = dialog.FileName;
             }
         }
 
+        /// <summary>
+        /// Handles the "Download" button click.
+        /// </summary>
+        private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetUiLock(true);
+            OutputLogTextBox.Document.Blocks.Clear(); // Clear the log
+            StatusTextBlock.Text = "Starting...";
+
+            string searchTerm = UrlTextBox.Text;
+            string outputFolder = OutputFolderTextBox.Text;
+            string finalUrl = searchTerm;
+            string finalOutputFolder = outputFolder;
+
+            if (string.IsNullOrWhiteSpace(searchTerm))
+            {
+                AppendLog("Please enter a URL or search term.", Brushes.Red);
+                SetUiLock(false);
+                return;
+            }
+
+            // --- Smart Search Logic ---
+            if (!searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                AppendLog($"--- Starting smart search for: '{searchTerm}' ---", Brushes.Aqua);
+                StatusTextBlock.Text = "Searching for content...";
+
+                try
+                {
+                    var (type, url) = await _searchService.FindShowUrlAsync(searchTerm);
+
+                    if (url == "not-found")
+                    {
+                        AppendLog($"Could not find a download page for '{searchTerm}'.", Brushes.Red);
+                        AppendLog("--- Search failed. ---", Brushes.Red);
+                        SetUiLock(false);
+                        return;
+                    }
+
+                    // --- Search successful! ---
+                    AppendLog($"Found URL: {url}", Brushes.Aqua);
+                    finalUrl = url;
+
+                    // Set the output folder based on type
+                    string category = type.Contains("Anime") ? "Anime TV Shows" :
+                                      type.Contains("TV Show") ? "TV Shows" :
+                                      type.Contains("Movie") ? "Movies" : "Playlists";
+
+                    finalOutputFolder = Path.Combine(outputFolder, category);
+                    OutputFolderTextBox.Text = finalOutputFolder; // Update UI
+                    Directory.CreateDirectory(finalOutputFolder);
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"--- Smart search failed: {ex.Message} ---", Brushes.Red);
+                    SetUiLock(false);
+                    return;
+                }
+            }
+
+            // --- Download Logic ---
+            StatusTextBlock.Text = "Downloading...";
+            try
+            {
+                // We MUST await this so the try/catch block works correctly
+                await _ytDlpService.DownloadVideoAsync(finalUrl, finalOutputFolder);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
+                SetUiLock(false); // Unlock UI on failure
+            }
+        }
+
+        /// <summary>
+        /// Handles the "Stop" button click.
+        /// </summary>
+        private void StopDownloadButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ytDlpService.StopDownload();
+            // The OnDownloadComplete event will handle unlocking the UI
+            StatusTextBlock.Text = "Stopping download...";
+        }
+
+        /// <summary>
+        /// Helper to lock/unlock the UI during a download.
+        /// </summary>
         private void SetUiLock(bool isLocked)
         {
             UrlTextBox.IsEnabled = !isLocked;
@@ -256,20 +283,13 @@ namespace AutoDownloader.UI
         }
 
         /// <summary>
-        /// Appends a message to the rich text log box.
+        /// A helper to add a single, colored log line (used for important messages)
         /// </summary>
-        private void AppendLogMessage(string message, SolidColorBrush color, bool addNewLine = true)
+        private void AppendLog(string message, SolidColorBrush color)
         {
-            // This must run on the UI thread
-            if (addNewLine)
-            {
-                message += Environment.NewLine;
-            }
-
-            var run = new Run(message) { Foreground = color };
-            OutputLogParagraph.Inlines.Add(run);
-
-            // Auto-scroll to the end
+            var p = new Paragraph(new Run(message));
+            p.Foreground = color;
+            OutputLogTextBox.Document.Blocks.Add(p);
             LogScrollViewer.ScrollToEnd();
         }
     }
