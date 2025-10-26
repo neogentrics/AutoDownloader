@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AutoDownloader.UI"
         mc:Ignorable="d"
-        Title="AutoDownloader v1.3" Height="800" Width="1280"
+        Title="AutoDownloader v1.4" Height="800" Width="1280"
         FontFamily="Segoe UI"
         Background="#FF1E1E1E">
 
@@ -211,7 +211,7 @@
                     <!-- Changed to Disabled to prevent double scrollbar -->
                     <FlowDocument>
                         <Paragraph x:Name="OutputLogParagraph">
-                            <Run Text="Welcome to AutoDownloader v1.3!"/>
+                            <Run Text="Welcome to AutoDownloader v1.4!"/>
                         </Paragraph>
                     </FlowDocument>
                 </RichTextBox>
