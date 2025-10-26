@@ -5,12 +5,33 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AutoDownloader.UI"
         mc:Ignorable="d"
-        Title="AutoDownloader v1.5" Height="800" Width="1280"
+        Title="AutoDownloader v1.6" Height="800" Width="1280"
         FontFamily="Segoe UI"
         Background="#FF1E1E1E">
 
     <!-- This section defines our modern styles -->
     <Window.Resources>
+
+        <Style TargetType="MenuItem">
+            <Setter Property="Background" Value="#FF2D2D2D"/>
+            <Setter Property="Foreground" Value="White"/>
+
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#FF007ACC"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+                <Trigger Property="MenuItem.IsSubmenuOpen" Value="True">
+                    <Setter Property="Background" Value="#FF3A3A3A"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF007ACC"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- Modern, rounded text box -->
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="#FF3A3A3A"/>
@@ -128,6 +149,22 @@
     </Window.Resources>
 
     <DockPanel Margin="10">
+
+        <Menu DockPanel.Dock="Top" Background="#FF2D2D2D" Foreground="White" Padding="5">
+            <MenuItem Header="_File">
+                <MenuItem Header="E_xit" Click="Exit_Click"/>
+            </MenuItem>
+            <MenuItem Header="_Edit">
+                <MenuItem Header="_Preferences..." Click="Preferences_Click"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Log" IsChecked="True" IsCheckable="True" />
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_About" Click="About_Click"/>
+            </MenuItem>
+        </Menu>
+
         <!-- Status Bar at the bottom -->
         <StatusBar DockPanel.Dock="Bottom" Background="#FF007ACC" Foreground="White">
             <TextBlock x:Name="StatusTextBlock" Margin="5,2" Text="Ready."/>
@@ -146,29 +183,48 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Row 0: URL / Search Term -->
-                <Label Grid.Row="0" Grid.Column="0" Content="Search Term or URL:" Foreground="White" Margin="0,0,0,5"/>
-                <TextBox Grid.Row="1" Grid.Column="0" 
-                         x:Name="UrlTextBox" 
-                         FontSize="14" 
-                         Margin="0,0,10,10"
-                         KeyDown="UrlTextBox_KeyDown"/>
+                <Label Grid.Row="0" Grid.Column="0" x:Name="UrlLabel" Content="Search Term or URL:" Foreground="White" Margin="0,0,0,5"/>
 
-                <!-- Download/Stop buttons -->
-                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,10">
-                    <Button x:Name="StartDownloadButton" 
-                            Content="Download" 
-                            Style="{StaticResource GoButtonStyle}"
-                            Click="StartDownloadButton_Click"
-                            Visibility="Visible"/>
-                    <!-- Visible by default -->
+                <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Vertical" Margin="0,0,10,10">
 
-                    <Button x:Name="StopDownloadButton" 
-                            Content="Stop Download" 
-                            Style="{StaticResource StopButtonStyle}"
-                            Click="StopDownloadButton_Click"
-                            Visibility="Collapsed"/>
-                    <!-- Hidden by default -->
+                    <TextBox x:Name="UrlTextBox" 
+                             FontSize="14" 
+                             KeyDown="UrlTextBox_KeyDown"
+                             Height="30"
+                             Visibility="Visible" />
+
+                    <TextBox x:Name="MultiUrlTextBox" 
+                             FontSize="14" 
+                             TextWrapping="Wrap" 
+                             AcceptsReturn="True" 
+                             VerticalScrollBarVisibility="Auto"
+                             MinHeight="100"
+                             Visibility="Collapsed" 
+                             Text="Enter one URL or search term per line." />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Vertical" Margin="0,0,0,10">
+
+                    <Button x:Name="MultiLinkToggle"
+                            Content="Toggle Multi-Link"
+                            Style="{StaticResource BrowseButtonStyle}"
+                            Click="MultiLinkToggle_Click"
+                            Margin="0,0,0,10"
+                            Height="30" />
+
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="StartDownloadButton" 
+                                Content="Download" 
+                                Style="{StaticResource GoButtonStyle}"
+                                Click="StartDownloadButton_Click"
+                                Visibility="Visible" Width="108" Height="30"/>
+
+                        <Button x:Name="StopDownloadButton" 
+                                Content="Stop Download" 
+                                Style="{StaticResource StopButtonStyle}"
+                                Click="StopDownloadButton_Click"
+                                Visibility="Collapsed"/>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- Row 2: Output Folder (NOW VISIBLE) -->
@@ -183,14 +239,14 @@
                     <TextBox Grid.Column="0" 
                              x:Name="OutputFolderTextBox" 
                              FontSize="14" 
-                             Margin="0,0,10,0" 
+                             Margin="0,0,120,0" 
                              IsReadOnly="True" />
 
-                    <Button Grid.Column="1" 
+                    <Button 
                             x:Name="BrowseButton" 
                             Content="Browse..." 
                             Style="{StaticResource BrowseButtonStyle}"
-                            Click="BrowseButton_Click" />
+                            Click="BrowseButton_Click" Margin="1126,0,0,0" />
                 </Grid>
 
             </Grid>
@@ -211,7 +267,7 @@
                     <!-- Changed to Disabled to prevent double scrollbar -->
                     <FlowDocument>
                         <Paragraph x:Name="OutputLogParagraph">
-                            <Run Text="Welcome to AutoDownloader v1.5!"/>
+                            <Run Text="Welcome to AutoDownloader v1.6!"/>
                         </Paragraph>
                     </FlowDocument>
                 </RichTextBox>

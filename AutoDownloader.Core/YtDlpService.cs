@@ -134,6 +134,13 @@ namespace AutoDownloader.Core
                     _process?.WaitForExit();
                     OnOutputReceived?.Invoke($"--- Download finished. Process exited with code {_process?.ExitCode}. ---");
                     OnDownloadComplete?.Invoke(_process?.ExitCode ?? -1);
+
+                    // --- NEW CLEANUP LOGIC FOR BUGFIX v1.6 ---
+                    // Clean up and dispose resources safely after the process exits.
+                    _process?.Dispose();
+                    _process = null;
+                    _cancellationTokenSource?.Dispose();
+                    _cancellationTokenSource = null;
                 };
 
                 // --- 5. Start Process ---
@@ -144,31 +151,28 @@ namespace AutoDownloader.Core
                 // Wait for the process to exit asynchronously, respecting the cancellation token
                 await _process.WaitForExitAsync(_cancellationTokenSource.Token);
 
-                // Check for a *successful* exit (this might be redundant with Exited handler, but safe)
-                if (_process != null && _process.ExitCode == 0)
-                {
-                    // The Exited handler will call OnDownloadComplete
-                }
+                // NOTE: The process exit code and UI unlock is now FULLY handled
+                // by the _process.Exited event handler, which runs on the thread pool
+                // and safely uses the Dispatcher to update the UI.
+
+                // We specifically avoid calling OnDownloadComplete or SetUiLock(false) here
+                // to prevent double-calls and race conditions with the Exited handler.
             }
             catch (OperationCanceledException)
             {
-                // This is thrown when StopDownload() is called
+                // This is thrown when StopDownload() is called gracefully BEFORE Kill()
                 OnOutputReceived?.Invoke("--- Download was stopped by the user. ---");
-                OnDownloadComplete?.Invoke(-1); // Indicate user cancellation
+                // The StopDownload() method takes over the final process kill, 
+                // and the Exited handler will fire after the kill.
             }
             catch (Exception ex)
             {
                 OnOutputReceived?.Invoke($"--- [FATAL] Download task failed: {ex.Message} ---");
                 OnDownloadComplete?.Invoke(-1);
+                // The Exited handler will clean up the process.
             }
-            finally
-            {
-                // Clean up the process
-                _process?.Dispose();
-                _process = null;
-                _cancellationTokenSource?.Dispose();
-                _cancellationTokenSource = null;
-            }
+            // We remove the entire 'finally' block that was causing a race condition and cleanup issues.
+            // Cleanup is now consolidated into the Exited event handler.
         }
 
         /// <summary>

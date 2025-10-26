@@ -10,6 +10,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Linq;
 
 namespace AutoDownloader.UI
 {
@@ -25,10 +26,13 @@ namespace AutoDownloader.UI
         private readonly List<string> _logQueue = new List<string>();
         private readonly object _logLock = new object();
 
+        // NEW: Track the current input mode for v1.6
+        private bool _isMultiLinkMode = false;
+
         public MainWindow()
         {
             InitializeComponent();
-            this.Title = "AutoDownloader v1.4"; // Updated version title
+            this.Title = "AutoDownloader v1.6.1"; // Updated version title for bugfix release!
 
             // --- 1. Initialize Services (This fixes the build errors) ---
             // Create the ToolManager first
@@ -184,32 +188,29 @@ namespace AutoDownloader.UI
             }
         }
 
+        // --- REPLACED CODE FOR ProcessSingleDownloadAsync ---
+
         /// <summary>
-        /// Handles the "Download" button click.
+        /// Contains the core logic to process a single URL or search term.
         /// </summary>
-        private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
+        private async Task ProcessSingleDownloadAsync(string searchTerm)
         {
-            SetUiLock(true);
-            OutputLogTextBox.Document.Blocks.Clear(); // Clear the log
-            StatusTextBlock.Text = "Starting...";
-
-            string searchTerm = UrlTextBox.Text;
-            string outputFolder = OutputFolderTextBox.Text;
-            string finalUrl = searchTerm;
-            string finalOutputFolder = outputFolder;
-
+            // The searchTerm is passed in from the batch loop.
             if (string.IsNullOrWhiteSpace(searchTerm))
             {
-                AppendLog("Please enter a URL or search term.", Brushes.Red);
-                SetUiLock(false);
                 return;
             }
+
+            // Use the folder from the UI, which will be the base path.
+            string baseOutputFolder = OutputFolderTextBox.Text;
+            string finalUrl = searchTerm;
+            string finalOutputFolder = baseOutputFolder;
 
             // --- Smart Search Logic ---
             if (!searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
                 AppendLog($"--- Starting smart search for: '{searchTerm}' ---", Brushes.Aqua);
-                StatusTextBlock.Text = "Searching for content...";
+                StatusTextBlock.Text = $"Searching for: {searchTerm}";
 
                 try
                 {
@@ -219,8 +220,7 @@ namespace AutoDownloader.UI
                     {
                         AppendLog($"Could not find a download page for '{searchTerm}'.", Brushes.Red);
                         AppendLog("--- Search failed. ---", Brushes.Red);
-                        SetUiLock(false);
-                        return;
+                        return; // End this individual item without affecting the batch lock
                     }
 
                     // --- Search successful! ---
@@ -232,20 +232,22 @@ namespace AutoDownloader.UI
                                       type.Contains("TV Show") ? "TV Shows" :
                                       type.Contains("Movie") ? "Movies" : "Playlists";
 
-                    finalOutputFolder = Path.Combine(outputFolder, category);
-                    OutputFolderTextBox.Text = finalOutputFolder; // Update UI
+                    // Set the final folder for the download
+                    finalOutputFolder = Path.Combine(baseOutputFolder, category);
+
+                    // NOTE: We don't update OutputFolderTextBox.Text here, as it might confuse the user 
+                    // if we change the base folder during a batch operation.
                     Directory.CreateDirectory(finalOutputFolder);
                 }
                 catch (Exception ex)
                 {
                     AppendLog($"--- Smart search failed: {ex.Message} ---", Brushes.Red);
-                    SetUiLock(false);
-                    return;
+                    return; // End this individual item without affecting the batch lock
                 }
             }
 
             // --- Download Logic ---
-            StatusTextBlock.Text = "Downloading...";
+            StatusTextBlock.Text = $"Downloading: {finalUrl}";
             try
             {
                 // We MUST await this so the try/catch block works correctly
@@ -254,7 +256,7 @@ namespace AutoDownloader.UI
             catch (Exception ex)
             {
                 AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
-                SetUiLock(false); // Unlock UI on failure
+                // DO NOT UNLOCK UI HERE. The batch loop or the Exited handler does it.
             }
         }
 
@@ -292,6 +294,149 @@ namespace AutoDownloader.UI
             OutputLogTextBox.Document.Blocks.Add(p);
             LogScrollViewer.ScrollToEnd();
         }
+
+        // --- New Methods in MainWindow.xaml.cs ---
+
+        /// <summary>
+        /// Handles the "Exit" menu item click.
+        /// </summary>
+        private void Exit_Click(object sender, RoutedEventArgs e)
+        {
+            Application.Current.Shutdown();
+        }
+
+        /// <summary>
+        /// Handles the "Preferences" menu item click (Placeholder for v1.7).
+        /// </summary>
+        private void Preferences_Click(object sender, RoutedEventArgs e)
+        {
+            // Implementation for settings window will go here in v1.7
+            AppendLog("Preferences window not yet implemented (scheduled for v1.7).", Brushes.Orange);
+        }
+
+        // --- MODIFIED CODE in MainWindow.xaml.cs (About_Click method) ---
+
+        /// <summary>
+        /// Handles the "About" menu item click, showing project information.
+        /// </summary>
+        private void About_Click(object sender, RoutedEventArgs e)
+        {
+            // Extract the version from the window title, which we ensure is always up-to-date.
+            string version = this.Title.Split(' ').LastOrDefault() ?? "Unknown";
+
+            string aboutText = $@"
+            AutoDownloader - Version {version}
+
+            Developed By: Neo Gentrics
+            AI Development Partner: Gemini (Google)
+
+            --- Core Technologies ---
+              - High-Speed Downloads: yt-dlp, aria2c
+              - Smart Search: Google Gemini API
+              - Framework: .NET 9.0 (WPF)
+
+            --- Bugfix Release v1.6.1 ---
+              - Fixed critical app freeze after stopping a download.
+              - Fixed menu bar dropdown visibility in dark theme.
+
+            Thank you for using AutoDownloader!
+            ";
+            MessageBox.Show(aboutText, "About AutoDownloader", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        // --- New Method in MainWindow.xaml.cs ---
+
+        /// <summary>
+        /// Toggles between single-link (TextBox) and multi-link (RichTextBox) mode.
+        /// </summary>
+        private void MultiLinkToggle_Click(object sender, RoutedEventArgs e)
+        {
+            _isMultiLinkMode = !_isMultiLinkMode;
+
+            if (_isMultiLinkMode)
+            {
+                UrlLabel.Content = "URLs or Search Terms (One per line):";
+                UrlTextBox.Visibility = Visibility.Collapsed;
+                MultiUrlTextBox.Visibility = Visibility.Visible;
+                MultiLinkToggle.Content = "Toggle Single-Link";
+                AppendLog("--- Multi-Link Mode Activated. ---", Brushes.Yellow);
+            }
+            else
+            {
+                UrlLabel.Content = "Search Term or URL:";
+                UrlTextBox.Visibility = Visibility.Visible;
+                MultiUrlTextBox.Visibility = Visibility.Collapsed;
+                MultiLinkToggle.Content = "Toggle Multi-Link";
+                AppendLog("--- Single-Link Mode Activated. ---", Brushes.Yellow);
+            }
+        }
+
+        // --- Modified Method in MainWindow.xaml.cs ---
+
+        /// <summary>
+        /// Handles the "Download" button click, supporting single or multiple links.
+        /// </summary>
+        private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
+        {
+            SetUiLock(true);
+            OutputLogTextBox.Document.Blocks.Clear(); // Clear the log
+            StatusTextBlock.Text = "Starting...";
+
+            // 1. Get the list of search terms/URLs
+            List<string> searchTerms;
+            if (_isMultiLinkMode)
+            {
+                // Split the multi-line text box by new lines, filter out empty lines
+                searchTerms = MultiUrlTextBox.Text
+                    .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim())
+                    .ToList();
+            }
+            else
+            {
+                // Single link mode
+                searchTerms = new List<string> { UrlTextBox.Text.Trim() };
+            }
+
+            if (searchTerms.Count == 0 || (searchTerms.Count == 1 && string.IsNullOrWhiteSpace(searchTerms[0])))
+            {
+                AppendLog("Please enter at least one URL or search term.", Brushes.Red);
+                SetUiLock(false);
+                return;
+            }
+
+            // 2. Process each item sequentially
+            AppendLog($"--- Starting Batch Download ({searchTerms.Count} items) ---", Brushes.Aqua);
+
+            foreach (var term in searchTerms)
+            {
+                if (string.IsNullOrWhiteSpace(term)) continue;
+
+                AppendLog($"\n--- Processing Item: {term} ---", Brushes.Aqua);
+                await ProcessSingleDownloadAsync(term);
+
+                // Crucial: check for user cancellation after each download
+                if (StopDownloadButton.Visibility == Visibility.Collapsed)
+                {
+                    // The UI was unlocked, meaning the download either failed or completed
+                }
+                else
+                {
+                    // If the UI is still locked (Stop button is visible), 
+                    // the user must have hit the Stop button during the last download.
+                    AppendLog("--- Batch operation cancelled by user. ---", Brushes.Red);
+                    SetUiLock(false);
+                    return;
+                }
+            }
+
+            AppendLog("\n--- Batch Download Finished. ---", Brushes.Aqua);
+            StatusTextBlock.Text = "Batch complete.";
+            SetUiLock(false);
+        }
+
+        
+        
     }
 }
 
