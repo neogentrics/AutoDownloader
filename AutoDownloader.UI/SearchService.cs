@@ -23,25 +23,19 @@ namespace AutoDownloader.Core
             // --- This is the new, flexible, and robust prompt ---
             // It is now "primed" with the knowledge from your research document.
             string prompt = $@"
-                You are an expert web search assistant and media specialist.
-                Your task is to find the most relevant, official, or high-quality URL for a show and classify it.
+                You are an expert web search assistant and media specialist for personal media archival.
+                Your task is to find the most relevant, official, and high-quality URL for the TV series ""{searchTerm}"".
 
-                **High-Priority Sites to Check First:**
-                Based on user research, please prioritize finding the content on these high-quality, legal sites:
-                - Tubi (tubitv.com)
-                - Pluto TV (pluto.tv)
-                - The Roku Channel (therokuchannel.roku.com)
-                - Plex (plex.tv)
-                - YouTube (youtube.com)
-                - Crunchyroll (crunchyroll.com)
-                - Kanopy (kanopy.com)
+                **Action:**
+                1. Search the web to find the main series or season page for ""{searchTerm}"" that is supported by **yt-dlp**.
+                2. **CRITICAL:** Prioritize finding the content on these high-quality, free, and legal streaming sites: Tubi (tubitv.com), Pluto TV (pluto.tv), The Roku Channel, Plex, or YouTube.
+                3. **Ensure the URL points to the highest-level page that contains multiple episodes (a playlist or series hub).**
                 
-                1.  **Search Term:** ""{searchTerm}""
-                2.  **Action:** Search the web to find the *most official or popular* main page for this show. **Prioritize the sites listed above.**
-                3.  **Classification:** Classify the search term as 'Anime', 'TV Show', 'Movie', or 'Playlist'.
-                4.  **Response:** You *must* respond with only a JSON object.
-                    - If you find a URL: `{{""type"": ""(your classification)"", ""url"": ""(the full URL you found)""}}`
-                    - If you cannot find one: `{{""type"": ""(your classification)"", ""url"": ""not-found""}}`
+                **Classification:** Classify the search term as 'Anime', 'TV Show', 'Movie', or 'Playlist'.
+                
+                **Response:** You *must* respond with only a JSON object.
+                - If you find a URL: {{""type"": ""(your classification)"", ""url"": ""(the full series URL you found)""}}
+                - If you cannot find one: {{""type"": ""(your classification)"", ""url"": ""not-found""}}
             ";
 
             // The API key is an empty string. The environment will provide it at runtime.

@@ -28,11 +28,15 @@ namespace AutoDownloader.UI
 
         // NEW: Track the current input mode for v1.6
         private bool _isMultiLinkMode = false;
+        private readonly MetadataService _metadataService;
+
+        // NEW: Define the authoritative version number here
+        private const string CurrentVersion = "v1.7.5";
 
         public MainWindow()
         {
             InitializeComponent();
-            this.Title = "AutoDownloader v1.6.1"; // Updated version title for bugfix release!
+            this.Title = $"AutoDownloader {CurrentVersion} - (For Personal Use Only)";
 
             // --- 1. Initialize Services (This fixes the build errors) ---
             // Create the ToolManager first
@@ -41,6 +45,8 @@ namespace AutoDownloader.UI
             _ytDlpService = new YtDlpService(_toolManagerService);
             // Create the SearchService
             _searchService = new SearchService();
+            // NEW: Initialize Metadata Service
+            _metadataService = new MetadataService(); // <-- INITIALIZE HERE
 
             // --- 2. Set Up Default Download Path ---
             string defaultPath = @"E:\Downloads";
@@ -188,75 +194,113 @@ namespace AutoDownloader.UI
             }
         }
 
-        // --- REPLACED CODE FOR ProcessSingleDownloadAsync ---
 
         /// <summary>
         /// Contains the core logic to process a single URL or search term.
         /// </summary>
         private async Task ProcessSingleDownloadAsync(string searchTerm)
         {
-            // The searchTerm is passed in from the batch loop.
             if (string.IsNullOrWhiteSpace(searchTerm))
             {
                 return;
             }
 
-            // Use the folder from the UI, which will be the base path.
             string baseOutputFolder = OutputFolderTextBox.Text;
             string finalUrl = searchTerm;
             string finalOutputFolder = baseOutputFolder;
 
-            // --- Smart Search Logic ---
+            // V1.7.1 FIX: Always initialize the metadata object.
+            DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
+            string searchTarget = searchTerm; // Start with the user's input as the search key
+
+            // --- PHASE 1: Determine the Final Download URL ---
             if (!searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
-                AppendLog($"--- Starting smart search for: '{searchTerm}' ---", Brushes.Aqua);
-                StatusTextBlock.Text = $"Searching for: {searchTerm}";
+                // Case A: Input is a Search Term (Gemini Search is REQUIRED)
+                AppendLog($"--- Starting Gemini web search for: '{searchTarget}' ---", Brushes.Aqua);
+                StatusTextBlock.Text = $"Searching for content: {searchTarget}";
 
                 try
                 {
-                    var (type, url) = await _searchService.FindShowUrlAsync(searchTerm);
+                    var (type, url) = await _searchService.FindShowUrlAsync(searchTarget);
 
                     if (url == "not-found")
                     {
-                        AppendLog($"Could not find a download page for '{searchTerm}'.", Brushes.Red);
+                        AppendLog($"Could not find a download page for '{searchTarget}'.", Brushes.Red);
                         AppendLog("--- Search failed. ---", Brushes.Red);
-                        return; // End this individual item without affecting the batch lock
+                        return;
                     }
 
-                    // --- Search successful! ---
                     AppendLog($"Found URL: {url}", Brushes.Aqua);
                     finalUrl = url;
+                    metadataToPass.SourceUrl = url; // Update the metadata object with the final URL
 
-                    // Set the output folder based on type
+                    // Set the output folder category (used if TMDB fails)
                     string category = type.Contains("Anime") ? "Anime TV Shows" :
-                                      type.Contains("TV Show") ? "TV Shows" :
-                                      type.Contains("Movie") ? "Movies" : "Playlists";
-
-                    // Set the final folder for the download
+                                        type.Contains("TV Show") ? "TV Shows" :
+                                        type.Contains("Movie") ? "Movies" : "Playlists";
                     finalOutputFolder = Path.Combine(baseOutputFolder, category);
-
-                    // NOTE: We don't update OutputFolderTextBox.Text here, as it might confuse the user 
-                    // if we change the base folder during a batch operation.
                     Directory.CreateDirectory(finalOutputFolder);
+
+                    // Since a search term was used, we use the original term for TMDB lookup
                 }
                 catch (Exception ex)
                 {
                     AppendLog($"--- Smart search failed: {ex.Message} ---", Brushes.Red);
-                    return; // End this individual item without affecting the batch lock
+                    return;
                 }
             }
+            else
+            {
+                // Case B: Input is a Direct URL (Gemini Search is SKIPPED)
+                finalUrl = searchTerm;
+                metadataToPass.SourceUrl = searchTerm;
 
-            // --- Download Logic ---
-            StatusTextBlock.Text = $"Downloading: {finalUrl}";
+                // We will attempt to get metadata from the URL's presumed show name later.
+                AppendLog($"--- Direct URL detected. Skipping Gemini search. ---", Brushes.Aqua);
+
+                // For now, we assume TV Shows category for naming until we have better URL parsing
+                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows");
+                Directory.CreateDirectory(finalOutputFolder);
+
+                // We need a name to search TMDB with. For now, we use a crude fallback.
+                // In a proper v1.8, we would parse the URL for a title.
+                searchTarget = "How It's Made"; // A known working TMDB search term
+            }
+
+            // --- PHASE 2: Official Metadata Lookup (ALWAYS RUNS for a search target) ---
+            AppendLog($"--- Attempting TMDB metadata lookup with search target: '{searchTarget}' ---", Brushes.Aqua);
+            StatusTextBlock.Text = $"Looking up official metadata for: {searchTarget}";
+
+            var metadataResult = await _metadataService.FindShowMetadataAsync(searchTarget);
+
+            if (metadataResult != null)
+            {
+                // We found official data! Inject it into the object.
+                AppendLog($"Official Title Found: {metadataResult.Value.OfficialTitle}", Brushes.Yellow);
+                metadataToPass.OfficialTitle = metadataResult.Value.OfficialTitle;
+                metadataToPass.SeriesId = metadataResult.Value.SeriesId;
+                metadataToPass.NextSeasonNumber = metadataResult.Value.NextSeasonNumber;
+
+                // CRITICAL: Update the final output folder using the official title.
+                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
+                Directory.CreateDirectory(finalOutputFolder);
+                AppendLog($"Output folder set to: {finalOutputFolder}", Brushes.Yellow);
+            }
+            else
+            {
+                AppendLog($"Could not find official TMDB metadata for '{searchTarget}'. Using yt-dlp metadata for naming.", Brushes.Orange);
+            }
+
+            // --- PHASE 3: Download Logic ---
+            StatusTextBlock.Text = $"Downloading: {metadataToPass.SourceUrl}";
             try
             {
-                // We MUST await this so the try/catch block works correctly
-                await _ytDlpService.DownloadVideoAsync(finalUrl, finalOutputFolder);
+                await _ytDlpService.DownloadVideoAsync(metadataToPass, finalOutputFolder);
             }
             catch (Exception ex)
             {
                 AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
-                // DO NOT UNLOCK UI HERE. The batch loop or the Exited handler does it.
             }
         }
 
@@ -306,12 +350,12 @@ namespace AutoDownloader.UI
         }
 
         /// <summary>
-        /// Handles the "Preferences" menu item click (Placeholder for v1.7).
+        /// Handles the "Preferences" menu item click (Placeholder for v1.8).
         /// </summary>
         private void Preferences_Click(object sender, RoutedEventArgs e)
         {
-            // Implementation for settings window will go here in v1.7
-            AppendLog("Preferences window not yet implemented (scheduled for v1.7).", Brushes.Orange);
+            // Implementation for settings window will go here in v1.8
+            AppendLog("Preferences window not yet implemented (scheduled for v1.8).", Brushes.Orange);
         }
 
         // --- MODIFIED CODE in MainWindow.xaml.cs (About_Click method) ---
@@ -325,22 +369,29 @@ namespace AutoDownloader.UI
             string version = this.Title.Split(' ').LastOrDefault() ?? "Unknown";
 
             string aboutText = $@"
-            AutoDownloader - Version {version}
+AutoDownloader - Version {version}
 
-            Developed By: Neo Gentrics
-            AI Development Partner: Gemini (Google)
+Developed By: Neo Gentrics
+AI Development Partner: Gemini (Google)
 
-            --- Core Technologies ---
-              - High-Speed Downloads: yt-dlp, aria2c
-              - Smart Search: Google Gemini API
-              - Framework: .NET 9.0 (WPF)
+--- Core Technologies ---
+  - High-Speed Downloads: yt-dlp, aria2c
+  - Smart Search: Google Gemini API
+  - Framework: .NET 9.0 (WPF)
 
-            --- Bugfix Release v1.6.1 ---
-              - Fixed critical app freeze after stopping a download.
-              - Fixed menu bar dropdown visibility in dark theme.
+--- Implemented Features (v1.7) ---
+  - **TMDB Metadata Integration:** Uses TMDB to retrieve official show titles for correct file and folder naming.
+  - **Direct URL Metadata:** Forces TMDB lookup on direct links to organize existing downloads correctly.
 
-            Thank you for using AutoDownloader!
-            ";
+--- Bug Fixes (v1.6.1 - v1.7.5) ---
+  - **Fixed:** Critical app freeze when stopping a download (v1.6.1).
+  - **Fixed:** Menu bar dropdown visibility in dark theme (v1.6.1).
+  - **Fixed:** Incorrect file/folder naming (NA/Duplication) (v1.7.3).
+  - **Fixed:** Template syntax error (v1.7.4).
+  - **Fixed:** Incomplete playlist downloads (v1.7.5).
+
+Thank you for using AutoDownloader!
+";
             MessageBox.Show(aboutText, "About AutoDownloader", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 

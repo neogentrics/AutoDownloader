@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AutoDownloader.UI"
         mc:Ignorable="d"
-        Title="AutoDownloader v1.6" Height="800" Width="1280"
+        Title="AutoDownloader - (For Personal Use Only)" Height="800" Width="1280"
         FontFamily="Segoe UI"
         Background="#FF1E1E1E">
 
@@ -263,11 +263,33 @@
                              FontSize="12"
                              BorderThickness="0"
                              IsReadOnly="True"
-                             VerticalScrollBarVisibility="Disabled">
+                             VerticalScrollBarVisibility="Auto">
                     <!-- Changed to Disabled to prevent double scrollbar -->
                     <FlowDocument>
-                        <Paragraph x:Name="OutputLogParagraph">
-                            <Run Text="Welcome to AutoDownloader v1.6!"/>
+                        <Paragraph FontWeight="Bold" Foreground="White" TextAlignment="Center" Margin="0,5,0,0">
+                            <Run Text="Welcome to AutoDownloader v1.7.5!"/>
+                        </Paragraph>
+                        <Paragraph Foreground="LightGray" TextAlignment="Center" Margin="0,0,0,10">
+                            <Run Text="Your high-speed media archival and organization tool."/>
+                        </Paragraph>
+
+                        <Paragraph Margin="0,15,0,5" FontWeight="Bold" Foreground="#FF007ACC">
+                            <Run Text="▶ Getting Started:"/>
+                        </Paragraph>
+                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                            <Run Text="1. Paste a direct URL (e.g., Tubi) or enter a search term (e.g., 'The Mandalorian')."/>
+                        </Paragraph>
+                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                            <Run Text="2. Click the 'Browse...' button to select your base download folder (e.g., E:\Downloads)."/>
+                        </Paragraph>
+                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                            <Run Text="3. Click 'Download'. The program automatically uses TMDB to find the official title and organizes the files into: /TV Shows/Official Title/Season 01/..."/>
+                        </Paragraph>
+                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                            <Run Text="4. Use the 'Toggle Multi-Link' button for batch downloads (one link/term per line)."/>
+                        </Paragraph>
+                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                            <Run Text="5. Check the 'Help' menu's 'About' section for full feature lists and bug fixes."/>
                         </Paragraph>
                     </FlowDocument>
                 </RichTextBox>

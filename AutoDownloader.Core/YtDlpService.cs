@@ -38,7 +38,7 @@ namespace AutoDownloader.Core
         /// <summary>
         /// Asynchronously downloads a video from a given URL.
         /// </summary>
-        public async Task DownloadVideoAsync(string url, string outputFolder)
+        public async Task DownloadVideoAsync(DownloadMetadata metadata, string outputFolder)
         {
             // Reset the cancellation token for this new download
             _cancellationTokenSource = new CancellationTokenSource();
@@ -54,45 +54,52 @@ namespace AutoDownloader.Core
                 OnOutputReceived?.Invoke("Tools are ready.");
 
                 // --- 2. Build Arguments ---
-                // Use a more robust fallback system for naming
-                // Use a more robust fallback system for naming
-                string seriesFallback = "%(series, show, playlist_title, title, 'NA')s"; // ADDED 'title' as a final fallback
-                string seasonFallback = "%(season_number, season, '1')s"; // Default to Season 1 if no season
-                string episodeFallback = "%(episode_number, episode, '01')s"; // Default to 01 if no episode (changed '0' to '01' for better sorting)
 
-                // The new output template is more resilient
+                // --- CODE in YtDlpService.cs (Inside DownloadVideoAsync, replace the argument building block) ---
+
+                // V1.7 FIX: Use Official Title from metadata if available!
+                string titleForFolder = metadata.OfficialTitle ?? "%(series, show, playlist_title, title, 'NA')s";
+
+                // V1.7.3 FIX: Use pure YT-DLP template variables for padding.
+                // %02d in the tag name forces two-digit padding.
+                string seasonYtDlp = "%(season_number|season|1)02d";
+                string episodeYtDlp = "%(episode_number|episode|01)02d";
+
+                // We use '|' for fallback inside the tag for better compatibility.
+
+                // File Name: We will only use %(title)s, which usually contains the episode name.
                 string outputTemplate = System.IO.Path.Combine(outputFolder,
-                    $"{seriesFallback}",
-                    $"Season {seasonFallback}",
-                    $"{seriesFallback} - s{seasonFallback:02}e{episodeFallback:02} - %(title)s.%(ext)s");
+                    // Season Folder: Use the correct two-digit padding tag.
+                    $"Season {seasonYtDlp}",
+                    // File Name: Uses the official title and the correct two-digit tags, 
+                    // then uses %(title)s, which we hope contains just the episode title.
+                    $"{titleForFolder} - s{seasonYtDlp}e{episodeYtDlp} - %(episode)s.%(ext)s"); // <--- Changed to %(episode)s
 
                 var arguments = new StringBuilder();
-                arguments.Append($"--windows-filenames "); // Sanitize filenames
-                arguments.Append($"--embed-metadata "); // <--- NEW: Forces yt-dlp to find and embed show/episode metadata
 
-                arguments.Append($"--all-subs "); // Get all subtitles
-                arguments.Append($"--sub-langs all "); // <--- NEW: Explicitly ask for all languages
-                arguments.Append($"--sub-format srt "); // Prefer .srt format
+                // 1. Core arguments
+                arguments.Append($"--windows-filenames ");
+                arguments.Append($"--embed-metadata ");
+                arguments.Append($"--ignore-errors ");
+                // arguments.Append($"--no-paged-list "); // <--- V1.7.5 FIX: Use correct argument to force all items!
 
-                // The key to fixing subtitle naming is adding a specific argument to the template.
-                arguments.Append($"-o \"{outputTemplate}\" "); // Set our output path/name template
+                // 2. Subtitle arguments
+                arguments.Append($"--all-subs ");
+                arguments.Append($"--sub-langs all ");
+                arguments.Append($"--sub-format srt ");
 
-                // Fix for incomplete downloads: tell yt-dlp to handle common errors gracefully
-                arguments.Append($"--ignore-errors "); // <--- NEW: Skip a failing video and continue
-
-                // --- High-Speed Download with aria2c ---
+                // 3. Downloader and Browser arguments
                 arguments.Append($"--downloader aria2c ");
                 arguments.Append($"--downloader-args \"aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M\" ");
-
-                // --- Disguise our request as a real browser ---
                 arguments.Append($"--user-agent \"{ToolManagerService.FIREFOX_USER_AGENT}\" ");
-
-                // --- Pass Cookies (if needed) ---
-                // **THE FIX:** Specify only ONE browser, not a list.
                 arguments.Append($"--cookies-from-browser firefox ");
 
-                // --- The URL to download ---
-                arguments.Append($"\"{url}\""); // Finally, the URL to download
+                // 4. Output Template (MUST be placed before the URL)
+                arguments.Append($"-o \"{outputTemplate}\" ");
+
+                // 5. URL (MUST be the final argument)
+                arguments.Append($"\"{metadata.SourceUrl}\"");
+
 
                 // --- 3. Configure Process ---
                 _process = new Process
