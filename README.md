@@ -68,3 +68,4 @@ The next major release, **v1.8**, will focus on verifying and managing content i
 ---
 
 You are all set to commit your changes and push the **v1.7.5** release! Let me know when you are ready to start planning the code for **v1.8**!
+
