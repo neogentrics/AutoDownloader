@@ -1,0 +1,47 @@
+name: Deploy Static GitHub Pages
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+# Grant GITHUB_TOKEN the necessary permissions
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  # Single job to deploy the site
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # CRITICAL STEP 1: Configure GitHub Pages deployment environment
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        with:
+          # This tells GitHub to look for the site files in the root of the repository
+          static_site_generator: custom 
+
+      # CRITICAL STEP 2: Configure Custom Domain (C-NAME)
+      # Create the CNAME file in the root before deployment
+      - name: Create CNAME file
+        run: echo "githubprojects.neogentrics.com" > CNAME
+
+      # CRITICAL STEP 3: Upload the artifact (the files to deploy)
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # The entire repository root will be packaged and uploaded
+          path: ./ 
+
+      # CRITICAL STEP 4: Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
