@@ -26,41 +26,42 @@ namespace AutoDownloader.UI
         private readonly List<string> _logQueue = new List<string>();
         private readonly object _logLock = new object();
 
-        // NEW: Track the current input mode for v1.6
+        // NEW: Track the current input mode
         private bool _isMultiLinkMode = false;
         private readonly MetadataService _metadataService;
 
+        // V1.8 NEW: Settings Service
+        private readonly SettingsService _settingsService;
+
         // NEW: Define the authoritative version number here
-        private const string CurrentVersion = "v1.7.5.3";
+        private const string CurrentVersion = "v1.8.0"; 
 
         public MainWindow()
         {
             InitializeComponent();
             this.Title = $"AutoDownloader {CurrentVersion} - (For Personal Use Only)";
+            this.PreviewKeyDown += MainWindow_PreviewKeyDown;
 
-            // --- 1. Initialize Services (This fixes the build errors) ---
-            // Create the ToolManager first
+            // --- 1. Initialize Services in Dependency Order ---
+
+            // A. Settings must load first to get API keys
+            _settingsService = new SettingsService();
+
+            // B. ToolManager is self-contained
             _toolManagerService = new ToolManagerService();
-            // "Inject" it into the YtDlpService
+
+            // C. YtDlpService depends on ToolManager
             _ytDlpService = new YtDlpService(_toolManagerService);
-            // Create the SearchService
-            _searchService = new SearchService();
-            // NEW: Initialize Metadata Service
-            _metadataService = new MetadataService(); // <-- INITIALIZE HERE
+
+            // D. MetadataService and SearchService depend on Settings for keys
+            // This is where your errors were! They MUST be initialized with the key.
+            _metadataService = new MetadataService(_settingsService.Settings.TmdbApiKey);
+            _searchService = new SearchService(_settingsService.Settings.GeminiApiKey);
 
             // --- 2. Set Up Default Download Path ---
-            string defaultPath = @"E:\Downloads";
-            if (!Directory.Exists(defaultPath))
-            {
-                // Fallback to "Videos\Downloads"
-                defaultPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
-                    "Downloads"
-                );
-            }
-            // Ensure the directory exists
-            Directory.CreateDirectory(defaultPath);
-            OutputFolderTextBox.Text = defaultPath;
+            // Use the path loaded from settings for the text box
+            OutputFolderTextBox.Text = _settingsService.Settings.DefaultOutputFolder;
+            Directory.CreateDirectory(_settingsService.Settings.DefaultOutputFolder);
 
 
             // --- 3. Set Up Event Handlers (This fixes the delegate errors) ---
@@ -98,11 +99,14 @@ namespace AutoDownloader.UI
                 }
             };
 
-            // --- 4. Set Up Log Batching Timer (This fixes the UI freeze) ---
+            // --- 4. Set Up Log Batching Timer ---
             _logUpdateTimer = new DispatcherTimer();
             _logUpdateTimer.Interval = TimeSpan.FromMilliseconds(100); // Update 10x per second
             _logUpdateTimer.Tick += LogUpdateTimer_Tick;
             _logUpdateTimer.Start();
+
+            // V1.8 Launch Validation
+            ValidateApiKeysOnLaunch();
         }
 
         /// <summary>
@@ -222,6 +226,8 @@ namespace AutoDownloader.UI
 
                 try
                 {
+                    // Call SearchService.FindShowUrlAsync
+                    // (Assuming you have updated the SearchService constructor to accept the API key)
                     var (type, url) = await _searchService.FindShowUrlAsync(searchTarget);
 
                     if (url == "not-found")
@@ -233,16 +239,14 @@ namespace AutoDownloader.UI
 
                     AppendLog($"Found URL: {url}", Brushes.Aqua);
                     finalUrl = url;
-                    metadataToPass.SourceUrl = url; // Update the metadata object with the final URL
+                    metadataToPass.SourceUrl = url;
 
-                    // Set the output folder category (used if TMDB fails)
+                    // Set the output folder category 
                     string category = type.Contains("Anime") ? "Anime TV Shows" :
                                         type.Contains("TV Show") ? "TV Shows" :
                                         type.Contains("Movie") ? "Movies" : "Playlists";
                     finalOutputFolder = Path.Combine(baseOutputFolder, category);
                     Directory.CreateDirectory(finalOutputFolder);
-
-                    // Since a search term was used, we use the original term for TMDB lookup
                 }
                 catch (Exception ex)
                 {
@@ -256,16 +260,13 @@ namespace AutoDownloader.UI
                 finalUrl = searchTerm;
                 metadataToPass.SourceUrl = searchTerm;
 
-                // We will attempt to get metadata from the URL's presumed show name later.
                 AppendLog($"--- Direct URL detected. Skipping Gemini search. ---", Brushes.Aqua);
 
-                // For now, we assume TV Shows category for naming until we have better URL parsing
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows");
                 Directory.CreateDirectory(finalOutputFolder);
 
                 // We need a name to search TMDB with. For now, we use a crude fallback.
-                // In a proper v1.8, we would parse the URL for a title.
-                searchTarget = "How It's Made"; // A known working TMDB search term
+                searchTarget = "How It's Made";
             }
 
             // --- PHASE 2: Official Metadata Lookup (ALWAYS RUNS for a search target) ---
@@ -276,11 +277,16 @@ namespace AutoDownloader.UI
 
             if (metadataResult != null)
             {
-                // We found official data! Inject it into the object.
-                AppendLog($"Official Title Found: {metadataResult.Value.OfficialTitle}", Brushes.Yellow);
-                metadataToPass.OfficialTitle = metadataResult.Value.OfficialTitle;
-                metadataToPass.SeriesId = metadataResult.Value.SeriesId;
-                metadataToPass.NextSeasonNumber = metadataResult.Value.NextSeasonNumber;
+                var (officialTitle, seriesId, targetSeasonNumber, expectedCount) = metadataResult.Value;
+
+                // V1.8 Log: Show expected episode count
+                AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
+                AppendLog($"TMDB Season {targetSeasonNumber} Expected Episode Count: {expectedCount}", Brushes.Yellow);
+
+                metadataToPass.OfficialTitle = officialTitle;
+                metadataToPass.SeriesId = seriesId;
+                metadataToPass.NextSeasonNumber = targetSeasonNumber;
+                metadataToPass.ExpectedEpisodeCount = expectedCount;
 
                 // CRITICAL: Update the final output folder using the official title.
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
@@ -292,7 +298,26 @@ namespace AutoDownloader.UI
                 AppendLog($"Could not find official TMDB metadata for '{searchTarget}'. Using yt-dlp metadata for naming.", Brushes.Orange);
             }
 
-            // --- PHASE 3: Download Logic ---
+            // --- PHASE 3: Download and Verification Logic (V1.8 Content Verification) ---
+
+            // CRITICAL V1.8 STEP 1: Define the specific Season Folder
+            string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
+
+            // CRITICAL V1.8 STEP 2: Count existing files BEFORE download
+            int filesBefore = 0;
+            if (Directory.Exists(finalSeasonFolder))
+            {
+                // Count all video files (*.mp4, *.mkv, *.avi)
+                filesBefore = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
+                    .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ||
+                                   file.EndsWith(".avi", StringComparison.OrdinalIgnoreCase));
+            }
+
+            AppendLog($"Files in Season Folder before download: {filesBefore}", Brushes.Cyan);
+
+
+            // CRITICAL V1.8 STEP 3: Execute Download
             StatusTextBlock.Text = $"Downloading: {metadataToPass.SourceUrl}";
             try
             {
@@ -301,6 +326,45 @@ namespace AutoDownloader.UI
             catch (Exception ex)
             {
                 AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
+                // Continue to verification to log status, but the process failed.
+            }
+
+            // CRITICAL V1.8 STEP 4: Count files AFTER download
+            int filesAfter = 0;
+            int filesDownloaded = 0;
+
+            if (Directory.Exists(finalSeasonFolder))
+            {
+                filesAfter = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
+                    .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ||
+                                   file.EndsWith(".avi", StringComparison.OrdinalIgnoreCase));
+
+                // Calculate files added during this operation
+                filesDownloaded = filesAfter - filesBefore;
+            }
+
+            // CRITICAL V1.8 STEP 5: Compare Actual vs. Expected
+            if (metadataToPass.ExpectedEpisodeCount > 0)
+            {
+                int missingCount = metadataToPass.ExpectedEpisodeCount - filesAfter;
+
+                if (missingCount == 0)
+                {
+                    AppendLog("CONTENT VERIFICATION: SUCCESS! All expected episodes are present.", Brushes.Green);
+                }
+                else if (missingCount > 0)
+                {
+                    AppendLog($"CONTENT VERIFICATION: WARNING! {missingCount} episode(s) are MISSING from the Season folder (Found {filesAfter} of {metadataToPass.ExpectedEpisodeCount} expected).", Brushes.OrangeRed);
+                }
+                else
+                {
+                    AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session.", Brushes.Cyan);
+                }
+            }
+            else
+            {
+                AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session. (No TMDB count available)", Brushes.Cyan);
             }
         }
 
@@ -350,23 +414,30 @@ namespace AutoDownloader.UI
         }
 
         /// <summary>
-        /// Handles the "Preferences" menu item click (Placeholder for v1.8).
+        /// Handles the "Preferences" menu item click, opening the settings window.
         /// </summary>
         private void Preferences_Click(object sender, RoutedEventArgs e)
         {
-            // Implementation for settings window will go here in v1.8
-            AppendLog("Preferences window not yet implemented (scheduled for v1.8).", Brushes.Orange);
-        }
+            // Create a new instance of the PreferencesWindow, passing the SettingsService instance
+            PreferencesWindow settingsWindow = new PreferencesWindow(_settingsService);
 
-        // --- MODIFIED CODE in MainWindow.xaml.cs (About_Click method) ---
+            // Show the window modally (blocks input to the main window until closed)
+            settingsWindow.ShowDialog();
+
+            // When the preferences window closes, reload the default path just in case it was changed
+            OutputFolderTextBox.Text = _settingsService.Settings.DefaultOutputFolder;
+
+            // Log that the action was performed
+            AppendLog("Preferences window opened. Settings may require app restart to take full effect.", Brushes.Yellow);
+        }
 
         /// <summary>
         /// Handles the "About" menu item click, showing project information.
         /// </summary>
         private void About_Click(object sender, RoutedEventArgs e)
         {
-            // Extract the version from the window title, which we ensure is always up-to-date.
-            string version = this.Title.Split(' ').LastOrDefault() ?? "Unknown";
+            // Use the authoritative constant instead of parsing the window title.
+            string version = CurrentVersion;
 
             string aboutText = $@"
 AutoDownloader - Version {version}
@@ -377,25 +448,24 @@ AI Development Partner: Gemini (Google)
 --- Core Technologies ---
   - High-Speed Downloads: yt-dlp, aria2c
   - Smart Search: Google Gemini API
+  - Metadata: TMDB API
   - Framework: .NET 9.0 (WPF)
 
---- Implemented Features (v1.7) ---
-  - **TMDB Metadata Integration:** Uses TMDB to retrieve official show titles for correct file and folder naming.
-  - **Direct URL Metadata:** Forces TMDB lookup on direct links to organize existing downloads correctly.
+--- Implemented Features (v1.8) ---
+  - **Content Verification Structure:** Added structure to retrieve official TMDB episode counts.
+  - **Settings System Backend:** Implemented data model and service to securely load/save API keys and user preferences (v1.8.0).
+  - **API Key Validation:** Added launch time pop-up warning for required missing API keys.
+  - **Multi-Link Batch Processing:** Enabled sequential downloading of multiple items (v1.6).
 
 --- Bug Fixes (v1.6.1 - v1.7.5) ---
-  - **Fixed:** Critical app freeze when stopping a download (v1.6.1).
-  - **Fixed:** Menu bar dropdown visibility in dark theme (v1.6.1).
+  - **Fixed:** Critical app freezing when stopping a download (v1.6.1).
   - **Fixed:** Incorrect file/folder naming (NA/Duplication) (v1.7.3).
-  - **Fixed:** Template syntax error (v1.7.4).
-  - **Fixed:** Incomplete playlist downloads (v1.7.5).
+  - **Fixed:** Template syntax error and UI visibility issues (v1.7.4).
 
 Thank you for using AutoDownloader!
 ";
             MessageBox.Show(aboutText, "About AutoDownloader", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-
-        // --- New Method in MainWindow.xaml.cs ---
 
         /// <summary>
         /// Toggles between single-link (TextBox) and multi-link (RichTextBox) mode.
@@ -422,9 +492,7 @@ Thank you for using AutoDownloader!
             }
         }
 
-        // --- Modified Method in MainWindow.xaml.cs ---
-
-        /// <summary>
+         /// <summary>
         /// Handles the "Download" button click, supporting single or multiple links.
         /// </summary>
         private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
@@ -486,8 +554,56 @@ Thank you for using AutoDownloader!
             SetUiLock(false);
         }
 
-        
-        
+        /// <summary>
+        /// Checks for critical missing API keys on launch and notifies the user.
+        /// </summary>
+        private void ValidateApiKeysOnLaunch()
+        {
+            bool tmdbKeyMissing = !this._metadataService.IsKeyValid;
+            bool geminiKeyMissing = string.IsNullOrWhiteSpace(_settingsService.Settings.GeminiApiKey) ||
+                                    _settingsService.Settings.GeminiApiKey == "YOUR_GEMINI_API_KEY_HERE";
+
+            string message = "";
+
+            if (tmdbKeyMissing)
+            {
+                message += "CRITICAL: The TMDB API Key is missing or invalid. Metadata lookup (official show names, episode counts) will fail.\n\n";
+                message += "Please get a key and enter it in the 'Edit -> Preferences...' menu (v1.8 feature).\n";
+            }
+
+            if (geminiKeyMissing)
+            {
+                if (!string.IsNullOrEmpty(message)) message += "\n---\n\n";
+                message += "WARNING: The Gemini API Key is missing. Smart Search functionality will be disabled. You must use direct URLs.\n\n";
+                message += "Find your key and enter it in the 'Edit -> Preferences...' menu (v1.8 feature).\n";
+            }
+
+            if (!string.IsNullOrEmpty(message))
+            {
+                MessageBox.Show(
+                    message,
+                    "API Key Validation Warning",
+                    MessageBoxButton.OK,
+                    tmdbKeyMissing ? MessageBoxImage.Error : MessageBoxImage.Warning // Critical error if TMDB is missing
+                );
+            }
+        }
+
+        /// <summary>
+        /// Handles the Ctrl+P keyboard shortcut to open the Preferences window.
+        /// </summary>
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.P && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                // Prevent the key from being processed further
+                e.Handled = true;
+
+                // Call the existing menu click handler
+                Preferences_Click(sender, e);
+            }
+        }
+
     }
 }
 

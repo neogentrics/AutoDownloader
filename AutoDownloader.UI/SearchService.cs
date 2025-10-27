@@ -13,6 +13,15 @@ namespace AutoDownloader.Core
     {
         private static readonly HttpClient _httpClient = new HttpClient();
 
+        // V1.8 NEW: Field to hold the API key passed from SettingsService
+        private readonly string _geminiApiKey;
+
+        // V1.8 NEW: Constructor now accepts the Gemini API key (Fixes CS0161 dependency)
+        public SearchService(string geminiApiKey)
+        {
+            _geminiApiKey = geminiApiKey;
+        }
+
         /// <summary>
         /// Attempts to find a valid yt-dlp URL and media type from a search term.
         /// </summary>
@@ -20,8 +29,14 @@ namespace AutoDownloader.Core
         /// <returns>A tuple containing the (Type, Url). Url will be "not-found" on failure.</returns>
         public async Task<(string Type, string Url)> FindShowUrlAsync(string searchTerm)
         {
-            // --- This is the new, flexible, and robust prompt ---
-            // It is now "primed" with the knowledge from your research document.
+            // V1.8 FIX: If the key is missing, return a default value immediately.
+            // This ensures all code paths return a value (Fixes CS0161).
+            if (string.IsNullOrWhiteSpace(_geminiApiKey) || _geminiApiKey == "YOUR_GEMINI_API_KEY_HERE")
+            {
+                return ("TV Show", "not-found");
+            }
+
+            // --- The rest of the prompt and search logic starts here ---
             string prompt = $@"
                 You are an expert web search assistant and media specialist for personal media archival.
                 Your task is to find the most relevant, official, and high-quality URL for the TV series ""{searchTerm}"".
@@ -38,9 +53,8 @@ namespace AutoDownloader.Core
                 - If you cannot find one: {{""type"": ""(your classification)"", ""url"": ""not-found""}}
             ";
 
-            // The API key is an empty string. The environment will provide it at runtime.
-            const string apiKey = "";
-            string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={apiKey}";
+            // V1.8 FIX: Use the key from the class field
+            string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={_geminiApiKey}";
 
             var payload = new
             {
@@ -53,9 +67,6 @@ namespace AutoDownloader.Core
                 {
                     new { google_search = new {} }
                 }
-                // --- We have REMOVED the rigid 'generationConfig' block ---
-                // This makes the request far more flexible and less likely to
-                // fail, as our parsing logic (below) handles a text response.
             };
 
             try
@@ -130,4 +141,3 @@ namespace AutoDownloader.Core
         }
     }
 }
-

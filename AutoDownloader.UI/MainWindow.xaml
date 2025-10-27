@@ -9,7 +9,14 @@
         FontFamily="Segoe UI"
         Background="#FF1E1E1E">
 
-    <!-- This section defines our modern styles -->
+    <Window.InputBindings>
+        
+        
+        
+    </Window.InputBindings>
+
+
+        <!-- This section defines our modern styles -->
     <Window.Resources>
 
         <Style TargetType="MenuItem">
@@ -155,7 +162,9 @@
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>
             <MenuItem Header="_Edit">
-                <MenuItem Header="_Preferences..." Click="Preferences_Click"/>
+                <MenuItem Header="_Preferences..." 
+                          Click="Preferences_Click"
+                          InputGestureText="Ctrl+P"/>
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Log" IsChecked="True" IsCheckable="True" />
@@ -267,29 +276,36 @@
                     <!-- Changed to Disabled to prevent double scrollbar -->
                     <FlowDocument>
                         <Paragraph FontWeight="Bold" Foreground="White" TextAlignment="Center" Margin="0,5,0,0">
-                            <Run Text="Welcome to AutoDownloader v1.7.5.3!"/>
+                            <Run Text="Welcome to AutoDownloader v1.8.0!"/>
                         </Paragraph>
                         <Paragraph Foreground="LightGray" TextAlignment="Center" Margin="0,0,0,10">
                             <Run Text="Your high-speed media archival and organization tool."/>
                         </Paragraph>
 
                         <Paragraph Margin="0,15,0,5" FontWeight="Bold" Foreground="#FF007ACC">
-                            <Run Text="▶ Getting Started:"/>
+                            <Run Text="▶ CRITICAL SETUP:"/>
+                        </Paragraph>
+                        <Paragraph Foreground="Red" FontWeight="Bold" Margin="10,0,0,5">
+                            <Run Text="1. GO TO Edit -> Preferences... TO ENTER YOUR TMDB AND GEMINI API KEYS."/>
+                        </Paragraph>
+                        <Paragraph Foreground="White" Margin="10,0,0,10">
+                            <Run Text="   The TMDB Key is REQUIRED for the official naming and Content Verification (v1.8)."/>
+                        </Paragraph>
+
+                        <Paragraph Margin="0,15,0,5" FontWeight="Bold" Foreground="#FF007ACC">
+                            <Run Text="▶ Usage:"/>
                         </Paragraph>
                         <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="1. Paste a direct URL (e.g., Tubi) or enter a search term (e.g., 'The Mandalorian')."/>
+                            <Run Text="2. Click the 'Browse...' button to select your base download folder."/>
                         </Paragraph>
                         <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="2. Click the 'Browse...' button to select your base download folder (e.g., E:\Downloads)."/>
+                            <Run Text="3. Paste a URL or enter a search term (e.g., 'The Mandalorian')."/>
                         </Paragraph>
                         <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="3. Click 'Download'. The program automatically uses TMDB to find the official title and organizes the files into: /TV Shows/Official Title/Season 01/..."/>
+                            <Run Text="4. Click 'Download'. The program uses TMDB to name and structure files: /TV Shows/Official Title/Season 01/..."/>
                         </Paragraph>
                         <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="4. Use the 'Toggle Multi-Link' button for batch downloads (one link/term per line)."/>
-                        </Paragraph>
-                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="5. Check the 'Help' menu's 'About' section for full feature lists and bug fixes."/>
+                            <Run Text="5. Use the 'Toggle Multi-Link' button for batch downloads."/>
                         </Paragraph>
                     </FlowDocument>
                 </RichTextBox>

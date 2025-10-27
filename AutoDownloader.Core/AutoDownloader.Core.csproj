@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="TMDbLib" Version="2.3.0" />
+    <PackageReference Include="TvDbSharper" Version="4.0.10" />
   </ItemGroup>
 
 </Project>
