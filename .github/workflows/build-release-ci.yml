@@ -5,7 +5,7 @@ on:
     # Trigger a run on any push to 'master' (for simple testing/artifacts)
     branches: [ "master" ]
     
-  # CRITICAL: Trigger the full release process ONLY when a tag (e.g., v1.8.1, v1.9-beta.1) is pushed.
+  # CRITICAL: Trigger the full release process ONLY when a tag (e.g., v1.8.0) is pushed.
   create:
     tags:
       - 'v*'
@@ -46,80 +46,43 @@ jobs:
     - name: Setup MSBuild.exe
       uses: microsoft/setup-msbuild@v2
 
-    # --- CODE in build-release-ci.yml (REPLACE Analyze Tag for Release Type step) ---
-
-    # CRITICAL FIX 1: Analyze Tag, Set Pre-release Status and Dynamic Name
-    - name: Analyze Tag for Release Type
-      id: tag_analysis
-      shell: pwsh
-      run: |
-        $tagName = "${{ github.ref_name }}"
-        $isPreRelease = $tagName -match "-alpha|-beta"
-        
-        # 1. Determine the release name based on stability
-        if ($isPreRelease) {
-          $releaseName = "Pre-Release $tagName (Alpha/Beta)"
-        } else {
-          $releaseName = "Release $tagName - Stable"
-        }
-
-        # 2. Extract Bug Fixes list from README (Simplified dynamic body)
-        # Note: This is a static template, not actual README scraping, but the structure is fine for now.
-        $releaseBody = @"
-        
-        **AutoDownloader Release Notes for $tagName**
-        This release finalizes the v1.8 feature set and resolves a critical bug in URL parsing.
-        **IMPORTANT:** Please use the **Installer ZIP** for full functionality, as the EXE relies on accompanying files.
-        **Features (v1.8.0 - v1.8.1):**
-        - **Content Verification Structure:** Added structure to retrieve official TMDB episode counts.
-        - **Settings System:** Fully implemented Preferences UI and backend service (Ctrl+P hotkey).
-        
-        **Critical Bugfix (v1.8.1):**
-        - **Fixed:** Resolved the bug where direct URLs incorrectly used a hardcoded search term for metadata lookup.
-        "@
-        
-        # 3. Set outputs for use in the final release step (CORRECT SYNTAX)
-        "IS_PRERELEASE=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        "RELEASE_NAME=$releaseName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        "RELEASE_BODY=$releaseBody" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
-# ----------------------------------------------------------------------------------
-
-    # 3. RESTORE AND BUILD SOLUTION
+    # 1. RESTORE AND BUILD SOLUTION
     - name: Restore and Build Solution
       run: msbuild $env:Solution_Name /t:Restore /p:Configuration=Release /p:RestorePackagesConfig=true
 
-    # 4. PUBLISH the executable (creating the self-contained files)
+    # CRITICAL STEP 2: PUBLISH the executable (creating the self-contained files)
     - name: Publish AutoDownloader.UI
       run: |
         dotnet publish ${{ env.Publish_Project_Path }} -c Release -r win-x64 --self-contained true -o ${{ github.workspace }}/publish_output
 
-    # 5. ZIP the entire published directory for the installer package
+    # 3. ZIP the entire published directory for the installer package
     - name: Zip Published Output for Release
-      # Uses github.ref_name as the tag name is now guaranteed to exist here
+      # The tag name (e.g., v1.7.5.4) is retrieved using github.ref_name
       run: |
         Compress-Archive -Path ${{ github.workspace }}/publish_output/* -DestinationPath ${{ github.workspace }}/AutoDownloader_${{ github.ref_name }}.zip
 
-    # 6. UPLOAD ARTIFACT (for testing/debugging builds only)
+    # 4. UPLOAD ARTIFACT (for testing/debugging builds only - not the final release asset)
     - name: Upload Build Artifact (Debug)
       uses: actions/upload-artifact@v4
       with:
         name: AutoDownloader-${{ github.sha }}
         path: ${{ github.workspace }}/publish_output
     
-    # 7. CRITICAL: Create Release and Upload Assets (Triggered by the TAG)
+   # 5. CRITICAL: Create Release and Upload Assets (Triggered by the TAG)
     - name: Create GitHub Release and Upload Assets
-      if: startsWith(github.ref, 'refs/tags/') # Run only if triggered by a tag
+      # This IF condition ensures the release step only runs if the workflow was triggered by pushing a tag.
+      if: startsWith(github.ref, 'refs/tags/') 
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        # Use outputs for dynamic naming and pre-release status
-        tag_name: ${{ steps.tag_analysis.outputs.TAG_NAME }}
-        name: ${{ steps.tag_analysis.outputs.RELEASE_NAME }}
-        body: ${{ steps.tag_analysis.outputs.RELEASE_BODY }}
-        prerelease: ${{ steps.tag_analysis.outputs.IS_PRERELEASE }} # CRITICAL: Sets the pre-release flag
+        # Use the tag name for the release name and tag_name
+        tag_name: ${{ github.ref }}
+        name: Release ${{ github.ref_name }} - Stable
+        
+        # FINAL STABLE FIX: Single-line body with explicit \n for guaranteed parsing
+        body: "Release ${{ github.ref_name }} - Stable\n\n**FEATURES (v1.8.0):**\n- Content Verification Structure\n- Settings System (Preferences UI/Backend)\n\n**CRITICAL BUGFIX (v1.8.1):**\n- Fixed: URL parsing bug (no more 'How It's Made').\n\n**IMPORTANT:** Use the **Installer ZIP** for full functionality."
+        prerelease: false
         
         # Uploads BOTH the ZIP package and the standalone EXE
         files: |
