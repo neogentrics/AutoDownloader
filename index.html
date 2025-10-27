@@ -8,12 +8,12 @@
     <style>
         /* CSS inspired by the WPF Dark Theme: #1E1E1E, #2D2D2D, #007ACC */
         :root {
-            --bg-primary: #121212; /* Deeper black background */
+            --bg-primary: #121212;
             --bg-secondary: #1E1E1E; 
-            --color-accent: #007ACC; /* Blue accent */
+            --color-accent: #007ACC;
             --color-text: #E0E0E0;
             --color-link: #5aa9e6;
-            --color-warning: #FFC107; /* Yellow */
+            --color-warning: #FFC107; 
         }
         body {
             font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
@@ -126,7 +126,7 @@
     <div class="header">
         <h1>AutoDownloader <span>Development Hub</span></h1>
         <p>A WPF application for professional media archival and organization.</p>
-        <p>Current Version: v1.8.0</p>
+        <p>Current Version: v1.8.1</p>
     </div>
 
     <div class="container">
@@ -135,39 +135,37 @@
             <h2>Project Actions & Status</h2>
             <div class="link-group">
                 <a href="https://github.com/neogentrics/AutoDownloader" target="_blank">View Source Code</a>
-                
                 <a href="https://github.com/neogentrics/AutoDownloader/issues" target="_blank">View Public Issue Tracker</a> 
-                
-                <a href="https://github.com/neogentrics/AutoDownloader/releases/latest" target="_blank">Download Latest v1.8.0 Installer</a> 
-            </div>
+                <a href="https://github.com/neogentrics/AutoDownloader/releases/latest" target="_blank">Download Latest v1.8.1 Installer</a> </div>
         </div>
 
-<div class="section">
-            <h2>Current Release Focus: v1.8.0</h2>
-            <p><strong>Primary Goal:</strong> Content Integrity & User Configuration.</p>
+        <div class="section">
+            <h2>Next Focus: v2.0 User Experience Overhaul</h2>
+            <p>The next major version will focus entirely on improving stability and user feedback.</p>
             <ul>
-                <li><strong>Content Verification (NEW):</strong> Structure complete to check downloaded episode count against TMDB's official list. <a href="https://github.com/neogentrics/AutoDownloader/issues" target="_blank">(Track on Issues)</a></li>
-                <li><strong>Settings System (NEW):</strong> Fully implemented Preferences UI and backend service for API key and path management.</li>
-                <li><strong>API Key Validation:</strong> Added pop-up warnings on launch if the required TMDB key is missing.</li>
-                <li><strong>UI Enhancement:</strong> Added Ctrl+P hotkey support for quick Preferences access.</li>
+                <li><strong>UI Overhaul:</strong> Implement dynamic download progress bars (Percentage, Speed, ETA) in the main window.</li>
+                <li><strong>Developer Log:</strong> Convert the verbose raw output into an optional, toggleable developer log window.</li>
+                <li><strong>TVDB Integration:</strong> Implement TVDB as a secondary metadata source for improved coverage (Anime/Plex).</li>
+                <li class="bug-fix"><strong>20-Item Fix:</strong> Resolve the persistent playlist download limit bug.</li>
             </ul>
         </div>
         
         <div class="section">
-            <h2>🚨 Known Issues (Deferred to v1.9)</h2>
+            <h2>v1.8.1 Release Summary (Critical Bugfix)</h2>
+            <p><strong>Fix:</strong> The primary bug where direct URLs defaulted to 'How It's Made' for metadata lookup has been resolved by implementing URL path parsing.</p>
             <ul>
-                <li class="known-issue"><strong>Playlist Item Limit:</strong> Downloads from some series pages (e.g., Tubi) are incorrectly limited to 20 episodes.</li>
+                <li class="bug-fix">**Critical Fix:** Direct URL parsing now dynamically extracts the correct show title (e.g., 'Love Thy Neighbor') for TMDB lookup and naming.</li>
+                <li class="bug-fix">**Stability Fix:** Finalized compilation by resolving stubborn nullable type conflicts (`int?`) in `MetadataService.cs`.</li>
             </ul>
         </div>
-
+        
         <div class="section">
-            <h2>Stability & Maintenance Summary (v1.6 - v1.7.5)</h2>
-            <p>All critical stability issues have been resolved.</p>
+            <h2>v1.8.0 Feature Implementation</h2>
+            <p>The first step toward Content Verification and User Configuration.</p>
             <ul>
-                <li class="bug-fix">Resolved critical **app freezing** when stopping a download.</li>
-                <li class="bug-fix">Eliminated the **"NA" folder** naming bug and template errors using TMDB metadata.</li>
-                <li class="bug-fix">Fixed invalid syntax errors in `yt-dlp` output template.</li>
-                <li class="bug-fix">Added **Multi-Link Batch Processing** functionality.</li>
+                <li>**Content Verification:** Added structure to count downloaded files and check against official TMDB episode counts.</li>
+                <li>**Settings System:** Implemented Preferences UI (Ctrl+P) and backend service for API key management.</li>
+                <li>**Validation:** Added launch-time pop-up warnings for missing required API keys.</li>
             </ul>
         </div>
 

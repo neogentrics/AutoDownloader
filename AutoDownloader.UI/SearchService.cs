@@ -13,10 +13,10 @@ namespace AutoDownloader.Core
     {
         private static readonly HttpClient _httpClient = new HttpClient();
 
-        // V1.8 NEW: Field to hold the API key passed from SettingsService
+        // V1.8 FIX: Field to hold the API key passed from SettingsService
         private readonly string _geminiApiKey;
 
-        // V1.8 NEW: Constructor now accepts the Gemini API key (Fixes CS0161 dependency)
+        // V1.8 FIX: Constructor now accepts the Gemini API key (Fixes compilation error in MainWindow.xaml.cs)
         public SearchService(string geminiApiKey)
         {
             _geminiApiKey = geminiApiKey;
@@ -30,7 +30,7 @@ namespace AutoDownloader.Core
         public async Task<(string Type, string Url)> FindShowUrlAsync(string searchTerm)
         {
             // V1.8 FIX: If the key is missing, return a default value immediately.
-            // This ensures all code paths return a value (Fixes CS0161).
+            // This prevents a crash when the user hasn't set the optional key.
             if (string.IsNullOrWhiteSpace(_geminiApiKey) || _geminiApiKey == "YOUR_GEMINI_API_KEY_HERE")
             {
                 return ("TV Show", "not-found");
@@ -38,22 +38,22 @@ namespace AutoDownloader.Core
 
             // --- The rest of the prompt and search logic starts here ---
             string prompt = $@"
-                You are an expert web search assistant and media specialist for personal media archival.
-                Your task is to find the most relevant, official, and high-quality URL for the TV series ""{searchTerm}"".
+                You are an expert web search assistant and media specialist.
+                Your task is to find the most relevant, official, or high-quality URL for the TV series ""{searchTerm}"".
 
                 **Action:**
-                1. Search the web to find the main series or season page for ""{searchTerm}"" that is supported by **yt-dlp**.
-                2. **CRITICAL:** Prioritize finding the content on these high-quality, free, and legal streaming sites: Tubi (tubitv.com), Pluto TV (pluto.tv), The Roku Channel, Plex, or YouTube.
-                3. **Ensure the URL points to the highest-level page that contains multiple episodes (a playlist or series hub).**
+                1. Search the web to find the main series or season page for ""{searchTerm}"" that is supported by yt-dlp.
+                2. Prioritize finding content on these sites: Tubi (tubitv.com), Pluto TV (pluto.tv), The Roku Channel, Plex, or YouTube.
+                3. Ensure the URL points to the highest-level page (playlist or series hub).
                 
                 **Classification:** Classify the search term as 'Anime', 'TV Show', 'Movie', or 'Playlist'.
                 
                 **Response:** You *must* respond with only a JSON object.
-                - If you find a URL: {{""type"": ""(your classification)"", ""url"": ""(the full series URL you found)""}}
+                - If you find a URL: {{""type"": ""(your classification)"", ""url"": ""(the full URL you found)""}}
                 - If you cannot find one: {{""type"": ""(your classification)"", ""url"": ""not-found""}}
             ";
 
-            // V1.8 FIX: Use the key from the class field
+            // V1.8 FIX: Use the key from the class field (fixes the empty key bug)
             string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={_geminiApiKey}";
 
             var payload = new

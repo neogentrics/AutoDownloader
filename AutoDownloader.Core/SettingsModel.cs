@@ -19,6 +19,9 @@ namespace AutoDownloader.Core
         public string TmdbApiKey { get; set; } = "YOUR_TMDB_API_KEY_HERE";
         public string GeminiApiKey { get; set; } = "YOUR_GEMINI_API_KEY_HERE";
 
+        // V1.9 NEW: TVDB Fallback Key
+        public string TvdbApiKey { get; set; } = "YOUR_TVDB_API_KEY_HERE";
+
         // Advanced Controls
         public int MaxConcurrentDownloads { get; set; } = 3; // For future aria2c multi-download feature
     }
