@@ -1,96 +1,88 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# This workflow will build, test, sign and package a WPF or Windows Forms desktop application
-# built on .NET Core.
-
-
 name: .NET Core Desktop Build and Publish
-
 
 on:
   push:
-    # Trigger on any push to 'master' (for testing builds)
+    # Trigger a run on any push to 'master' (for simple testing/artifacts)
     branches: [ "master" ]
     
-  # CRITICAL FIX: Trigger the workflow only when a new tag is pushed.
-  # Tags look like 'v1.7.5.4'
+  # CRITICAL: Trigger the full release process ONLY when a tag (e.g., v1.8.0) is pushed.
   create:
     tags:
       - 'v*'
+      
   workflow_dispatch:
     # Allows manual running from the Actions tab on GitHub
 
 jobs:
 
   build:
-    # ADD THIS PERMISSIONS BLOCK
+    # Grants write permission to the GITHUB_TOKEN for uploading release assets.
     permissions:
-      contents: write # This grants permission to upload the asset to the release
+      contents: write 
 
     # We will only run on Release configuration for the publish step
     runs-on: windows-latest 
 
     env:
       # --- START CUSTOM CONFIGURATION ---
-      Solution_Name: AutoDownloader.sln                           # Your solution file name.
-      # We target .NET 9.0 (windows-latest has this or a compatible SDK)
+      Solution_Name: AutoDownloader.sln
       DotNet_Version: 9.0.x
-      # We don't have a dedicated test project yet:
-      Test_Project_Path: '' 
-      # We are NOT using WAP (Windows App Packaging) for this build:
-      Wap_Project_Path: ''
-      Wap_Project_Directory: ''
+      Publish_Project_Path: AutoDownloader.UI/AutoDownloader.UI.csproj # Path to the .csproj to publish
+      # --- END CUSTOM CONFIGURATION ---
       
     steps:
-    - name: Checkout
+    - name: Checkout Repository
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
     # Install the .NET Core workload
-    - name: Install .NET Core
+    - name: Install .NET Core SDK
       uses: actions/setup-dotnet@v4
       with:
-        # Use the variable defined above
         dotnet-version: ${{ env.DotNet_Version }}
 
     # Add MSBuild to the PATH
     - name: Setup MSBuild.exe
       uses: microsoft/setup-msbuild@v2
 
-    # CRITICAL STEP 1: RESTORE AND BUILD
+    # 1. RESTORE AND BUILD SOLUTION
     - name: Restore and Build Solution
       run: msbuild $env:Solution_Name /t:Restore /p:Configuration=Release /p:RestorePackagesConfig=true
 
-# CRITICAL STEP 2: PUBLISH the executable (creating the self-contained files)
-    # We target the specific UI project for the final executable.
+    # 2. PUBLISH the executable (creating the self-contained files)
     - name: Publish AutoDownloader.UI
-      run: dotnet publish AutoDownloader.UI/AutoDownloader.UI.csproj -c Release -r win-x64 --self-contained true -o ${{ github.workspace }}/publish_output
-
-    # CRITICAL STEP 3: ZIP the published executable for a clean release package
-    - name: Zip Published Output
       run: |
-        Compress-Archive -Path ${{ github.workspace }}/publish_output/* -DestinationPath ${{ github.workspace }}/AutoDownloader_${{ github.event.release.tag_name }}.zip
+        dotnet publish ${{ env.Publish_Project_Path }} \
+          -c Release \
+          -r win-x64 \
+          --self-contained true \
+          -o ${{ github.workspace }}/publish_output
 
-    # CRITICAL STEP 4: UPLOAD ARTIFACT (for testing/debugging builds)
-    - name: Upload Build Artifact (for debugging)
+    # 3. ZIP the entire published directory for the installer package
+    - name: Zip Published Output for Release
+      # The tag name (e.g., v1.7.5.4) is retrieved using github.ref_name
+      run: |
+        Compress-Archive -Path ${{ github.workspace }}/publish_output/* -DestinationPath ${{ github.workspace }}/AutoDownloader_${{ github.ref_name }}.zip
+
+    # 4. UPLOAD ARTIFACT (for testing/debugging builds only - not the final release asset)
+    - name: Upload Build Artifact (Debug)
       uses: actions/upload-artifact@v4
       with:
         name: AutoDownloader-${{ github.sha }}
         path: ${{ github.workspace }}/publish_output
     
-    # CRITICAL STEP 5: Create and Publish the Release with Asset(s)
-    - name: Create and Upload Release Asset
-      if: startsWith(github.ref, 'refs/tags/')
+    # 5. CRITICAL: Create Release and Upload Assets (Triggered by the TAG)
+    - name: Create GitHub Release and Upload Assets
+      # This IF condition ensures the release step only runs if the workflow was triggered by pushing a tag.
+      if: startsWith(github.ref, 'refs/tags/') 
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: Release ${{ github.ref_name }}
+        # Use the tag name for the release name and tag_name
         tag_name: ${{ github.ref }}
+        name: Release ${{ github.ref_name }}
         body: |
           **AutoDownloader Release Notes for ${{ github.ref_name }}**
           
@@ -102,20 +94,7 @@ jobs:
           - Metadata Naming Standardization (v1.7)
           - Stability and UI Fixes (v1.6.1 - v1.7.5)
           
-        # CRITICAL FIX: Find the main EXE and include it alongside the ZIP
+        # Uploads BOTH the ZIP package and the standalone EXE
         files: |
           ${{ github.workspace }}/AutoDownloader_${{ github.ref_name }}.zip
           ${{ github.workspace }}/publish_output/AutoDownloader.UI.exe
-
-          
-    # CRITICAL STEP 6: PUBLISH THE DRAFT RELEASE
-    - name: Publish the Release
-      if: github.event_name == 'release'
-      uses: softprops/action-gh-release@v1
-      with:
-        draft: false
-        prerelease: false
-        tag_name: ${{ github.event.release.tag_name }}
-        # Note: Set the owner/repo path if needed, but the default context usually works.
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
