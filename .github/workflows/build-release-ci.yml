@@ -21,6 +21,9 @@ on:
 jobs:
 
   build:
+    # ADD THIS PERMISSIONS BLOCK
+    permissions:
+      contents: write # This grants permission to upload the asset to the release
 
     # We will only run on Release configuration for the publish step
     runs-on: windows-latest 
