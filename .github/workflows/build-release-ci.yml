@@ -15,12 +15,15 @@ on:
   workflow_dispatch:
     # Allows manual running from the Actions tab on GitHub
   release:
-    # CRITICAL: Trigger the release when a new tag (e.g., v1.7.5) is published
-    types: [published]
+    # Change trigger from 'published' to 'created'
+    types: [created]
 
 jobs:
 
   build:
+    # ADD THIS PERMISSIONS BLOCK
+    permissions:
+      contents: write # This grants permission to upload the asset to the release
 
     # We will only run on Release configuration for the publish step
     runs-on: windows-latest 
@@ -86,3 +89,15 @@ jobs:
         asset_path: ${{ github.workspace }}/AutoDownloader_${{ github.event.release.tag_name }}.zip
         asset_name: AutoDownloader_Installer_${{ github.event.release.tag_name }}.zip
         asset_content_type: application/zip
+
+        # CRITICAL STEP 6: PUBLISH THE DRAFT RELEASE
+    - name: Publish the Release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        draft: false
+        prerelease: false
+        tag_name: ${{ github.event.release.tag_name }}
+        # Note: Set the owner/repo path if needed, but the default context usually works.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
