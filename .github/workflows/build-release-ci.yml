@@ -5,7 +5,7 @@ on:
     # Trigger a run on any push to 'master' (for simple testing/artifacts)
     branches: [ "master" ]
     
-  # CRITICAL: Trigger the full release process ONLY when a tag (e.g., v1.8.0) is pushed.
+  # CRITICAL: Trigger the full release process ONLY when a tag (e.g., v1.8.1) is pushed.
   create:
     tags:
       - 'v*'
@@ -36,53 +36,69 @@ jobs:
       with:
         fetch-depth: 0
 
-    # Install the .NET Core workload
     - name: Install .NET Core SDK
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DotNet_Version }}
 
-    # Add MSBuild to the PATH
     - name: Setup MSBuild.exe
       uses: microsoft/setup-msbuild@v2
 
-    # 1. RESTORE AND BUILD SOLUTION
+    # 1. ANALYZE TAG, SET DYNAMIC VARIABLES (NEW ROBUST STEP)
+    - name: Analyze Tag for Release Type
+      id: tag_analysis
+      shell: pwsh
+      run: |
+        $tagName = "${{ github.ref_name }}"
+        # Check if tag contains '-alpha' or '-beta' (case-insensitive)
+        $isPreRelease = $tagName -match "-alpha|-beta"
+        
+        # Determine the release name based on stability
+        if ($isPreRelease) {
+          $releaseName = "Pre-Release $tagName (Alpha/Beta)"
+        } else {
+          $releaseName = "Release $tagName - Stable"
+        }
+        
+        # Set outputs for use in the final release step (FINAL STABLE SYNTAX)
+        "IS_PRERELEASE=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "RELEASE_NAME=$releaseName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+    # 2. RESTORE AND BUILD SOLUTION
     - name: Restore and Build Solution
       run: msbuild $env:Solution_Name /t:Restore /p:Configuration=Release /p:RestorePackagesConfig=true
 
-    # CRITICAL STEP 2: PUBLISH the executable (creating the self-contained files)
+    # 3. PUBLISH the executable (creating the self-contained files)
     - name: Publish AutoDownloader.UI
       run: |
         dotnet publish ${{ env.Publish_Project_Path }} -c Release -r win-x64 --self-contained true -o ${{ github.workspace }}/publish_output
 
-    # 3. ZIP the entire published directory for the installer package
+    # 4. ZIP the entire published directory for the installer package
     - name: Zip Published Output for Release
-      # The tag name (e.g., v1.7.5.4) is retrieved using github.ref_name
       run: |
         Compress-Archive -Path ${{ github.workspace }}/publish_output/* -DestinationPath ${{ github.workspace }}/AutoDownloader_${{ github.ref_name }}.zip
 
-    # 4. UPLOAD ARTIFACT (for testing/debugging builds only - not the final release asset)
+    # 5. UPLOAD ARTIFACT (for testing/debugging builds only)
     - name: Upload Build Artifact (Debug)
       uses: actions/upload-artifact@v4
       with:
         name: AutoDownloader-${{ github.sha }}
         path: ${{ github.workspace }}/publish_output
     
-   # 5. CRITICAL: Create Release and Upload Assets (Triggered by the TAG)
+    # 6. CRITICAL: Create Release and Upload Assets
     - name: Create GitHub Release and Upload Assets
-      # This IF condition ensures the release step only runs if the workflow was triggered by pushing a tag.
-      if: startsWith(github.ref, 'refs/tags/') 
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        # Use the tag name for the release name and tag_name
-        tag_name: ${{ github.ref }}
-        name: Release ${{ github.ref_name }} - Stable
-        
-        # FINAL STABLE FIX: Single-line body with explicit \n for guaranteed parsing
-        body: "Release ${{ github.ref_name }} - Stable\n\n**FEATURES (v1.8.0):**\n- Content Verification Structure\n- Settings System (Preferences UI/Backend)\n\n**CRITICAL BUGFIX (v1.8.1):**\n- Fixed: URL parsing bug (no more 'How It's Made').\n\n**IMPORTANT:** Use the **Installer ZIP** for full functionality."
-        prerelease: false
+        # Uses dynamically set variables from the 'tag_analysis' step
+        tag_name: ${{ steps.tag_analysis.outputs.TAG_NAME }}
+        name: ${{ steps.tag_analysis.outputs.RELEASE_NAME }}
+        # Use the single-line body we finalized
+        body: "Release ${{ github.ref_name }} - Stable.\n\n**IMPORTANT:** Please use the **Installer ZIP** for full functionality.\n\n**Next Focus:** Version 2.0 UI Overhaul."
+        prerelease: ${{ steps.tag_analysis.outputs.IS_PRERELEASE }} # CRITICAL: Sets the pre-release flag
         
         # Uploads BOTH the ZIP package and the standalone EXE
         files: |
