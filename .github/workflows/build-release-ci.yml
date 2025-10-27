@@ -66,7 +66,7 @@ jobs:
         # 2. Extract Bug Fixes list from README (Simplified dynamic body)
         # Note: This is a static template, not actual README scraping, but the structure is fine for now.
         $releaseBody = @"
-**AutoDownloader Release Notes for $tagName**
+        **AutoDownloader Release Notes for $tagName**
 
 This release finalizes the v1.8 feature set and resolves a critical bug in URL parsing.
 
