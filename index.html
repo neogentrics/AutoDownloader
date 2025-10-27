@@ -3,30 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AutoDownloader Project Page</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background-color: #1e1e1e; color: #f0f0f0; }
-        .container { max-width: 800px; margin: auto; padding: 20px; border: 1px solid #007ACC; border-radius: 8px; background-color: #2d2d2d; }
-        h1 { color: #007ACC; }
-        p { line-height: 1.6; }
-        a { color: #5aa9e6; text-decoration: none; }
-        a:hover { text-decoration: underline; }
+    <title>AutoDownloader - Project Development Hub</title>
+    <link rel="icon" type="image/png" href="https://github.com/neogentrics/AutoDownloader/raw/master/Assets/icon.png"> <style>
+        /* CSS inspired by the WPF Dark Theme: #1E1E1E, #2D2D2D, #007ACC */
+        :root {
+            --bg-primary: #1E1E1E;
+            --bg-secondary: #2D2D2D;
+            --color-accent: #007ACC;
+            --color-text: #E0E0E0;
+            --color-link: #5aa9e6;
+            --color-border: #444;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--color-text);
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+        .header {
+            background-color: var(--bg-secondary);
+            padding: 20px 40px;
+            border-bottom: 2px solid var(--color-accent);
+            text-align: center;
+        }
+        .header h1 {
+            color: var(--color-text);
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header h1 span {
+            color: var(--color-accent);
+        }
+        .header p {
+            margin: 5px 0 0;
+            color: #ccc;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        .section {
+            background-color: var(--bg-secondary);
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        .section h2 {
+            border-bottom: 2px solid var(--color-accent);
+            padding-bottom: 10px;
+            margin-top: 0;
+            color: var(--color-text);
+            font-size: 1.8em;
+        }
+        .section h3 {
+            color: var(--color-accent);
+            margin-top: 20px;
+            font-size: 1.3em;
+        }
+        ul {
+            list-style: disc;
+            margin-left: 20px;
+            padding-left: 0;
+        }
+        li {
+            margin-bottom: 10px;
+        }
+        a {
+            color: var(--color-link);
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .badge {
+            display: inline-block;
+            background-color: #555;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px 0;
+            color: #777;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
+    <div class="header">
+        <h1>AutoDownloader <span style="font-size: 0.6em;">v1.7.5</span></h1>
+        <p>A WPF application for professional media archival and organization.</p>
+        <p>Developed by Neo Gentrics • AI Development Partner: Gemini (Google)</p>
+    </div>
+
     <div class="container">
-        <h1>AutoDownloader Project Documentation</h1>
-        <p>
-            Welcome to the development hub for the AutoDownloader WPF application.
-            This page confirms the successful deployment of our custom domain via GitHub Actions!
-        </p>
-        <p>
-            The full project documentation and feature roadmap (v1.7.5) can be found in the main repository:
-            <br><a href="https://github.com/neogentrics/AutoDownloader/blob/master/README.md">View the Main README.md on GitHub</a>
-        </p>
-        <p>
-            <small>Development by Neo Gentrics, Partnered with Gemini (Google).</small>
-        </p>
+        <div class="section">
+            <h2>Project Links</h2>
+            <p>
+                This development hub tracks all in-progress features and planned fixes.
+            </p>
+            <ul>
+                <li><strong>Source Code Repository:</strong> <a href="https://github.com/neogentrics/AutoDownloader" target="_blank">github.com/neogentrics/AutoDownloader</a></li>
+                <li><strong>Project Board (Kanban):</strong> <a href="https://github.com/neogentrics/AutoDownloader/projects/1" target="_blank">View Development Progress</a> <span class="badge">v1.8 Focus</span></li>
+                <li><strong>Latest Release Installer:</strong> <a href="https://github.com/neogentrics/AutoDownloader/releases/latest" target="_blank">Download Installer (v1.7.5)</a> <span class="badge" style="background-color: var(--color-accent);">GitHub Actions Built</span></li>
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>Current Focus: v1.8 Roadmap</h2>
+            <p>The next major version focuses on content integrity and user configuration.</p>
+            <ul>
+                <li><strong>Content Verification:</strong> Implement logic to check downloaded episode counts against TMDB's official records.</li>
+                <li><strong>Settings System:</strong> Design the "Preferences" UI for managing API keys and defaults.</li>
+                <li><strong>Known Issue:</strong> Research and fix the persistent 20-Item Playlist Limit.</li>
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>v1.7.5 Release Summary</h2>
+            <h3>Features & Enhancements</h3>
+            <ul>
+                <li>**Intelligent Naming:** Full TMDB Metadata Integration for correct show and season naming.</li>
+                <li>**UI Polish:** Updated welcome log with step-by-step instructions.</li>
+            </ul>
+            <h3>Critical Bug Fixes</h3>
+            <ul>
+                <li>Resolved critical app freezing when stopping a download (v1.6.1).</li>
+                <li>Eliminated the "NA" folder and file duplication errors.</li>
+                <li>Fixed invalid output template syntax errors.</li>
+                <li>Fixed menu bar visibility issues in dark theme.</li>
+            </ul>
+        </div>
+
+    </div>
+
+    <div class="footer">
+        &copy; 2025 Neo Gentrics. Partnered with Gemini (Google).
     </div>
 </body>
 </html>
