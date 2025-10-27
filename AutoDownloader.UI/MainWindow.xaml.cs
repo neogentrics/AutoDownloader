@@ -31,7 +31,7 @@ namespace AutoDownloader.UI
         private readonly MetadataService _metadataService;
 
         // NEW: Define the authoritative version number here
-        private const string CurrentVersion = "v1.7.5";
+        private const string CurrentVersion = "v1.7.5.3";
 
         public MainWindow()
         {
