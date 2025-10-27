@@ -35,3 +35,5 @@ The next major cycle will be a **Version 2.0 Overhaul** focused on the user expe
 * **.NET 9.0 (or later)**
 * **TMDB API Key** (Required in Preferences)
 * **Gemini API Key** (Optional for Smart Search)
+
+For a complete, constantly updated list of supported sites, please visit the official [yt-dlp Supported Sites List.](https://ytdl-org.github.io/youtube-dl/supportedsites.html)
