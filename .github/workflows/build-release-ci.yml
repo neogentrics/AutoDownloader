@@ -16,7 +16,7 @@ on:
     # Allows manual running from the Actions tab on GitHub
   release:
     # Change trigger from 'published' to 'created'
-    types: [created]
+    types: [created, edited, prereleased, released, published, unpublished]
 
 jobs:
 
