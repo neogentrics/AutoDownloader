@@ -46,6 +46,8 @@ jobs:
     - name: Setup MSBuild.exe
       uses: microsoft/setup-msbuild@v2
 
+    # --- CODE in build-release-ci.yml (REPLACE Analyze Tag for Release Type step) ---
+
     # CRITICAL FIX 1: Analyze Tag, Set Pre-release Status and Dynamic Name
     - name: Analyze Tag for Release Type
       id: tag_analysis
@@ -62,7 +64,7 @@ jobs:
         }
 
         # 2. Extract Bug Fixes list from README (Simplified dynamic body)
-        # For full Markdown extraction, dedicated tools are needed, but this provides a clean template.
+        # Note: This is a static template, not actual README scraping, but the structure is fine for now.
         $releaseBody = @"
 **AutoDownloader Release Notes for $tagName**
 
@@ -78,11 +80,13 @@ This release finalizes the v1.8 feature set and resolves a critical bug in URL p
 - **Fixed:** Resolved the bug where direct URLs incorrectly used a hardcoded search term for metadata lookup.
 "@
         
-        # 3. Set outputs for use in the final release step
-        echo "IS_PRERELEASE=$isPreRelease" >> $env:GITHUB_OUTPUT
-        echo "RELEASE_NAME=$releaseName" >> $env:GITHUB_OUTPUT
-        echo "RELEASE_BODY=$releaseBody" >> $env:GITHUB_OUTPUT
-        echo "TAG_NAME=$tagName" >> $env:GITHUB_OUTPUT # Ensure the tag name is available
+        # 3. Set outputs for use in the final release step (CORRECT SYNTAX)
+        "IS_PRERELEASE=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "RELEASE_NAME=$releaseName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "RELEASE_BODY=$releaseBody" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+# ----------------------------------------------------------------------------------
 
     # 3. RESTORE AND BUILD SOLUTION
     - name: Restore and Build Solution
