@@ -57,15 +57,10 @@ jobs:
     - name: Restore and Build Solution
       run: msbuild $env:Solution_Name /t:Restore /p:Configuration=Release /p:RestorePackagesConfig=true
 
-    # CRITICAL STEP 2: PUBLISH the executable (creating the self-contained files)
+# CRITICAL STEP 2: PUBLISH the executable (creating the self-contained files)
     # We target the specific UI project for the final executable.
     - name: Publish AutoDownloader.UI
-      run: |
-        dotnet publish AutoDownloader.UI/AutoDownloader.UI.csproj \
-          -c Release \
-          -r win-x64 \
-          --self-contained true \
-          -o ${{ github.workspace }}/publish_output
+      run: dotnet publish AutoDownloader.UI/AutoDownloader.UI.csproj -c Release -r win-x64 --self-contained true -o ${{ github.workspace }}/publish_output
 
     # CRITICAL STEP 3: ZIP the published executable for a clean release package
     - name: Zip Published Output
