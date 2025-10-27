@@ -74,6 +74,10 @@
                 <TextBox x:Name="TmdbKeyTextBox" Height="30" Margin="0,0,0,10" 
                          ToolTip="Required for official show names and episode counts."/>
 
+                <Label Content="TVDB API Key (Optional Fallback):" Foreground="White"/>
+                <TextBox x:Name="TvdbKeyTextBox" Height="30" Margin="0,0,0,20"
+                         ToolTip="Used as a secondary metadata source for better coverage on Anime/Plex."/>
+
                 <Label Content="Gemini API Key (Optional for Smart Search):" Foreground="White"/>
                 <TextBox x:Name="GeminiKeyTextBox" Height="30" Margin="0,0,0,20"
                          ToolTip="Used to search the web for download links based on show titles."/>

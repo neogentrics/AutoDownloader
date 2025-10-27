@@ -34,7 +34,7 @@ namespace AutoDownloader.UI
         private readonly SettingsService _settingsService;
 
         // NEW: Define the authoritative version number here
-        private const string CurrentVersion = "v1.8.0"; 
+        private const string CurrentVersion = "v1.9.0-alpha"; // <-- Updated to v1.9.0-alpha
 
         public MainWindow()
         {
@@ -55,7 +55,11 @@ namespace AutoDownloader.UI
 
             // D. MetadataService and SearchService depend on Settings for keys
             // This is where your errors were! They MUST be initialized with the key.
-            _metadataService = new MetadataService(_settingsService.Settings.TmdbApiKey);
+            _metadataService = new MetadataService(
+                _settingsService.Settings.TmdbApiKey,
+                _settingsService.Settings.TvdbApiKey // <-- V1.9 NEW: Passing TVDB key
+            );
+
             _searchService = new SearchService(_settingsService.Settings.GeminiApiKey);
 
             // --- 2. Set Up Default Download Path ---
@@ -262,11 +266,19 @@ namespace AutoDownloader.UI
 
                 AppendLog($"--- Direct URL detected. Skipping Gemini search. ---", Brushes.Aqua);
 
+                // For now, we assume TV Shows category for naming until we have better URL parsing
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows");
                 Directory.CreateDirectory(finalOutputFolder);
 
-                // We need a name to search TMDB with. For now, we use a crude fallback.
-                searchTarget = "How It's Made";
+                // V1.8.1 FIX: Extract show name from URL (Fixes the hardcoded 'How It's Made' bug)
+                searchTarget = ExtractShowNameFromUrl(searchTerm);
+
+                // Fallback if parsing failed
+                if (string.IsNullOrWhiteSpace(searchTarget) || searchTarget == "Unknown Show")
+                {
+                    searchTarget = "Unknown Show";
+                    AppendLog("WARNING: Could not parse show name from URL. Using fallback search term.", Brushes.Orange);
+                }
             }
 
             // --- PHASE 2: Official Metadata Lookup (ALWAYS RUNS for a search target) ---
@@ -403,7 +415,6 @@ namespace AutoDownloader.UI
             LogScrollViewer.ScrollToEnd();
         }
 
-        // --- New Methods in MainWindow.xaml.cs ---
 
         /// <summary>
         /// Handles the "Exit" menu item click.
@@ -602,6 +613,22 @@ Thank you for using AutoDownloader!
                 // Call the existing menu click handler
                 Preferences_Click(sender, e);
             }
+        }
+
+        /// <summary>
+        /// Helper to parse show name from a simple URL format like Tubi for metadata search.
+        /// </summary>
+        private string ExtractShowNameFromUrl(string url)
+        {
+            // Find the last segment after the last '/'
+            string lastSegment = url.TrimEnd('/').Split('/').LastOrDefault() ?? string.Empty;
+
+            // Replace hyphens with spaces
+            string cleanName = lastSegment.Replace('-', ' ');
+
+            // Use crude Title Casing for a better search result in TMDB
+            System.Globalization.TextInfo ti = new System.Globalization.CultureInfo("en-US", false).TextInfo;
+            return ti.ToTitleCase(cleanName);
         }
 
     }

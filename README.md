@@ -2,34 +2,35 @@
 
 An intelligent, high-speed, and automated WPF application for downloading Movies and TV Shows. AutoDownloader is designed for personal media organization and archival, utilizing the power of `yt-dlp`, `aria2c`, and Google's Gemini API for seamless content management.
 
-## 🚀 Key Features of v1.8.0
+## 🚀 Current Focus: v1.9.0-alpha (Multi-Scraper Integration)
 
-* **Content Verification (NEW):** Compares the number of files in the download folder against the official episode count from TMDB, alerting the user to missing episodes.
-* **Settings System (NEW):** Dedicated Preferences window (Edit -> Preferences...) to manage API keys (TMDB/Gemini) and set the default output folder and video quality.
-* **Intelligent Naming:** Uses **The Movie Database (TMDB)** to retrieve official show titles, guaranteeing correct folder names and standardized episode numbering.
-* **Multi-Link Batch Processing:** Supports sequential processing of multiple URLs or search terms.
-* **Robust Stability:** The 'Stop Download' function immediately terminates all processes without freezing the application.
+This is an **unstable alpha branch**. The focus is on integrating a secondary metadata provider (TVDB) to improve metadata quality for niche content like Anime.
 
-## 🐛 Bug Fixes and Stability Patches (v1.6 - v1.8.0)
+### Key Features (In Progress)
 
-| Component | Issue | Resolution |
-| :--- | :--- | :--- |
-| **Download Stability** | App freezes or leaves 'ghost processes' after pressing Stop. | Resource cleanup logic was consolidated into the `Process.Exited` event (v1.6.1). |
-| **Metadata Lookup** | Final compilation conflicts due to complex nullable type handling (`int?`). | Resolved using an explicit, brute-force cast workaround to satisfy the compiler (v1.8.0). |
-| **File Naming** | Files saved to 'NA' folders; folder names were duplicated (`Show\Show`). | TMDB data is used to inject the official title, and output template syntax was corrected (v1.7.3). |
-| **Tooling** | Invalid output template due to unsupported C\# format characters (`:`). | Syntax was simplified to use pure `yt-dlp` format tags (`%(...)02d`) (v1.7.4). |
-| **UI/UX** | Menu dropdowns were unreadable and hotkey was missing. | Dark theme style was applied, and Ctrl+P hotkey logic was implemented (v1.8.0). |
+* **TVDB Fallback (In Progress):** Implementing cascading metadata lookup (Try TMDB, then Try TVDB) for better Anime/Plex support.
+* **Gemini Search Fix (Complete):** Resolved the bug where the Gemini API key was not being used, stabilizing the search feature.
 
-## ⚠️ Known Issue in v1.8.0
+---
+
+## ⚠️ Known Issues (v1.9.0-alpha)
 
 | Component | Issue | Status |
 | :--- | :--- | :--- |
-| **Playlist Extraction** | Downloads are limited to 20 items/episodes on some series pages (e.g., Tubi), even if more are available. | Deferred to v1.9 for dedicated `yt-dlp` flag research. |
+| **MetadataService** | **Will Not Compile.** Errors related to incorrect `TvDbSharper` v4 API calls (e.g., `AuthenticateAsync`, `SearchAsync`). | **Actively Fixing** |
+| **Playlist Extraction** | Downloads are limited to 20 items/episodes on some sites (e.g., Tubi). | **Deferred (Backlog)** |
 
-## 🔮 Future Development (v1.9 Roadmap)
+## 🔮 Future Development (v2.0 Roadmap)
 
-The next major release, **v1.9**, will focus on improving metadata coverage:
+The next major cycle will be a **Version 2.0 Overhaul** focused on the user experience.
 
-1.  **TVDB Fallback Integration:** Implement a cascading search using TVDB as a secondary source for better metadata on certain content (like Anime).
+1.  **UI Overhaul (v2.0):** Implement dynamic download progress indicators (Percentage, Speed, ETA) in the main window and convert the current raw output to an optional, toggleable **Developer Log**.
 2.  **Playlist Limit Fix:** Deep research and implementation of the correct `yt-dlp` flag to overcome the 20-item playlist limitation.
 
+## 🛠️ Requirements
+
+* **Windows 10/11**
+* **.NET 9.0 (or later)**
+* **TMDB API Key** (Required in Preferences)
+* **TVDB API Key** (Required for v1.9)
+* **Gemini API Key** (Optional for Smart Search)
