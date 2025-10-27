@@ -66,19 +66,17 @@ jobs:
         # 2. Extract Bug Fixes list from README (Simplified dynamic body)
         # Note: This is a static template, not actual README scraping, but the structure is fine for now.
         $releaseBody = @"
+        
         **AutoDownloader Release Notes for $tagName**
-
-This release finalizes the v1.8 feature set and resolves a critical bug in URL parsing.
-
-**IMPORTANT:** Please use the **Installer ZIP** for full functionality, as the EXE relies on accompanying files.
-
-**Features (v1.8.0 - v1.8.1):**
-- **Content Verification Structure:** Added structure to retrieve official TMDB episode counts.
-- **Settings System:** Fully implemented Preferences UI and backend service (Ctrl+P hotkey).
-
-**Critical Bugfix (v1.8.1):**
-- **Fixed:** Resolved the bug where direct URLs incorrectly used a hardcoded search term for metadata lookup.
-"@
+        This release finalizes the v1.8 feature set and resolves a critical bug in URL parsing.
+        **IMPORTANT:** Please use the **Installer ZIP** for full functionality, as the EXE relies on accompanying files.
+        **Features (v1.8.0 - v1.8.1):**
+        - **Content Verification Structure:** Added structure to retrieve official TMDB episode counts.
+        - **Settings System:** Fully implemented Preferences UI and backend service (Ctrl+P hotkey).
+        
+        **Critical Bugfix (v1.8.1):**
+        - **Fixed:** Resolved the bug where direct URLs incorrectly used a hardcoded search term for metadata lookup.
+        "@
         
         # 3. Set outputs for use in the final release step (CORRECT SYNTAX)
         "IS_PRERELEASE=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
