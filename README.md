@@ -10,6 +10,20 @@ An intelligent, high-speed, and automated WPF application for downloading Movies
 * **High-Speed Downloads:** Uses **aria2c** for segmented, high-speed, parallel downloads.
 * **Robust Stability:** The 'Stop Download' function immediately terminates all processes without freezing the application.
 
+## 🐛 Bug Fixes in v1.7.5
+
+This release includes major bug fixes and stability improvements applied throughout the v1.6 and v1.7 development cycles.
+
+| Component | Issue | Resolution |
+| :--- | :--- | :--- |
+| **Download Stability** | App freezes or leaves 'ghost processes' after pressing Stop. | Resource cleanup (`Dispose`) logic was consolidated into the `Process.Exited` event, eliminating race conditions and freezing (v1.6.1). |
+| **UI** | Menu dropdowns are white with light text, making them unreadable in dark mode. | A dark theme style was explicitly applied to all `MenuItem` controls (v1.6.1). |
+| **Naming** | Incorrect folder/file naming (e.g., 'NA', duplication). | TMDB data is used to inject the official title, and the output template was syntactically corrected (v1.7.3, v1.7.4). |
+| **Tooling** | Duplicate `await` in `YtDlpService` causing potential deadlocks. | Redundant `await _process.WaitForExitAsync()` call was removed (v1.6.1). |
+| **Template Syntax** | `yt-dlp` rejected the output template due to unsupported C# format characters (`:`). | Syntax was simplified to use pure `yt-dlp` format tags (`%(...)02d`) (v1.7.4). |
+| **About Window**| Displayed incorrect version and had poor formatting. | Logic was updated to use a dedicated constant, and content was cleaned up (v1.7.5). |
+
+
 ## ⚠️ Known Issue in v1.7.5
 
 | Component | Issue | Status |
