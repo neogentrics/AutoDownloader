@@ -53,3 +53,176 @@
 
         /* --- Main Content --- */
         .container {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        .section {
+            background-color: var(--bg-card);
+            border: 1px solid #333;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            padding: 25px 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+            
+            /* INTERACTIVITY: Add transition for the "lift" effect */
+            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+        }
+
+        /* INTERACTIVITY: Make sections "lift" on hover */
+        .section:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0, 122, 204, 0.2);
+        }
+
+        .section h2 {
+            font-size: 1.8em;
+            font-weight: 600;
+            color: var(--color-accent);
+            border-bottom: 2px solid #444;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        /* --- Special Section Styles --- */
+        .section.alpha {
+            border-left: 5px solid var(--color-warning);
+        }
+        .section.alpha h2 {
+            color: var(--color-warning);
+            border-bottom-color: var(--color-warning);
+        }
+
+        /* --- Links & Buttons --- */
+        a {
+            color: var(--color-link); /* FIX: Bright link color */
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+        a:hover {
+            color: var(--color-link-hover); /* FIX: Brighter hover color */
+            text-decoration: underline;
+        }
+        
+        .button-group a {
+            display: inline-block;
+            background-color: var(--color-accent);
+            color: white;
+            padding: 12px 20px;
+            margin: 10px 10px 10px 0;
+            border-radius: 6px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease-in-out;
+        }
+        .button-group a:hover {
+            background-color: var(--color-link-hover);
+            color: var(--bg-primary);
+            text-decoration: none;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0, 122, 204, 0.3);
+        }
+        .button-group a.secondary {
+            background-color: #444;
+        }
+        .button-group a.secondary:hover {
+            background-color: #666;
+            color: white;
+            box-shadow: 0 4px 10px rgba(100, 100, 100, 0.2);
+        }
+
+        /* --- Lists --- */
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        li {
+            padding-left: 30px;
+            position: relative;
+            margin-bottom: 12px;
+            font-size: 1.05em;
+        }
+        li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: var(--color-success); /* Green checkmark for features */
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        li.bug::before {
+            content: '🔧'; /* Wrench for bug fix */
+            color: var(--color-accent);
+        }
+        li.known-issue::before {
+            content: '⚠️'; /* Warning for known issues */
+            color: var(--color-warning);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 30px 0;
+            color: var(--color-text-muted);
+            font-size: 0.9em;
+            border-top: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>AutoDownloader</h1>
+        <p>A professional media archival and organization tool.</p>
+        <p>Current Stable Version: <strong>v1.8.1</strong></p>
+    </div>
+
+    <div class="container">
+        
+        <div class="section">
+            <h2>Project Links</h2>
+            <p>Download the latest stable release or view the project status and source code.</p>
+            <div class="button-group">
+                <a href="https://github.com/neogentrics/AutoDownloader/releases/latest">Download Latest Stable (v1.8.1)</a>
+                <a href="https://github.com/neogentrics/AutoDownloader/issues" class="secondary">View Public Issue Tracker</a>
+                <a href="https://github.com/neogentrics/AutoDownloader" class="secondary">View Source Code</a>
+            </div>
+        </div>
+
+        <div class="section alpha">
+            <h2>v1.9.0-alpha (Experimental Branch)</h2>
+            <p>
+                An experimental `alpha` branch is now available for public testing and development. This branch introduces a **cascading metadata scraper** to improve metadata quality for niche content like Anime.
+            </p>
+            <ul>
+                <li><strong>New Feature:</strong> Integrates **The TV Database (TVDB)** as a fallback if a TMDB search fails.</li>
+                <li><strong>Status:</strong> Actively in development. May contain bugs.</li>
+            </ul>
+            <div class="button-group">
+                <a href="https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha" class="secondary">Browse Alpha Branch Code</a>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Latest Stable (v1.8.1) Features</h2>
+            <ul>
+                <li><strong>Content Verification:</strong> Checks downloaded files against official TMDB episode counts to warn about missing episodes.</li>
+                <li><strong>Settings System:</strong> A new Preferences window (Ctrl+P) to manage API keys (TMDB/Gemini) and default settings.</li>
+                <li class="bug"><strong>Critical URL Parsing Fix:</strong> Resolved the bug where direct URLs always searched for "How It's Made."</li>
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>🚨 Known Issues (v1.8.1)</h2>
+            <ul>
+                <li class="known-issue"><strong>Playlist Item Limit:</strong> Downloads from some sites (e.g., Tubi) are incorrectly limited to 20 episodes. This is the top priority for the v2.0 release.</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="footer">
+        &copy; 2025 Neo Gentrics. AI Development Partner: Gemini (Google).
+    </div>
+</body>
+</html>
