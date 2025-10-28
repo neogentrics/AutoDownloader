@@ -6,14 +6,14 @@
     <title>AutoDownloader - Project Development Hub</title>
     <link rel="icon" type="image/png" href="https://github.com/neogentrics/AutoDownloader/raw/master/Assets/icon.png"> 
     <style>
-        /* CSS inspired by the WPF Dark Theme: #1E1E1E, #2D2D2D, #007ACC */
         :root {
             --bg-primary: #121212;
             --bg-secondary: #1E1E1E; 
             --color-accent: #007ACC;
             --color-text: #E0E0E0;
             --color-link: #5aa9e6;
-            --color-warning: #FFC107; 
+            --color-warning: #FFC107; /* Yellow for Alpha */
+            --color-bug: #E57373; /* Light Red for bug */
         }
         body {
             font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
@@ -22,7 +22,6 @@
             margin: 0;
             padding: 0;
             line-height: 1.6;
-            transition: background-color 0.3s;
         }
         .header {
             background-color: var(--bg-secondary);
@@ -57,6 +56,10 @@
             margin-bottom: 30px;
             box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
         }
+        /* New Alpha Section Style */
+        .section.alpha {
+            border-left: 5px solid var(--color-warning);
+        }
         .section h2 {
             border-bottom: 2px solid var(--color-accent);
             padding-bottom: 10px;
@@ -64,6 +67,10 @@
             color: var(--color-accent);
             font-size: 1.8em;
             font-weight: 600;
+        }
+        .section.alpha h2 {
+            color: var(--color-warning);
+            border-bottom-color: var(--color-warning);
         }
         ul {
             list-style: none;
@@ -89,7 +96,7 @@
         }
         .known-issue::before {
             content: '⚠';
-            color: var(--color-warning);
+            color: var(--color-bug);
         }
         .badge {
             display: inline-block;
@@ -126,53 +133,30 @@
     <div class="header">
         <h1>AutoDownloader <span>Development Hub</span></h1>
         <p>A WPF application for professional media archival and organization.</p>
-        <p>Current Version: v1.8.1</p>
+        <p>Current Stable Version: v1.8.1</p>
     </div>
 
     <div class="container">
         
         <div class="section">
-            <h2>Project Actions & Status</h2>
+            <h2>Project Links</h2>
             <div class="link-group">
-                <a href="https://github.com/neogentrics/AutoDownloader" target="_blank">View Source Code</a>
+                <a href="https://github.com/neogentrics/AutoDownloader" target="_blank">View Source Code (Master)</a>
                 <a href="https://github.com/neogentrics/AutoDownloader/issues" target="_blank">View Public Issue Tracker</a> 
-                <a href="https://github.com/neogentrics/AutoDownloader/releases/latest" target="_blank">Download Latest v1.8.1 Installer</a> </div>
+                <a href="https://github.com/neogentrics/AutoDownloader/releases/latest" target="_blank">Download Latest Stable (v1.8.1)</a>
+            </div>
         </div>
 
-        <div class="section">
-            <h2>Next Focus: v2.0 User Experience Overhaul</h2>
-            <p>The next major version will focus entirely on improving stability and user feedback.</p>
+        <div class="section alpha">
+            <h2>v1.9.0-alpha (Experimental)</h2>
+            <p>
+                A new alpha branch is available for public testing. This branch includes the integration of **The TV Database (TVDB)** as a fallback metadata scraper to improve results for Anime and other niche content.
+            </p>
             <ul>
-                <li><strong>UI Overhaul:</strong> Implement dynamic download progress bars (Percentage, Speed, ETA) in the main window.</li>
-                <li><strong>Developer Log:</strong> Convert the verbose raw output into an optional, toggleable developer log window.</li>
-                <li><strong>TVDB Integration:</strong> Implement TVDB as a secondary metadata source for improved coverage (Anime/Plex).</li>
-                <li class="bug-fix"><strong>20-Item Fix:</strong> Resolve the persistent playlist download limit bug.</li>
+                <li><a href="https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha" target="_blank">Browse Alpha Branch Code</a></li>
+                <li><a href="https://github.com/neogentrics/AutoDownloader/releases/tag/v1.9.0-alpha" target="_blank">Download Alpha Release</a> (Requires CI/CD build)</li>
             </ul>
         </div>
         
         <div class="section">
-            <h2>v1.8.1 Release Summary (Critical Bugfix)</h2>
-            <p><strong>Fix:</strong> The primary bug where direct URLs defaulted to 'How It's Made' for metadata lookup has been resolved by implementing URL path parsing.</p>
-            <ul>
-                <li class="bug-fix">**Critical Fix:** Direct URL parsing now dynamically extracts the correct show title (e.g., 'Love Thy Neighbor') for TMDB lookup and naming.</li>
-                <li class="bug-fix">**Stability Fix:** Finalized compilation by resolving stubborn nullable type conflicts (`int?`) in `MetadataService.cs`.</li>
-            </ul>
-        </div>
-        
-        <div class="section">
-            <h2>v1.8.0 Feature Implementation</h2>
-            <p>The first step toward Content Verification and User Configuration.</p>
-            <ul>
-                <li>**Content Verification:** Added structure to count downloaded files and check against official TMDB episode counts.</li>
-                <li>**Settings System:** Implemented Preferences UI (Ctrl+P) and backend service for API key management.</li>
-                <li>**Validation:** Added launch-time pop-up warnings for missing required API keys.</li>
-            </ul>
-        </div>
-
-    </div>
-
-    <div class="footer">
-        &copy; 2025 Neo Gentrics. AI Development Partner: Gemini (Google).
-    </div>
-</body>
-</html>
+            <h2>Latest Stable Release:
