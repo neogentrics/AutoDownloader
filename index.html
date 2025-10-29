@@ -4,24 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoDownloader - Project Development Hub</title>
-    
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⬇️</text></svg>">
     
     <style>
-        /* CSS inspired by the WPF Dark Theme: #1E1E1E, #2D2D2D, #007ACC */
         :root {
             --bg-primary: #121212;
-            --bg-secondary: #1E1E1E;
+            --bg-secondary: #1E1E1E; 
             --bg-card: #2A2A2A;
             --color-accent: #007ACC;
             --color-text: #E0E0E0;
             --color-text-muted: #888;
-            --color-link: #5aa9e6; /* FIX: Bright, readable link color */
+            --color-link: #5aa9e6; 
             --color-link-hover: #90cfff;
             --color-warning: #FFC107;
+            --color-bug: #E57373; /* Light Red for bug */
             --color-success: #28a745;
         }
-
         body {
             font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', Arial, sans-serif;
             background-color: var(--bg-primary);
@@ -30,8 +28,6 @@
             padding: 0;
             line-height: 1.7;
         }
-
-        /* --- Header --- */
         .header {
             background: linear-gradient(135deg, var(--color-accent) 0%, #0056b3 100%);
             color: white;
@@ -50,14 +46,11 @@
             margin: 10px 0 0;
             opacity: 0.9;
         }
-
-        /* --- Main Content --- */
         .container {
             max-width: 900px;
             margin: 40px auto;
             padding: 0 20px;
         }
-
         .section {
             background-color: var(--bg-card);
             border: 1px solid #333;
@@ -65,17 +58,12 @@
             margin-bottom: 30px;
             padding: 25px 30px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
-            
-            /* INTERACTIVITY: Add transition for the "lift" effect */
             transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
         }
-
-        /* INTERACTIVITY: Make sections "lift" on hover */
         .section:hover {
             transform: translateY(-4px);
             box-shadow: 0 8px 25px rgba(0, 122, 204, 0.2);
         }
-
         .section h2 {
             font-size: 1.8em;
             font-weight: 600;
@@ -84,8 +72,6 @@
             padding-bottom: 10px;
             margin-top: 0;
         }
-
-        /* --- Special Section Styles --- */
         .section.alpha {
             border-left: 5px solid var(--color-warning);
         }
@@ -93,19 +79,23 @@
             color: var(--color-warning);
             border-bottom-color: var(--color-warning);
         }
-
-        /* --- Links & Buttons --- */
+        .section.bugs {
+            border-left: 5px solid var(--color-bug);
+        }
+        .section.bugs h2 {
+            color: var(--color-bug);
+            border-bottom-color: var(--color-bug);
+        }
         a {
-            color: var(--color-link); /* FIX: Bright link color */
+            color: var(--color-link);
             text-decoration: none;
             font-weight: 600;
             transition: color 0.2s;
         }
         a:hover {
-            color: var(--color-link-hover); /* FIX: Brighter hover color */
+            color: var(--color-link-hover);
             text-decoration: underline;
         }
-        
         .button-group a {
             display: inline-block;
             background-color: var(--color-accent);
@@ -132,43 +122,13 @@
             color: white;
             box-shadow: 0 4px 10px rgba(100, 100, 100, 0.2);
         }
-
-        /* --- Lists --- */
-        ul {
-            list-style: none;
-            padding-left: 0;
-        }
-        li {
-            padding-left: 30px;
-            position: relative;
-            margin-bottom: 12px;
-            font-size: 1.05em;
-        }
-        li::before {
-            content: '✓';
-            position: absolute;
-            left: 0;
-            top: 0;
-            color: var(--color-success); /* Green checkmark for features */
-            font-weight: bold;
-            font-size: 1.2em;
-        }
-        li.bug::before {
-            content: '🔧'; /* Wrench for bug fix */
-            color: var(--color-accent);
-        }
-        li.known-issue::before {
-            content: '⚠️'; /* Warning for known issues */
-            color: var(--color-warning);
-        }
-
-        .footer {
-            text-align: center;
-            padding: 30px 0;
-            color: var(--color-text-muted);
-            font-size: 0.9em;
-            border-top: 1px solid #333;
-        }
+        ul { list-style: none; padding-left: 0; }
+        li { padding-left: 30px; position: relative; margin-bottom: 12px; font-size: 1.05em; }
+        li::before { content: '✓'; position: absolute; left: 0; top: 0; color: var(--color-success); font-weight: bold; font-size: 1.2em; }
+        li.bug::before { content: '🔧'; color: var(--color-bug); }
+        li.known-issue::before { content: '⚠️'; color: var(--color-warning); }
+        li.future::before { content: '▶'; color: var(--color-accent); }
+        .footer { text-align: center; padding: 30px 0; color: var(--color-text-muted); font-size: 0.9em; border-top: 1px solid #333; }
     </style>
 </head>
 <body>
@@ -182,7 +142,6 @@
         
         <div class="section">
             <h2>Project Links</h2>
-            <p>Download the latest stable release or view the project status and source code.</p>
             <div class="button-group">
                 <a href="https://github.com/neogentrics/AutoDownloader/releases/latest">Download Latest Stable (v1.8.1)</a>
                 <a href="https://github.com/neogentrics/AutoDownloader/issues" class="secondary">View Public Issue Tracker</a>
@@ -191,16 +150,12 @@
         </div>
 
         <div class="section alpha">
-            <h2>v1.9.0-alpha (Experimental Branch)</h2>
+            <h2>Experimental v1.9.0-alpha</h2>
             <p>
-                An experimental `alpha` branch is now available for public testing and development. This branch introduces a **cascading metadata scraper** to improve metadata quality for niche content like Anime.
+                An experimental `alpha` branch is available for development. This branch will focus on integrating **The TV Database (TVDB)** as a user-selectable fallback scraper.
             </p>
-            <ul>
-                <li><strong>New Feature:</strong> Integrates **The TV Database (TVDB)** as a fallback if a TMDB search fails.</li>
-                <li><strong>Status:</strong> Actively in development. May contain bugs.</li>
-            </ul>
             <div class="button-group">
-                <a href="https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha" class="secondary">Browse Alpha Branch Code</a>
+                <a href="https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha" class="secondary">Browse Alpha Branch</a>
             </div>
         </div>
         
@@ -209,16 +164,29 @@
             <ul>
                 <li><strong>Content Verification:</strong> Checks downloaded files against official TMDB episode counts to warn about missing episodes.</li>
                 <li><strong>Settings System:</strong> A new Preferences window (Ctrl+P) to manage API keys (TMDB/Gemini) and default settings.</li>
-                <li class="bug"><strong>Critical URL Parsing Fix:</strong> Resolved the bug where direct URLs always searched for "How It's Made."</li>
             </ul>
         </div>
         
-        <div class="section">
-            <h2>🚨 Known Issues (v1.8.1)</h2>
+        <div class="section bugs">
+            <h2>🚨 Known Issues in v1.8.1</h2>
             <ul>
-                <li class="known-issue"><strong>Playlist Item Limit:</strong> Downloads from some sites (e.g., Tubi) are incorrectly limited to 20 episodes. This is the top priority for the v2.0 release.</li>
+                <li class="bug"><strong>App Crash:</strong> Application crashes if a metadata lookup fails (e.g., from a Season 2 URL).</li>
+                <li class="bug"><strong>URL Parsing:</strong> Fails to parse show names from Season 2+ URLs or YouTube playlist titles, causing metadata failure.</li>
+                <li class="known-issue"><strong>Playlist Item Limit:</strong> Downloads from some sites (e.g., Tubi) are incorrectly limited to 20 episodes.</li>
             </ul>
         </div>
+
+        <div class="section">
+            <h2>Future v2.0 Roadmap</h2>
+            <p>The next major version will be a complete overhaul focusing on reliability and user experience.</p>
+            <ul>
+                <li class="future">**UI Overhaul:** Implement dynamic download progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.</li>
+                <li class="future">**Scraper Engine Refactor:** Fix all URL/playlist parsing bugs and implement smarter page text scraping.</li>
+                <li class="future">**Multi-Scraper Integration:** Add TVDB as a user-selectable pop-up option and integrate external subtitle databases.</li>
+                <li class="future">**Branding:** Design a new application icon and official name.</li>
+            </ul>
+        </div>
+
     </div>
 
     <div class="footer">
