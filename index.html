@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoDownloader - Project Development Hub</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⬇️</text></svg>">
+    
+    <link rel="icon" type="image/png" href="https://github.com/neogentrics/AutoDownloader/raw/master/Assets/icon.png">
     
     <style>
+        /* --- Root Variables (Dark Theme) --- */
         :root {
             --bg-primary: #121212;
             --bg-secondary: #1E1E1E; 
@@ -17,9 +19,16 @@
             --color-link: #5aa9e6; 
             --color-link-hover: #90cfff;
             --color-warning: #FFC107;
-            --color-bug: #E57373; /* Light Red for bug */
+            --color-bug: #E57373;
             --color-success: #28a745;
         }
+
+        /* --- Base & Animations --- */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         body {
             font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', Arial, sans-serif;
             background-color: var(--bg-primary);
@@ -28,12 +37,29 @@
             padding: 0;
             line-height: 1.7;
         }
+
+        /* --- Header --- */
         .header {
             background: linear-gradient(135deg, var(--color-accent) 0%, #0056b3 100%);
             color: white;
-            padding: 50px 20px;
+            padding: 40px 20px;
             text-align: center;
             border-bottom: 4px solid var(--color-link-hover);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .header img.logo {
+            height: 80px;
+            width: 80px;
+            margin-right: 20px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.1);
+            padding: 5px;
+        }
+        .header .title-block {
+            text-align: left;
         }
         .header h1 {
             margin: 0;
@@ -43,14 +69,31 @@
         }
         .header p {
             font-size: 1.25em;
-            margin: 10px 0 0;
+            margin: 5px 0 0;
             opacity: 0.9;
         }
+
+        /* --- NEW: 2-Column Layout --- */
         .container {
-            max-width: 900px;
+            display: grid;
+            grid-template-columns: 1fr 320px; /* Main content | Sidebar */
+            gap: 30px;
+            max-width: 1200px;
             margin: 40px auto;
             padding: 0 20px;
         }
+        
+        .main-content {
+            grid-column: 1 / 2;
+        }
+        
+        .sidebar {
+            grid-column: 2 / 3;
+            position: sticky;
+            top: 40px; /* Sticks the sidebar when scrolling */
+        }
+
+        /* --- Sections (Cards) --- */
         .section {
             background-color: var(--bg-card);
             border: 1px solid #333;
@@ -59,11 +102,23 @@
             padding: 25px 30px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
             transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+            
+            /* NEW: Fade-in animation */
+            opacity: 0;
+            animation: fadeIn 0.5s ease-out forwards;
         }
+        
+        /* NEW: Staggered animation delay */
+        .section:nth-of-type(1) { animation-delay: 0.1s; }
+        .section:nth-of-type(2) { animation-delay: 0.2s; }
+        .section:nth-of-type(3) { animation-delay: 0.3s; }
+        .section:nth-of-type(4) { animation-delay: 0.4s; }
+
         .section:hover {
             transform: translateY(-4px);
             box-shadow: 0 8px 25px rgba(0, 122, 204, 0.2);
         }
+
         .section h2 {
             font-size: 1.8em;
             font-weight: 600;
@@ -72,20 +127,14 @@
             padding-bottom: 10px;
             margin-top: 0;
         }
-        .section.alpha {
-            border-left: 5px solid var(--color-warning);
-        }
-        .section.alpha h2 {
-            color: var(--color-warning);
-            border-bottom-color: var(--color-warning);
-        }
-        .section.bugs {
-            border-left: 5px solid var(--color-bug);
-        }
-        .section.bugs h2 {
-            color: var(--color-bug);
-            border-bottom-color: var(--color-bug);
-        }
+        
+        /* --- Special Section Styles --- */
+        .section.alpha { border-left: 5px solid var(--color-warning); }
+        .section.alpha h2 { color: var(--color-warning); border-bottom-color: var(--color-warning); }
+        .section.bugs { border-left: 5px solid var(--color-bug); }
+        .section.bugs h2 { color: var(--color-bug); border-bottom-color: var(--color-bug); }
+
+        /* --- Links & Buttons --- */
         a {
             color: var(--color-link);
             text-decoration: none;
@@ -96,15 +145,17 @@
             color: var(--color-link-hover);
             text-decoration: underline;
         }
+        
         .button-group a {
-            display: inline-block;
+            display: block; /* Stack buttons vertically in sidebar */
             background-color: var(--color-accent);
             color: white;
             padding: 12px 20px;
-            margin: 10px 10px 10px 0;
+            margin-bottom: 15px;
             border-radius: 6px;
             font-weight: 600;
             text-decoration: none;
+            text-align: center;
             transition: all 0.2s ease-in-out;
         }
         .button-group a:hover {
@@ -122,71 +173,133 @@
             color: white;
             box-shadow: 0 4px 10px rgba(100, 100, 100, 0.2);
         }
+
+        /* --- Lists (Features & Bugs) --- */
         ul { list-style: none; padding-left: 0; }
-        li { padding-left: 30px; position: relative; margin-bottom: 12px; font-size: 1.05em; }
-        li::before { content: '✓'; position: absolute; left: 0; top: 0; color: var(--color-success); font-weight: bold; font-size: 1.2em; }
+        li { 
+            padding-left: 30px; 
+            position: relative; 
+            margin-bottom: 12px; 
+            font-size: 1.05em;
+            /* NEW: Interactive list items */
+            padding-top: 4px;
+            padding-bottom: 4px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        li:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        li::before { content: '✓'; position: absolute; left: 0; top: 5px; color: var(--color-success); font-weight: bold; font-size: 1.2em; }
         li.bug::before { content: '🔧'; color: var(--color-bug); }
         li.known-issue::before { content: '⚠️'; color: var(--color-warning); }
         li.future::before { content: '▶'; color: var(--color-accent); }
+
         .footer { text-align: center; padding: 30px 0; color: var(--color-text-muted); font-size: 0.9em; border-top: 1px solid #333; }
+        
+        /* Responsive layout for smaller screens */
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr; /* Stack columns */
+            }
+            .sidebar {
+                position: static;
+                top: 0;
+            }
+            .header {
+                text-align: center;
+            }
+            .header .title-block {
+                text-align: center;
+            }
+            .header img.logo {
+                margin: 0 auto 20px;
+            }
+        }
+
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>AutoDownloader</h1>
-        <p>A professional media archival and organization tool.</p>
-        <p>Current Stable Version: <strong>v1.8.1</strong></p>
+        <img src="https://github.com/neogentrics/AutoDownloader/raw/master/Assets/icon.png" alt="AutoDownloader Logo" class="logo">
+        <div class="title-block">
+            <h1>AutoDownloader</h1>
+            <p>Your Professional Media Archival & Organization Tool</p>
+        </div>
     </div>
 
     <div class="container">
-        
-        <div class="section">
-            <h2>Project Links</h2>
-            <div class="button-group">
-                <a href="https://github.com/neogentrics/AutoDownloader/releases/latest">Download Latest Stable (v1.8.1)</a>
-                <a href="https://github.com/neogentrics/AutoDownloader/issues" class="secondary">View Public Issue Tracker</a>
-                <a href="https://github.com/neogentrics/AutoDownloader" class="secondary">View Source Code</a>
+        <main class="main-content">
+            
+            <div class="section">
+                <h2>Latest Stable Release: v1.8.1</h2>
+                <p><strong>Primary Goal:</strong> Content Integrity & User Configuration.</p>
+                <ul>
+                    <li class="bug"><strong>Critical URL Parsing Fix:</strong> Resolved the bug where direct URLs (e.g., Season 2 links) used a hardcoded search term, causing metadata failure and crashes.</li>
+                    <li><strong>Content Verification:</strong> Checks downloaded files against official TMDB episode counts to warn about missing episodes.</li>
+                    <li><strong>Settings System:</strong> A new Preferences window (Ctrl+P) to manage API keys (TMDB/Gemini) and default settings.</li>
+                </ul>
             </div>
-        </div>
-
-        <div class="section alpha">
-            <h2>Experimental v1.9.0-alpha</h2>
-            <p>
-                An experimental `alpha` branch is available for development. This branch will focus on integrating **The TV Database (TVDB)** as a user-selectable fallback scraper.
-            </p>
-            <div class="button-group">
-                <a href="https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha" class="secondary">Browse Alpha Branch</a>
+            
+            <div class="section">
+                <h2>Future v2.0 Roadmap</h2>
+                <p>The next major version will be a complete overhaul focusing on reliability and user experience.</p>
+                <ul>
+                    <li class="future">**UI Overhaul:** Implement dynamic progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.</li>
+                    <li class="future">**Scraper Engine Refactor:** Fix all URL/playlist parsing bugs and implement smarter page text scraping.</li>
+                    <li class="future">**Multi-Scraper Integration:** Add **TVDB** as a user-selectable pop-up option and integrate external subtitle databases.</li>
+                    <li class="future">**Branding:** Design a new application icon and official name.</li>
+                </ul>
             </div>
-        </div>
-        
-        <div class="section">
-            <h2>Latest Stable (v1.8.1) Features</h2>
-            <ul>
-                <li><strong>Content Verification:</strong> Checks downloaded files against official TMDB episode counts to warn about missing episodes.</li>
-                <li><strong>Settings System:</strong> A new Preferences window (Ctrl+P) to manage API keys (TMDB/Gemini) and default settings.</li>
-            </ul>
-        </div>
-        
-        <div class="section bugs">
-            <h2>🚨 Known Issues in v1.8.1</h2>
-            <ul>
-                <li class="bug"><strong>App Crash:</strong> Application crashes if a metadata lookup fails (e.g., from a Season 2 URL).</li>
-                <li class="bug"><strong>URL Parsing:</strong> Fails to parse show names from Season 2+ URLs or YouTube playlist titles, causing metadata failure.</li>
-                <li class="known-issue"><strong>Playlist Item Limit:</strong> Downloads from some sites (e.g., Tubi) are incorrectly limited to 20 episodes.</li>
-            </ul>
-        </div>
 
-        <div class="section">
-            <h2>Future v2.0 Roadmap</h2>
-            <p>The next major version will be a complete overhaul focusing on reliability and user experience.</p>
-            <ul>
-                <li class="future">**UI Overhaul:** Implement dynamic download progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.</li>
-                <li class="future">**Scraper Engine Refactor:** Fix all URL/playlist parsing bugs and implement smarter page text scraping.</li>
-                <li class="future">**Multi-Scraper Integration:** Add TVDB as a user-selectable pop-up option and integrate external subtitle databases.</li>
-                <li class="future">**Branding:** Design a new application icon and official name.</li>
-            </ul>
-        </div>
+            <div class="section">
+                <h2>Development Milestones (Changelog)</h2>
+                
+                <h3>Version 1.7.x</h3>
+                <ul>
+                    <li class="bug-fix">**Intelligent Naming:** Integrated TMDB to fix the "NA" folder bug.</li>
+                    <li class="bug-fix">**Stability:** Fixed invalid `yt-dlp` template syntax errors.</li>
+                </ul>
+                
+                <h3>Version 1.6.x</h3>
+                <ul>
+                    <li>**Multi-Link Support:** Added batch processing for multiple URLs.</li>
+                    <li class="bug-fix">**Stop Button Fix:** Resolved critical app-freezing bug.</li>
+                    <li>**UI Polish:** Added main menu bar and dark theme for dropdowns.</li>
+                </ul>
+            </div>
 
+        </main>
+
+        <aside class="sidebar">
+            
+            <div class="section">
+                <h2>Project Links</h2>
+                <div class="button-group">
+                    <a href="https://github.com/neogentrics/AutoDownloader/releases/latest">Download Latest Stable (v1.8.1)</a>
+                    <a href="https://github.com/neogentrics/AutoDownloader/releases/tag/v1.8.0" class="secondary">Download v1.8.0</a>
+                    <a href="https://github.com/neogentrics/AutoDownloader/issues" class="secondary">View Public Issue Tracker</a>
+                    <a href="https://github.com/neogentrics/AutoDownloader" class="secondary">View Source Code</a>
+                </div>
+            </div>
+
+            <div class="section alpha">
+                <h2>v1.9.0-alpha</h2>
+                <p>An experimental branch is available for testing the **TVDB fallback integration**.</p>
+                <div class="button-group">
+                    <a href="https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha" class="secondary">Browse Alpha Branch</a>
+                </div>
+            </div>
+
+            <div class="section bugs">
+                <h2>🚨 Known Issues (v1.8.1)</h2>
+                <ul>
+                    <li class="known-issue"><strong>Playlist Item Limit:</strong> Downloads from some sites (e.g., Tubi) are limited to 20 episodes.</li>
+                    <li class="known-issue">**YouTube Playlists:** Metadata lookup may fail if the playlist title doesn't match the show name.</li>
+                </ul>
+            </div>
+
+        </aside>
     </div>
 
     <div class="footer">
