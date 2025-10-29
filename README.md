@@ -1,36 +1,22 @@
-# AutoDownloader
+# AutoDownloader (v1.9.0-alpha Branch)
 
-An intelligent, high-speed, and automated WPF application for downloading Movies and TV Shows. AutoDownloader is designed for personal media organization and archival, utilizing the power of `yt-dlp`, `aria2c`, and Google's Gemini API for seamless content management.
+**This is an unstable development branch. Do not use for production.**
 
-## 🚀 Current Focus: v1.9.0-alpha (Multi-Scraper Integration)
+This branch contains the work-in-progress implementation of the **Multi-Scraper Engine**, which introduces **The TV Database (TVDB)** as a fallback metadata provider.
 
-This is an **unstable alpha branch**. The focus is on integrating a secondary metadata provider (TVDB) to improve metadata quality for niche content like Anime.
+## 🎯 Current Goal: TVDB Fallback Strategy
 
-### Key Features (In Progress)
+The strategy for this branch has been updated:
+1.  Search TMDB for metadata.
+2.  If the search fails, a **pop-up** will ask the user: "Search TVDB instead? (Recommended for Anime)".
+3.  If "Yes," the app will query TVDB.
+4.  If "No" or TVDB fails, the download will terminate gracefully (fixing the v1.8.1 crash bug).
 
-* **TVDB Fallback (In Progress):** Implementing cascading metadata lookup (Try TMDB, then Try TVDB) for better Anime/Plex support.
-* **Gemini Search Fix (Complete):** Resolved the bug where the Gemini API key was not being used, stabilizing the search feature.
+## ⚠️ Current Build Status (Known Issues)
 
----
+**This branch WILL NOT COMPILE.** The `MetadataService.cs` file contains compilation errors as we work to integrate the `TvDbSharper` v4 API.
 
-## ⚠️ Known Issues (v1.9.0-alpha)
+* **CS0234:** The type or namespace name 'Clients' does not exist in the namespace 'TvDbSharper'.
+* **CS1061:** `TvDbClient` does not contain a definition for `AuthenticateAsync`, `SearchAsync`, etc.
 
-| Component | Issue | Status |
-| :--- | :--- | :--- |
-| **MetadataService** | **Will Not Compile.** Errors related to incorrect `TvDbSharper` v4 API calls (e.g., `AuthenticateAsync`, `SearchAsync`). | **Actively Fixing** |
-| **Playlist Extraction** | Downloads are limited to 20 items/episodes on some sites (e.g., Tubi). | **Deferred (Backlog)** |
-
-## 🔮 Future Development (v2.0 Roadmap)
-
-The next major cycle will be a **Version 2.0 Overhaul** focused on the user experience.
-
-1.  **UI Overhaul (v2.0):** Implement dynamic download progress indicators (Percentage, Speed, ETA) in the main window and convert the current raw output to an optional, toggleable **Developer Log**.
-2.  **Playlist Limit Fix:** Deep research and implementation of the correct `yt-dlp` flag to overcome the 20-item playlist limitation.
-
-## 🛠️ Requirements
-
-* **Windows 10/11**
-* **.NET 9.0 (or later)**
-* **TMDB API Key** (Required in Preferences)
-* **TVDB API Key** (Required for v1.9)
-* **Gemini API Key** (Optional for Smart Search)
+These errors are known and will be fixed in the next commit on this branch.
