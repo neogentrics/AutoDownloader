@@ -6,50 +6,42 @@ An intelligent, high-speed, and automated WPF application for downloading Movies
 
 ---
 
-## 🚀 Experimental Alpha Branch (v1.9.0-alpha)
-
-Work has begun on the next version, which focuses on multi-scraper support. This is an unstable development branch.
-
-* **Branch:** `v1.9.0-alpha`
-* **Goal:** Integrate **The TV Database (TVDB)** as a fallback metadata scraper to improve results for niche content like Anime.
-* **Status:** In-progress, contains known compilation bugs.
-
----
-
 ## 🚀 Key Features of v1.8.1 (Stable)
 
 * **Content Verification (v1.8):** Compares the number of files in the download folder against the official episode count from TMDB, logging missing episodes.
-* **Settings System (v1.8):** Dedicated Preferences window (Edit -> Preferences...) to manage API keys and set the default output folder and video quality.
-* **Intelligent Naming:** Uses **The Movie Database (TMDB)** to retrieve official show titles, guaranteeing correct folder names and standardized episode numbering.
+* **Settings System (v1.8):** Dedicated Preferences window (Edit -> Preferences...) to manage API keys and set the default output folder.
+* **Intelligent Naming:** Uses **The Movie Database (TMDB)** to retrieve official show titles, guaranteeing correct folder names.
 * **Multi-Link Batch Processing:** Supports sequential processing of multiple URLs or search terms.
-* **Robust Stability:** The 'Stop Download' function immediately terminates all processes without freezing the application.
+* **Robust Stability:** Fixed the critical app-freezing bug when stopping a download.
 
-## 🐛 Bug Fixes in v1.8.1
+## ⚠️ Known Issues in v1.8.1 (To Be Fixed in v2.0)
 
-| Component | Issue | Resolution |
-| :--- | :--- | :--- |
-| **CRITICAL BUG** | Direct URLs (e.g., Tubi links) incorrectly use a hardcoded search term ('How It's Made') for metadata lookup. | **Fixed:** Implemented `ExtractShowNameFromUrl` helper to dynamically parse the show title from the URL path. |
-| **Download Stability** | App freezes or leaves 'ghost processes' after pressing Stop. | Resource cleanup logic was consolidated into the `Process.Exited` event. |
-| **Metadata Lookup** | Final compilation conflicts due to complex nullable type handling (`int?`). | Resolved using an explicit type casting workaround. |
-| **File Naming** | Files saved to 'NA' folders; folder names were duplicated. | TMDB data is used to inject the official title, and output template syntax was corrected. |
-| **UI/UX** | Menu dropdowns were unreadable and hotkey was missing. | Dark theme style was applied, and Ctrl+P hotkey logic was implemented. |
-
-## ⚠️ Known Issue in v1.8.1
+This version contains several critical bugs related to metadata parsing:
 
 | Component | Issue | Status |
 | :--- | :--- | :--- |
-| **Playlist Extraction** | Downloads are limited to 20 items/episodes on some series pages (e.g., Tubi). | **Deferred to v2.0** for dedicated `yt-dlp` flag research. |
+| **CRITICAL: App Crash** | The application crashes (closes) if a metadata lookup fails (e.g., from a Season 2 URL). | **Bug - Slated for v2.0** |
+| **CRITICAL: URL Parsing** | The app incorrectly tries to parse the show name from the URL segment (e.g., `.../season-2` is read as "Season 2"). | **Bug - Slated for v2.0** |
+| **CRITICAL: Playlist Parsing**| When given a YouTube playlist, the app incorrectly parses the URL instead of the on-page playlist title for the metadata search. | **Bug - Slated for v2.0** |
+| **Playlist Extraction** | Downloads are limited to 20 items/episodes on some series pages (e.g., Tubi). | **Bug - Slated for v2.0** |
 
-## 🔮 Future Development (v2.0 Roadmap)
+## ✅ Supported Sites (v1.8.1)
 
-The next major cycle will be a **Version 2.0 Overhaul** focused on the user experience.
+While `yt-dlp` supports over 1,000 sites, the "Smart Search" and "Metadata Lookup" features are primarily tested for:
+* Tubi (tubitv.com)
+* YouTube (youtube.com)
 
-1.  **UI Overhaul (v2.0):** Implement dynamic download progress indicators (Percentage, Speed, ETA) in the main window and convert the current raw output to an optional, toggleable **Developer Log**.
-2.  **TVDB Fallback (v1.9):** Complete the integration of TVDB as a secondary metadata source.
+---
 
-## 🛠️ Requirements
+## 🔮 Future Development: v2.0 Roadmap
 
-* **Windows 10/11**
-* **.NET 9.0 (or later)**
-* **TMDB API Key** (Required in Preferences)
-* **Gemini API Key** (Optional for Smart Search)
+The next major release, **v2.0**, will be a complete overhaul focusing on reliability and user experience.
+
+1.  **UI Overhaul:** Implement dynamic download progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.
+2.  **Scraper Engine Refactor:**
+    * Fix all URL and playlist title parsing bugs.
+    * Implement smarter page scraping (scan page text if URL parsing fails).
+3.  **Multi-Scraper Integration:**
+    * Implement **TVDB** as a user-selectable metadata source (via a pop-up) for better Anime/Plex support.
+    * Integrate external subtitle database support (e.g., OpenSubtitles).
+4.  **Branding:** Design a new application icon and explore a new official name.
