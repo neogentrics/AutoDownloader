@@ -7,7 +7,7 @@ namespace AutoDownloader.UI
     public partial class ConfirmNameWindow : Window
     {
         private DispatcherTimer _timer;
-        private int _countdown = 15;
+        private int _countdown = 60;
 
         public string ShowName { get; private set; }
         public bool IsConfirmed { get; private set; } = false;

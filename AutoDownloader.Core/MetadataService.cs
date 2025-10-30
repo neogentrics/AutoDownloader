@@ -51,35 +51,11 @@ namespace AutoDownloader.Core
         public bool IsTvdbKeyValid => !string.IsNullOrWhiteSpace(_tvdbApiKey) && _tvdbApiKey != "YOUR_TVDB_API_KEY_HERE";
 
 
-        // This is the new public-facing method that implements your Pop-up Strategy
+        /// <summary>
+        /// V1.9: Searches TMDB for metadata.
+        /// </summary>
         public async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>
-            GetMetadataAsync(string showName, Func<string, Task<bool>> confirmTvdbSearch)
-        {
-            var tmdbResult = await GetTmdbMetadataAsync(showName);
-            if (tmdbResult != null)
-            {
-                return tmdbResult;
-            }
-
-            // If TMDB fails, ask the user (your pop-up idea)
-            if (IsTvdbKeyValid)
-            {
-                bool userWantsTvdb = await confirmTvdbSearch(showName);
-                if (userWantsTvdb)
-                {
-                    var tvdbResult = await GetTvdbMetadataAsync(showName);
-                    if (tvdbResult != null)
-                    {
-                        return tvdbResult;
-                    }
-                }
-            }
-
-            return null; // All searches failed or were cancelled
-        }
-
-
-        private async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?> GetTmdbMetadataAsync(string showName)
+            GetTmdbMetadataAsync(string showName)
         {
             if (!IsTmdbKeyValid) return null;
 
@@ -112,9 +88,10 @@ namespace AutoDownloader.Core
         }
 
         /// <summary>
-        /// V1.9: Reworked to use HttpClient directly, bypassing TvDbSharper.
+        /// V1.9: Searches TVDB for metadata. Reworked to use HttpClient directly.
         /// </summary>
-        private async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?> GetTvdbMetadataAsync(string showName)
+        public async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>
+            GetTvdbMetadataAsync(string showName)
         {
             if (!IsTvdbKeyValid) return null;
 

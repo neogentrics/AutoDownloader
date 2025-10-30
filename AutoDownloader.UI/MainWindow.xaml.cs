@@ -202,10 +202,9 @@ namespace AutoDownloader.UI
             }
         }
 
-        // --- CODE in MainWindow.xaml.cs (REPLACE this entire method) ---
-
         /// <summary>
         /// Contains the core logic to process a single URL or search term.
+        /// V1.9.0-alpha: Reworked for pop-up confirmation strategy.
         /// </summary>
         private async Task ProcessSingleDownloadAsync(string searchTerm)
         {
@@ -217,9 +216,8 @@ namespace AutoDownloader.UI
             string baseOutputFolder = OutputFolderTextBox.Text;
             string finalUrl = searchTerm;
             string finalOutputFolder = baseOutputFolder;
-            string searchTarget = searchTerm; // The name we will search for
+            string searchTarget = searchTerm;
 
-            // V1.7.1 FIX: Always initialize the metadata object.
             DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
 
             // --- PHASE 1: Determine the Final Download URL ---
@@ -266,11 +264,10 @@ namespace AutoDownloader.UI
 
             // --- PHASE 2: V1.9.0-alpha POP-UP STRATEGY ---
 
-            // Step 1: Confirm the name with the user
-            AppendLog($"--- Confirming show name for: '{searchTarget}' ---", Brushes.Aqua);
-            ConfirmNameWindow nameDialog = new ConfirmNameWindow(searchTarget);
-            nameDialog.Owner = this; // Set the owner for correct modal behavior
-            nameDialog.ShowDialog(); // This pauses execution until the window is closed
+            // Step 1: Confirm the name with the user (15s timeout)
+            AppendLog($"--- Parsing complete. Confirming show name for: '{searchTarget}' ---", Brushes.Aqua);
+            ConfirmNameWindow nameDialog = new ConfirmNameWindow(searchTarget) { Owner = this };
+            nameDialog.ShowDialog(); // Pauses execution
 
             if (!nameDialog.IsConfirmed)
             {
@@ -280,38 +277,41 @@ namespace AutoDownloader.UI
 
             string confirmedName = nameDialog.ShowName;
             AppendLog($"--- User confirmed name: '{confirmedName}' ---", Brushes.Aqua);
-            StatusTextBlock.Text = $"Looking up official metadata for: {confirmedName}";
 
-            // Step 2: Define the TVDB Pop-up "function"
-            // This is the function we pass to the metadata service.
-            Func<string, Task<bool>> confirmTvdbSearch = async (show) =>
+            // Step 2: Select the Database (30s timeout)
+            StatusTextBlock.Text = "Waiting for database selection...";
+            SelectDatabaseWindow dbDialog = new SelectDatabaseWindow() { Owner = this };
+            dbDialog.ShowDialog(); // Pauses execution
+
+            if (dbDialog.SelectedSource == DatabaseSource.Canceled)
             {
-                AppendLog($"--- TMDB failed. Asking user to search TVDB for: '{show}' ---", Brushes.Orange);
+                AppendLog("--- User cancelled database selection. Download aborted. ---", Brushes.Red);
+                return;
+            }
 
-                // We must use the dispatcher to show a MessageBox from this background task
-                bool result = await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    MessageBoxResult res = MessageBox.Show(
-                        this,
-                        $"Could not find '{show}' on TMDB.\n\nWould you like to search The TV Database (TVDB) instead? (Recommended for Anime)",
-                        "Metadata Search Failed",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Warning);
-                    return res == MessageBoxResult.Yes;
-                });
-                return result;
-            };
+            // Step 3: Call the correct metadata service based on selection
+            Task<(string, int, int, int)?> metadataTask;
+            if (dbDialog.SelectedSource == DatabaseSource.TVDB)
+            {
+                AppendLog("--- Searching The TV Database (TVDB)... ---", Brushes.Yellow);
+                StatusTextBlock.Text = "Searching TVDB...";
+                metadataTask = _metadataService.GetTvdbMetadataAsync(confirmedName);
+            }
+            else
+            {
+                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
+                StatusTextBlock.Text = "Searching TMDB...";
+                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
+            }
 
-            // Step 3: Call the new metadata service
-            // This call fixes CS1061 and CS8130
-            var metadataResult = await _metadataService.GetMetadataAsync(confirmedName, confirmTvdbSearch);
+            var metadataResult = await metadataTask;
 
+            // Step 4: Process Metadata and Save XML (Future Step)
             if (metadataResult != null)
             {
                 var (officialTitle, seriesId, targetSeasonNumber, expectedCount) = metadataResult.Value;
 
                 AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
-                AppendLog($"Metadata Source: {(seriesId > 1000000 ? "TMDB" : "TVDB")}", Brushes.Yellow); // Simple guess based on ID format
                 AppendLog($"Target Season {targetSeasonNumber} Expected Episode Count: {expectedCount}", Brushes.Yellow);
 
                 metadataToPass.OfficialTitle = officialTitle;
@@ -322,15 +322,20 @@ namespace AutoDownloader.UI
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
                 Directory.CreateDirectory(finalOutputFolder);
                 AppendLog($"Output folder set to: {finalOutputFolder}", Brushes.Yellow);
+
+                // TODO (v1.9.0-alpha): Add XML saving logic here.
+                AppendLog("--- Metadata saving to XML not yet implemented. ---", Brushes.Orange);
             }
             else
             {
-                // This is the CRASH fix: if metadata fails or user says no, we stop gracefully.
+                // This is the CRASH fix: if metadata fails, we stop gracefully.
                 AppendLog($"Could not find official metadata for '{confirmedName}'. Download aborted.", Brushes.Red);
                 return;
             }
 
-            // --- PHASE 3: Download and Verification Logic (V1.8 Content Verification) ---
+            // --- PHASE 3: Download and Verification Logic ---
+            // (This block remains the same as your v1.8.1 code)
+
             string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
 
             int filesBefore = 0;
@@ -352,7 +357,6 @@ namespace AutoDownloader.UI
                 AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
             }
 
-            // CRITICAL V1.8 STEP 4: Count files AFTER download
             int filesAfter = 0;
             int filesDownloaded = 0;
 
@@ -365,7 +369,6 @@ namespace AutoDownloader.UI
                 filesDownloaded = filesAfter - filesBefore;
             }
 
-            // CRITICAL V1.8 STEP 5: Compare Actual vs. Expected
             if (metadataToPass.ExpectedEpisodeCount > 0)
             {
                 int missingCount = metadataToPass.ExpectedEpisodeCount - filesAfter;
