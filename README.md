@@ -1,69 +1,61 @@
 # AutoDownloader
 
-An intelligent, high-speed, and automated WPF application for downloading Movies and TV Shows. AutoDownloader is designed for personal media organization and archival,
-utilizing the power of `yt-dlp`, `aria2c`, and multiple metadata APIs for seamless content management.
+An intelligent, high-speed, and automated WPF application for downloading Movies and TV Shows. AutoDownloader is designed for personal media organization and archival, utilizing the power of `yt-dlp`, `aria2c`, and multiple metadata APIs for seamless content management.
 
-**Developer: Neo Gentrics | [cite_start]AI Development Partner: Gemini (Google)** [cite: 110]
-
-[cite_start]**Current Stable Release: v1.8.1** 
-[cite_start]**Current Experimental Branch: v1.9.0-alpha** [cite: 111]
+**Current Stable Release: v1.8.1**
 
 ---
 
-## 🚀 Experimental v1.9.0-alpha Branch
+## 🚀 Experimental Alpha Branch Available!
 
-Development is active on the `v1.9.0-alpha` branch, which focuses on solving the metadata integration crisis.
+Development has begun on **v1.9.0-alpha**, which focuses on integrating multiple metadata scrapers. This is an unstable development branch and is not recommended for production use.
 
-* **TVDB Micro-Client:** The broken and outdated `TvDbSharper` dependency has been **removed**. It is replaced by a lightweight, custom `HttpClient` micro-client that communicates directly with the modern TVDB v4 API.
-* **New Pop-up Strategy:** This branch introduces a new user-driven UI flow. When a download starts, the app presents pop-up windows (with timeouts) to:
-    1.  Confirm the auto-detected show name.
-    2.  [cite_start]Allow the user to manually select the metadata source (TMDB or TVDB).
+Developers interested in testing or contributing to the new TVDB integration can find the work on the alpha branch:
+* **View Alpha Branch:** [https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha](https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha)
+* **Alpha README:** [View the v1.9.0-alpha README](https://github.com/neogentrics/AutoDownloader/blob/v1.9.0-alpha/README.md)
 
 ---
 
 ## 🚀 Key Features of v1.8.1 (Stable)
 
-* [cite_start]**Content Verification (v1.8):** Compares the number of files in the download folder against the official episode count from TMDB, logging missing episodes.
-* **Settings System (v1.8):** Dedicated Preferences window (Edit -> Preferences...) to manage API keys and set the default output folder.
-* [cite_start]**Intelligent Naming (v1.7):** Uses **The Movie Database (TMDB)** to retrieve official show titles, guaranteeing correct folder names for Plex.
-* [cite_start]**Dynamic URL Parsing (v1.8.1):** Dynamically parses show names from direct URLs (like Tubi) to fix metadata lookups and resolve the critical "hardcoded search" bug.
-* **Multi-Batch Support (v1.6):** Added support for pasting multiple links and fixed UI freezing by implementing batched logging.
+* ✅ **CRITICAL FIX: Dynamic URL Parsing (v1.8.1):** The flagship feature of this release. Fixes a critical v1.8.0 bug by dynamically parsing the show name from direct URLs (like Tubi). This ensures metadata lookups succeed even when not using the Smart Search.
 
----
+* ✅ **Content Verification (v1.8):** Automatically compares downloaded files against official TMDB episode counts to warn about missing episodes, ensuring season completion.
 
-## 🔮 Project Development Roadmap (v1.0 to v3.0)
+* ✅ **Centralized Settings System (v1.8):** A dedicated "Preferences" window (Ctrl+P) to securely manage your TMDB & Gemini API keys, default output folder, and video quality settings.
 
-This project is developed in phases. The current `v1.9.0-alpha` work completes Phase 1, and Phase 2 will begin with v2.0.
+* ✅ **Intelligent Naming (v1.7):** Uses **The Movie Database (TMDB)** to retrieve official show titles, guaranteeing correct Plex-friendly folder names (e.g., `/TV Shows/Official Title/Season 01/`).
 
-### Phase 1: Stability and Metadata Integration (v1.0 - v1.9)
-**Focus:** Establishing a stable base, eliminating critical bugs, and integrating essential naming services[cite: 114].
+* ✅ **Smart Search:** Can't find a link? Just type in a show's name (e.g., "The Mandalorian") and the Gemini AI will search the web for a compatible download source.
 
-| Version | Key Accomplishment | Architectural / Code Changes |
+* ✅ **Batch Downloading:** Use the "Toggle Multi-Link" button to paste a list of URLs or search terms for sequential, unattended downloading.
+
+## ⚠️ Known Issues in v1.8.1 (To Be Fixed in v2.0)
+
+This stable release still contains several critical bugs that will be the focus of the next major version:
+
+| Component | Issue | Status |
 | :--- | :--- | :--- |
-| v1.0 | Initial structure, basic logging, and singular download logic. | WPF UI; `Process.Start` used to call yt-dlp.exe; `ToolManagerService.cs` created.  |
-| v1.6 | Added multi-link support and fixed initial UI freezing. | Multi-Batch Logic: Implemented `StartDownloadButton_Click` orchestrator loop.  |
-| v1.7 | Integrated TMDB for intelligent naming and stabilized template syntax. | Metadata: Integrated `TMDbLib`. Template Fixes: Resolved yt-dlp format syntax errors.  |
-| v1.8.0 | Introduced Content Verification structure and User Settings. | Settings: Implemented `SettingsModel.cs` and `SettingsService.cs`. Validation: Added `PreferencesWindow.xaml`.  |
-| v1.8.1 | **CRITICAL FIX:** Fixed the hardcoded metadata search bug. | **CRITICAL FIX:** Implemented `ExtractShowNameFromUrl` helper to dynamically parse titles.  |
-| v1.9.0-alpha | **Integration Rework:** Implemented Pop-up Strategy and TVDB Micro-Client. | **Architecture Rework:** Removed the broken `TvDbSharper` dependency. UI Logic: Added `ConfirmNameWindow` and `SelectDatabaseWindow`.  |
+| **CRITICAL: App Crash** | The application crashes if a metadata lookup fails (e.g., from a Season 2 URL or an un-parsable link). | **Bug - Slated for v2.0** |
+| **CRITICAL: URL Parsing** | The app incorrectly parses "Season 2" as the show name from Season 2+ URLs. | **Bug - Slated for v2.0** |
+| **CRITICAL: Playlist Parsing**| When given a YouTube playlist, the app incorrectly parses the URL instead of the on-page playlist title. | **Bug - Slated for v2.0** |
+| **Playlist Extraction** | Downloads are limited to 20 items/episodes on some series pages (e.g., Tubi). | **Bug - Slated for v2.0** |
 
-### Phase 2: User Experience & Scraper Reliability (v2.0 - v2.9)
-**Focus:** Overhauling the UI, making the download process transparent, and fixing all known parsing and extraction bugs[cite: 117].
+## ✅ Supported Sites (v1.8.1)
 
-| Version | Feature / Enhancement | Impact |
-| :--- | :--- | :--- |
-| v2.0 | **UI Overhaul & Dynamic Progress** | Replaces the raw log with a status bar showing **Percentage, Speed, and ETA**. Converts the raw log to a toggleable **Developer Log** window.  |
-| v2.1 | **TVDB User-Selectable Scraper** | Fully implements the user-confirm pop-up for **TVDB** search, dramatically increasing metadata success for Anime/Plex users.  |
-| v2.2 | **Metadata Engine Completion** | **CRITICAL FIX:** Fixes all known URL parsing bugs (**Season 2+ links**, **YouTube playlist titles**) by implementing **Smarter Page Scraping** (scanning HTML body for titles).  |
-| v2.3 | **Content Limit Fix** | **CRITICAL FIX:** Dedicates research to finding the correct `yt-dlp` flag (e.g., `--no-paged-list`) to resolve the **20-Item Playlist Limit** on sites like Tubi.  |
-| v2.5 | **Branding & Polish** | Designs and implements a final application icon and logo. Integrates a proper name (replacing "AutoDownloader").  |
+While `yt-dlp` supports over 1,000 sites, the "Smart Search" and "Metadata Lookup" features are primarily tested for:
+* Tubi (tubitv.com)
+* YouTube (youtube.com)
 
-### Phase 3: Advanced Automation & Expansion (v3.0+)
-**Focus:** Adding high-value, complex features like multi-source content syncing, external file processing, and advanced configuration[cite: 120].
+## 🔮 Future Development: v2.0 Roadmap
 
-| Version | Feature / Enhancement | Scope |
-| :--- | :--- | :--- |
-| v3.0 | **External Subtitle Integration** | Adds option to search external subtitle databases (e.g., OpenSubtitles) and download/rename subtitles when none are provided by the streaming source. [cite: 121] |
-| v3.1 | **Advanced Download Manager API** | Integrates API calls to popular external download managers (like IDM) for specific URLs. [cite: 121] |
-| v3.2 | **Metadata XML Save/Load** | **CRITICAL FIX:** Fully implements saving/loading metadata into a local `series.xml` file. This solves the **"already downloaded season"** bug by tracking local state. [cite: 121] |
-| v3.5 | **Profile Management** | Allows users to save and load different configurations (e.g., "Standard Quality Profile," "4K Max Profile") in the Preferences window. [cite: 121] |
+The next major release, **v2.0**, will be a complete overhaul focusing on reliability and user experience.
+
+1.  **UI Overhaul:** Implement dynamic download progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.
+2.  **Scraper Engine Refactor:**
+    * Fix all URL and playlist title parsing bugs.
+    * Implement smarter page scraping (scan page text if URL parsing fails).
+3.  **Multi-Scraper Integration:**
+    * Implement **TVDB** as a user-selectable pop-up option (v1.9).
+    * Integrate external subtitle database support.
+4.  **Branding:** Design a new application icon and official name.
