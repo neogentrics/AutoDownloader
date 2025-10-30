@@ -4,35 +4,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AutoDownloader - Project Development Hub</title>
-    
-    <link rel="icon" type="image/png" href="https://github.com/neogentrics/AutoDownloader/blob/master/Logo2.png">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     
     <style>
         /* --- Root Variables (Dark Theme) --- */
         :root {
             --bg-primary: #121212;
-            --bg-secondary: #1E1E1E; 
-            --bg-card: #2A2A2A;
+            --bg-secondary: #1A1A1A;
+            --bg-card: #242424;
             --color-accent: #007ACC;
-            --color-text: #E0E0E0;
-            --color-text-muted: #888;
-            --color-link: #5aa9e6; 
-            --color-link-hover: #90cfff;
+            --color-accent-hover: #0099FF;
+            --color-text-primary: #E0E0E0;
+            --color-text-secondary: #AAAAAA;
+            --color-border: #333333;
+            --color-success: #28a745;
             --color-warning: #FFC107;
             --color-bug: #E57373;
-            --color-success: #28a745;
         }
 
         /* --- Base & Animations --- */
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
         }
 
         body {
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', Arial, sans-serif;
+            font-family: 'Roboto', 'Segoe UI', Arial, sans-serif;
             background-color: var(--bg-primary);
-            color: var(--color-text);
+            color: var(--color-text-primary);
             margin: 0;
             padding: 0;
             line-height: 1.7;
@@ -40,45 +51,44 @@
 
         /* --- Header --- */
         .header {
-            background: linear-gradient(135deg, var(--color-accent) 0%, #0056b3 100%);
-            color: white;
-            padding: 40px 20px;
-            text-align: center;
-            border-bottom: 4px solid var(--color-link-hover);
             display: flex;
             align-items: center;
             justify-content: center;
-            flex-wrap: wrap;
-        }
-        .header img.logo {
-            height: 80px;
-            width: 80px;
-            margin-right: 20px;
-            border-radius: 10px;
-            background: rgba(255,255,255,0.1);
-            padding: 5px;
-        }
-        .header .title-block {
+            padding: 40px 20px;
+            background: linear-gradient(-45deg, var(--color-accent), #004a99, #0d2a4a, var(--color-accent));
+            background-size: 400% 400%;
+            animation: gradientShift 15s ease infinite;
+            border-bottom: 4px solid var(--color-accent-hover);
+            color: white;
             text-align: left;
+        }
+        .header img {
+            height: 90px;
+            width: 90px;
+            margin-right: 25px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 5px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
         }
         .header h1 {
             margin: 0;
-            font-size: 3.5em;
+            font-size: 3em;
             font-weight: 700;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
         .header p {
-            font-size: 1.25em;
             margin: 5px 0 0;
+            font-size: 1.2em;
+            font-weight: 300;
             opacity: 0.9;
         }
 
-        /* --- NEW: 2-Column Layout --- */
+        /* --- Main Layout (2-Column) --- */
         .container {
             display: grid;
-            grid-template-columns: 1fr 320px; /* Main content | Sidebar */
+            grid-template-columns: 1fr 340px; /* Main content | Sidebar */
             gap: 30px;
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 40px auto;
             padding: 0 20px;
         }
@@ -90,115 +100,184 @@
         .sidebar {
             grid-column: 2 / 3;
             position: sticky;
-            top: 40px; /* Sticks the sidebar when scrolling */
+            top: 20px; /* Sticks the sidebar when scrolling */
+            align-self: start; /* Prevents stretching */
         }
 
-        /* --- Sections (Cards) --- */
+        /* --- Reusable Card/Section --- */
         .section {
             background-color: var(--bg-card);
-            border: 1px solid #333;
+            border: 1px solid var(--color-border);
             border-radius: 12px;
             margin-bottom: 30px;
             padding: 25px 30px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
-            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
-            
-            /* NEW: Fade-in animation */
-            opacity: 0;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
             animation: fadeIn 0.5s ease-out forwards;
         }
-        
-        /* NEW: Staggered animation delay */
-        .section:nth-of-type(1) { animation-delay: 0.1s; }
-        .section:nth-of-type(2) { animation-delay: 0.2s; }
-        .section:nth-of-type(3) { animation-delay: 0.3s; }
-        .section:nth-of-type(4) { animation-delay: 0.4s; }
-
-        .section:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 25px rgba(0, 122, 204, 0.2);
-        }
-
         .section h2 {
             font-size: 1.8em;
-            font-weight: 600;
+            font-weight: 500;
             color: var(--color-accent);
-            border-bottom: 2px solid #444;
+            border-bottom: 2px solid var(--color-border);
             padding-bottom: 10px;
             margin-top: 0;
+            margin-bottom: 20px;
         }
-        
-        /* --- Special Section Styles --- */
-        .section.alpha { border-left: 5px solid var(--color-warning); }
-        .section.alpha h2 { color: var(--color-warning); border-bottom-color: var(--color-warning); }
-        .section.bugs { border-left: 5px solid var(--color-bug); }
-        .section.bugs h2 { color: var(--color-bug); border-bottom-color: var(--color-bug); }
+        .section p {
+            color: var(--color-text-secondary);
+        }
 
-        /* --- Links & Buttons --- */
-        a {
-            color: var(--color-link);
-            text-decoration: none;
-            font-weight: 600;
-            transition: color 0.2s;
+        /* --- Sidebar Specifics --- */
+        .sidebar .section h2 {
+            font-size: 1.4em;
+            font-weight: 500;
         }
-        a:hover {
-            color: var(--color-link-hover);
-            text-decoration: underline;
+        .sidebar ul {
+            list-style: none;
+            padding-left: 0;
+            margin-top: 0;
         }
-        
+        .sidebar li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--color-border);
+            color: var(--color-text-primary);
+            font-weight: 300;
+        }
+        .sidebar li:last-child {
+            border-bottom: none;
+        }
+        .sidebar li strong {
+            font-weight: 500;
+            color: var(--color-text-primary);
+        }
+
+        /* Button Group */
         .button-group a {
-            display: block; /* Stack buttons vertically in sidebar */
+            display: block;
             background-color: var(--color-accent);
             color: white;
             padding: 12px 20px;
             margin-bottom: 15px;
-            border-radius: 6px;
-            font-weight: 600;
+            border-radius: 8px;
+            font-weight: 500;
             text-decoration: none;
             text-align: center;
+            font-size: 1.1em;
             transition: all 0.2s ease-in-out;
         }
         .button-group a:hover {
-            background-color: var(--color-link-hover);
-            color: var(--bg-primary);
-            text-decoration: none;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(0, 122, 204, 0.3);
+            background-color: var(--color-accent-hover);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 122, 204, 0.3);
         }
         .button-group a.secondary {
             background-color: #444;
         }
         .button-group a.secondary:hover {
             background-color: #666;
-            color: white;
             box-shadow: 0 4px 10px rgba(100, 100, 100, 0.2);
         }
 
-        /* --- Lists (Features & Bugs) --- */
-        ul { list-style: none; padding-left: 0; }
-        li { 
-            padding-left: 30px; 
-            position: relative; 
-            margin-bottom: 12px; 
-            font-size: 1.05em;
-            /* NEW: Interactive list items */
-            padding-top: 4px;
-            padding-bottom: 4px;
-            border-radius: 4px;
-            transition: background-color 0.2s;
-        }
-        li:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-        }
-        li::before { content: '✓'; position: absolute; left: 0; top: 5px; color: var(--color-success); font-weight: bold; font-size: 1.2em; }
-        li.bug::before { content: '🔧'; color: var(--color-bug); }
-        li.known-issue::before { content: '⚠️'; color: var(--color-warning); }
-        li.future::before { content: '▶'; color: var(--color-accent); }
-
-        .footer { text-align: center; padding: 30px 0; color: var(--color-text-muted); font-size: 0.9em; border-top: 1px solid #333; }
+        /* Status-specific sections */
+        .section.stable h2 { color: var(--color-success); }
+        .section.experimental h2 { color: var(--color-warning); }
+        .section.bugs h2 { color: var(--color-bug); }
         
-        /* Responsive layout for smaller screens */
-        @media (max-width: 900px) {
+        /* --- Main Content Specifics --- */
+
+        /* Bug Table */
+        .bug-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .bug-table th, .bug-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--color-border);
+        }
+        .bug-table th {
+            background-color: var(--bg-secondary);
+            font-weight: 500;
+        }
+        .bug-table td:first-child {
+            font-weight: 700;
+            color: var(--color-bug);
+            white-space: nowrap;
+        }
+
+        /* Roadmap Tab Navigation */
+        .tab-nav {
+            display: flex;
+            border-bottom: 2px solid var(--color-border);
+            margin-bottom: 20px;
+        }
+        .tab-link {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--color-border);
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            padding: 12px 25px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: 500;
+            color: var(--color-text-secondary);
+            transition: all 0.2s;
+            margin-right: 8px;
+            transform: translateY(1px);
+        }
+        .tab-link:hover {
+            background-color: var(--bg-card);
+            color: var(--color-text-primary);
+        }
+        .tab-link.active {
+            background-color: var(--bg-card);
+            border-color: var(--color-border);
+            border-bottom: 2px solid var(--bg-card);
+            color: var(--color-accent);
+            transform: translateY(2px);
+        }
+
+        /* Roadmap Tab Content */
+        .tab-pane {
+            display: none;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        .tab-pane.active {
+            display: block;
+        }
+        .roadmap-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .roadmap-table th, .roadmap-table td {
+            padding: 15px;
+            border: 1px solid var(--color-border);
+            text-align: left;
+            vertical-align: top;
+        }
+        .roadmap-table th {
+            background-color: var(--bg-secondary);
+            width: 20%;
+        }
+        .roadmap-table td:first-child {
+            font-weight: 700;
+            color: var(--color-accent-hover);
+            width: 20%;
+        }
+
+        /* --- Footer --- */
+        .footer {
+            text-align: center;
+            padding: 30px 0;
+            color: var(--color-text-secondary);
+            font-size: 0.9em;
+            border-top: 1px solid var(--color-border);
+            margin-top: 40px;
+        }
+        
+        /* --- Responsive Design --- */
+        @media (max-width: 1024px) {
             .container {
                 grid-template-columns: 1fr; /* Stack columns */
             }
@@ -207,103 +286,265 @@
                 top: 0;
             }
             .header {
+                flex-direction: column;
                 text-align: center;
             }
-            .header .title-block {
-                text-align: center;
-            }
-            .header img.logo {
-                margin: 0 auto 20px;
+            .header img {
+                margin: 0 0 20px 0;
             }
         }
-
     </style>
 </head>
 <body>
-    <div class="header">
-        <img src="https://github.com/neogentrics/AutoDownloader/raw/master/Assets/icon.png" alt="AutoDownloader Logo" class="logo">
+
+    <header class="header">
+        <img src="Logo2.png" alt="AutoDownloader Logo">
         <div class="title-block">
             <h1>AutoDownloader</h1>
-            <p>Your Professional Media Archival & Organization Tool</p>
+            <p>Your Intelligent Media Archival & Organization Tool</p>
         </div>
-    </div>
+    </header>
 
     <div class="container">
+        
         <main class="main-content">
             
-            <div class="section">
-                <h2>Latest Stable Release: v1.8.1</h2>
-                <p><strong>Primary Goal:</strong> Content Integrity & User Configuration.</p>
-                <ul>
-                    <li class="bug"><strong>Critical URL Parsing Fix:</strong> Resolved the bug where direct URLs (e.g., Season 2 links) used a hardcoded search term, causing metadata failure and crashes.</li>
-                    <li><strong>Content Verification:</strong> Checks downloaded files against official TMDB episode counts to warn about missing episodes.</li>
-                    <li><strong>Settings System:</strong> A new Preferences window (Ctrl+P) to manage API keys (TMDB/Gemini) and default settings.</li>
-                </ul>
-            </div>
+            <section class="section bugs">
+                <h2>🐛 Known Critical Issues (v1.8.1)</h2>
+                <p>This stable release is effective, but contains known bugs scheduled for the v2.0 overhaul. These issues may cause crashes or incorrect file naming.</p>
+                <table class="bug-table">
+                    <thead>
+                        <tr>
+                            <th>Component</th>
+                            <th>Issue Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>CRITICAL: App Crash</td>
+                            <td>The application crashes if a metadata lookup fails (e.g., from a Season 2 URL or an un-parsable link).</td>
+                        </tr>
+                        <tr>
+                            <td>CRITICAL: URL Parsing</td>
+                            <td>The app incorrectly parses "Season 2" as the show name from Season 2+ URLs, causing the lookup to fail.</td>
+                        </tr>
+                        <tr>
+                            <td>CRITICAL: Playlist Parsing</td>
+                            <td>When given a YouTube playlist, the app incorrectly parses the *URL* instead of the *on-page playlist title*, failing the metadata search.</td>
+                        </tr>
+                        <tr>
+                            <td>Playlist Extraction</td>
+                            <td>Downloads are limited to 20 items/episodes on some series pages (e.g., Tubi). This is a `yt-dlp` flag issue.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
             
-            <div class="section">
-                <h2>Future v2.0 Roadmap</h2>
-                <p>The next major version will be a complete overhaul focusing on reliability and user experience.</p>
-                <ul>
-                    <li class="future">**UI Overhaul:** Implement dynamic progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.</li>
-                    <li class="future">**Scraper Engine Refactor:** Fix all URL/playlist parsing bugs and implement smarter page text scraping.</li>
-                    <li class="future">**Multi-Scraper Integration:** Add **TVDB** as a user-selectable pop-up option and integrate external subtitle databases.</li>
-                    <li class="future">**Branding:** Design a new application icon and official name.</li>
-                </ul>
-            </div>
-
-            <div class="section">
-                <h2>Development Milestones (Changelog)</h2>
+            <section class="section">
+                <h2>🚀 Full Development Roadmap</h2>
+                <p>This project is developed in phases. The current work on the `v1.9.0-alpha` branch completes Phase 1.</p>
                 
-                <h3>Version 1.7.x</h3>
-                <ul>
-                    <li class="bug-fix">**Intelligent Naming:** Integrated TMDB to fix the "NA" folder bug.</li>
-                    <li class="bug-fix">**Stability:** Fixed invalid `yt-dlp` template syntax errors.</li>
-                </ul>
+                <div class="tab-nav">
+                    <button class="tab-link" onclick="openPhase(event, 'phase1')">Phase 1: Stability & Metadata</button>
+                    <button class="tab-link" onclick="openPhase(event, 'phase2')">Phase 2: UX & Reliability</button>
+                    <button class="tab-link" onclick="openPhase(event, 'phase3')">Phase 3: Advanced Automation</button>
+                </div>
                 
-                <h3>Version 1.6.x</h3>
-                <ul>
-                    <li>**Multi-Link Support:** Added batch processing for multiple URLs.</li>
-                    <li class="bug-fix">**Stop Button Fix:** Resolved critical app-freezing bug.</li>
-                    <li>**UI Polish:** Added main menu bar and dark theme for dropdowns.</li>
-                </ul>
-            </div>
-
+                <div class="tab-content">
+                    
+                    <div id="phase1" class="tab-pane">
+                        <h3>Focus: Establishing a stable base, eliminating critical bugs, and integrating essential naming services.</h3>
+                        <table class="roadmap-table">
+                            <thead>
+                                <tr>
+                                    <th>Version</th>
+                                    <th>Key Accomplishment</th>
+                                    <th>Architectural / Code Changes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>v1.0 (Initial)</td>
+                                    <td>Initial structure, basic logging, and singular download logic.</td>
+                                    <td>WPF UI; `Process.Start` used to call yt-dlp.exe; `ToolManagerService.cs` created.</td>
+                                </tr>
+                                <tr>
+                                    <td>v1.6 (Multi-Batch)</td>
+                                    <td>Added multi-link support and fixed initial UI freezing.</td>
+                                    <td>Multi-Batch Logic: Implemented `StartDownloadButton_Click` orchestrator loop.</td>
+                                </tr>
+                                <tr>
+                                    <td>v1.7 (TMDB Naming)</td>
+                                    <td>Integrated TMDB for intelligent naming and stabilized template syntax.</td>
+                                    <td>Metadata: Integrated `TMDbLib` for metadata lookup.</td>
+                                </tr>
+                                <tr>
+                                    <td>v1.8.0 (Verification/Settings)</td>
+                                    <td>Introduced Content Verification structure and User Settings.</td>
+                                    <td>Settings: Implemented `SettingsModel.cs` and `SettingsService.cs`. Validation: Added `PreferencesWindow.xaml`.</td>
+                                </tr>
+                                <tr>
+                                    <td>v1.8.1 (CRITICAL FIX)</td>
+                                    <td>Fixed the hardcoded metadata search bug.</td>
+                                    <td>CRITICAL FIX: Implemented `ExtractShowNameFromUrl` helper to dynamically parse titles.</td>
+                                </tr>
+                                <tr>
+                                    <td>v1.9.0-alpha (Current)</td>
+                                    <td>Implemented Pop-up Strategy and TVDB Micro-Client.</td>
+                                    <td>Architecture Rework: Removed broken `TvDbSharper` dependency. Integration: Rewrote `GetTvdbMetadataAsync` using stable `HttpClient` micro-client calls to TVDB v4 API.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div id="phase2" class="tab-pane">
+                        <h3>Focus: Overhauling the UI, making the download process transparent, and ensuring every single feature is rock-solid.</h3>
+                        <table class="roadmap-table">
+                            <thead>
+                                <tr>
+                                    <th>Version</th>
+                                    <th>Feature / Enhancement</th>
+                                    <th>Impact</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>v2.0 (Major Release)</td>
+                                    <td>UI Overhaul & Dynamic Progress</td>
+                                    <td>Replaces the raw log with a status bar (Percentage, Speed, ETA). Converts raw log to a toggleable **Developer Log** window.</td>
+                                </tr>
+                                <tr>
+                                    <td>v2.1</td>
+                                    <td>TVDB User-Selectable Scraper</td>
+                                    <td>Fully implements the user-confirm pop-up for TVDB search, dramatically increasing metadata success for Anime/Plex users.</td>
+                                </tr>
+                                <tr>
+                                    <td>v2.2</td>
+                                    <td>Metadata Engine Completion</td>
+                                    <td>**CRITICAL FIX:** Fixes all known URL parsing bugs (Season 2+, YouTube playlist titles) by implementing **Smarter Page Scraping** (scanning HTML body for titles).</td>
+                                </tr>
+                                <tr>
+                                    <td>v2.3</td>
+                                    <td>Content Limit Fix</td>
+                                    <td>**CRITICAL FIX:** Dedicates research to finding the correct `yt-dlp` flag to resolve the **20-Item Playlist Limit** on sites like Tubi.</td>
+                                </tr>
+                                <tr>
+                                    <td>v2.5</td>
+                                    <td>Branding & Polish</td>
+                                    <td>Designs and implements a final application icon and logo. Integrates a proper name (replacing "AutoDownloader").</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div id="phase3" class="tab-pane">
+                        <h3>Focus: Adding high-value, complex features like multi-source content syncing, external file processing, and advanced configuration.</h3>
+                        <table class="roadmap-table">
+                            <thead>
+                                <tr>
+                                    <th>Version</th>
+                                    <th>Feature / Enhancement</th>
+                                    <th>Scope</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>v3.0 (Major Release)</td>
+                                    <td>External Subtitle Integration</td>
+                                    <td>Adds option to search external subtitle databases (e.g., OpenSubtitles) and download/rename subtitles.</td>
+                                </tr>
+                                <tr>
+                                    <td>v3.1</td>
+                                    <td>Advanced Download Manager API</td>
+                                    <td>Integrates API calls to popular external download managers (like IDM) for specific URLs.</td>
+                                </tr>
+                                <tr>
+                                    <td>v3.2</td>
+                                    <td>Metadata XML Save/Load</td>
+                                    <td>**CRITICAL FIX:** Fully implements saving/loading metadata into a local `series.xml` file to solve the **"already downloaded season"** bug.</td>
+                                </tr>
+                                <tr>
+                                    <td>v3.5</td>
+                                    <td>Profile Management</td>
+                                    <td>Allows users to save and load different configurations (e.g., "Standard Quality Profile," "4K Max Profile") in the Preferences window.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
         </main>
-
+        
         <aside class="sidebar">
             
-            <div class="section">
+            <section class="section">
                 <h2>Project Links</h2>
                 <div class="button-group">
                     <a href="https://github.com/neogentrics/AutoDownloader/releases/latest">Download Latest Stable (v1.8.1)</a>
-                    <a href="https://github.com/neogentrics/AutoDownloader/releases/tag/v1.8.0" class="secondary">Download v1.8.0</a>
-                    <a href="https://github.com/neogentrics/AutoDownloader/issues" class="secondary">View Public Issue Tracker</a>
                     <a href="https://github.com/neogentrics/AutoDownloader" class="secondary">View Source Code</a>
+                    <a href="https://github.com/neogentrics/AutoDownloader/issues" class="secondary">Report an Issue</a>
                 </div>
-            </div>
-
-            <div class="section alpha">
-                <h2>v1.9.0-alpha</h2>
-                <p>An experimental branch is available for testing the **TVDB fallback integration**.</p>
+            </section>
+            
+            <section class="section stable">
+                <h2>✅ Stable Release: v1.8.1</h2>
+                <p>The recommended build for general use. Includes critical bug fixes for metadata parsing.</p>
+                <ul>
+                    <li>✅ <strong>CRITICAL FIX:</strong> Dynamically parses show names from URLs.</li>
+                    <li>✅ <strong>Content Verification:</strong> Checks downloads against TMDB episode counts.</li>
+                    <li>✅ <strong>Settings System:</strong> Manages API keys and paths (Ctrl+P).</li>
+                    <li>✅ <strong>Intelligent Naming:</strong> Uses TMDB for Plex-friendly folder names.</li>
+                    <li>✅ <strong>Smart Search:</strong> Finds download links from just a show name.</li>
+                </ul>
+            </section>
+            
+            <section class="section experimental">
+                <h2>💡 Experimental: v1.9.0-alpha</h2>
+                <p>An unstable branch focused on replacing the broken TVDB library and improving the UI flow.</p>
+                <ul>
+                    <li>🚀 <strong>TVDB Micro-Client:</strong> Replaces broken `TvDbSharper` with a custom, modern API client.</li>
+                    <li>🚀 <strong>Pop-up Strategy:</strong> Adds UI pop-ups to confirm show names and select a metadata source (TMDB or TVDB).</li>
+                </ul>
                 <div class="button-group">
                     <a href="https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha" class="secondary">Browse Alpha Branch</a>
                 </div>
-            </div>
-
-            <div class="section bugs">
-                <h2>🚨 Known Issues (v1.8.1)</h2>
-                <ul>
-                    <li class="known-issue"><strong>Playlist Item Limit:</strong> Downloads from some sites (e.g., Tubi) are limited to 20 episodes.</li>
-                    <li class="known-issue">**YouTube Playlists:** Metadata lookup may fail if the playlist title doesn't match the show name.</li>
-                </ul>
-            </div>
-
+            </section>
         </aside>
+
     </div>
 
-    <div class="footer">
+    <footer class="footer">
         &copy; 2025 Neo Gentrics. AI Development Partner: Gemini (Google).
-    </div>
+    </footer>
+
+    <script>
+        function openPhase(evt, phaseName) {
+            var i, tabcontent, tablinks;
+
+            // Get all elements with class="tab-pane" and hide them
+            tabcontent = document.getElementsByClassName("tab-pane");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+
+            // Get all elements with class="tab-link" and remove the class "active"
+            tablinks = document.getElementsByClassName("tab-link");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+
+            // Show the current tab, and add an "active" class to the button that opened the tab
+            document.getElementById(phaseName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+
+        // Set the default tab to be open
+        // We use a self-invoking function to ensure the DOM is ready
+        (function() {
+            document.getElementById("phase1").style.display = "block";
+            document.getElementsByClassName("tab-link")[0].className += " active";
+        })();
+    </script>
+
 </body>
 </html>
