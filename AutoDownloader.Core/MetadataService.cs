@@ -45,6 +45,9 @@ namespace AutoDownloader.Core
             {
                 _tmdbClient = null!;
             }
+
+            // Initialize TVDB client (Secondary)
+            _tvdbClient = new TvDbClient();
         }
 
         public bool IsTmdbKeyValid => !string.IsNullOrWhiteSpace(_tmdbApiKey) && _tmdbApiKey != "YOUR_TMDB_API_KEY_HERE";
