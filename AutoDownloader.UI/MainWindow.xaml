@@ -276,7 +276,7 @@
                     <!-- Changed to Disabled to prevent double scrollbar -->
                     <FlowDocument>
                         <Paragraph FontWeight="Bold" Foreground="White" TextAlignment="Center" Margin="0,5,0,0">
-                            <Run Text="Welcome to AutoDownloader v1.8.0!"/>
+                            <Run Text="Welcome to AutoDownloader v1.9.0-alpha!"/>
                         </Paragraph>
                         <Paragraph Foreground="LightGray" TextAlignment="Center" Margin="0,0,0,10">
                             <Run Text="Your high-speed media archival and organization tool."/>

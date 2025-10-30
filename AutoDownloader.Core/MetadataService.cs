@@ -1,98 +1,81 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
-using TMDbLib.Client; // This is for TMDbClient
-using TMDbLib.Objects.General;
-using TMDbLib.Objects.Search; // <-- THIS IS FOR SearchContainer and SearchTv
-using TMDbLib.Objects.TvShows; // This is for TvShow and TvShowMethods
+using System.Collections.Generic;
+using TMDbLib.Client;
+using TMDbLib.Objects.General; // <-- FIX: Added for SearchContainer
+using TMDbLib.Objects.Search;
+using TMDbLib.Objects.TvShows;
+// We no longer need TvDbSharper
 
 namespace AutoDownloader.Core
 {
     /// <summary>
     /// Service to search The Movie Database (TMDB) for official metadata.
-    /// Uses the TMDB API Key (v3).
+    /// V1.9: Reworked for user-selectable database lookups.
     /// </summary>
     public class MetadataService
     {
-
-        // TMDB API Key (v3) is used for the TMDbLib client.
-        // We REMOVE the private constant here, as it comes from Settings.
-
         private readonly string _tmdbApiKey;
-        private readonly TMDbClient _client;
+        private readonly TMDbClient _tmdbClient;
 
-        /// <summary>
-        /// Initializes the TMDB client using the key from settings.
-        /// </summary>
-        public MetadataService(string tmdbApiKey) // <-- MODIFIED CONSTRUCTOR
+        public MetadataService(string tmdbApiKey, string tvdbApiKey)
         {
             _tmdbApiKey = tmdbApiKey;
+            // _tvdbApiKey = tvdbApiKey; // We no longer use this
 
-            // Initialize client only if the key is valid.
-            if (!string.IsNullOrWhiteSpace(_tmdbApiKey) && _tmdbApiKey != "YOUR_TMDB_API_KEY_HERE")
+            // Initialize TMDB client (Primary)
+            if (IsTmdbKeyValid)
             {
-                _client = new TMDbClient(_tmdbApiKey);
+                _tmdbClient = new TMDbClient(_tmdbApiKey);
             }
             else
             {
-                // Assign a null client if the key is missing. This prevents the crash.
-                _client = null!; // Use null-forgiving operator to satisfy non-nullable field
+                _tmdbClient = null!;
             }
         }
 
-        // Add a helper property to check if the service is ready
-        public bool IsKeyValid => _client != null;
+        // Helper properties to check if keys are valid
+        public bool IsTmdbKeyValid => !string.IsNullOrWhiteSpace(_tmdbApiKey) && _tmdbApiKey != "YOUR_TMDB_API_KEY_HERE";
+        public bool IsTvdbKeyValid => false; // FIX: Always return false for now
+
 
         /// <summary>
-        /// Searches for a TV show by name and finds the target season details for download.
+        /// V1.9: Searches TMDB for metadata.
         /// </summary>
-        /// <param name="showName">The name of the show to search for.</param>
-        /// <returns>A tuple containing (OfficialTitle, SeriesId, TargetSeasonNumber, ExpectedEpisodeCount). Returns null on failure.</returns>
-        public async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?> FindShowMetadataAsync(string showName)
+        public async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>
+            GetTmdbMetadataAsync(string showName)
         {
-            if (!IsKeyValid)
+            if (!IsTmdbKeyValid) return null;
+
+            try
             {
-                // Soft fail if the client was not initialized due to a bad key.
+                SearchContainer<SearchTv> searchResult = await _tmdbClient.SearchTvShowAsync(showName);
+                SearchTv? firstResult = searchResult.Results.FirstOrDefault();
+
+                if (firstResult == null) return null;
+
+                TvShow fullShow = await _tmdbClient.GetTvShowAsync(firstResult.Id, TvShowMethods.ExternalIds | TvShowMethods.Credits);
+                if (fullShow == null) return null;
+
+                int targetSeasonNumber = 1;
+                int expectedCount = 1;
+
+                var seasonOne = fullShow.Seasons?.FirstOrDefault(s => s.SeasonNumber == targetSeasonNumber);
+                if (seasonOne != null)
+                {
+                    expectedCount = ((int?)seasonOne.EpisodeCount).GetValueOrDefault(1);
+                }
+                if (expectedCount == 0) expectedCount = 1;
+
+                return (fullShow.Name, firstResult.Id, targetSeasonNumber, expectedCount);
+            }
+            catch (Exception)
+            {
                 return null;
             }
-
-            if (string.IsNullOrWhiteSpace(showName)) return null;
-
-            // 1. Search for the show
-            SearchContainer<SearchTv> searchResult = await _client.SearchTvShowAsync(showName);
-            SearchTv? firstResult = searchResult.Results.FirstOrDefault();
-
-            if (firstResult == null)
-            {
-                return null;
-            }
-
-            // 2. Get the full details of the show
-            TvShow fullShow = await _client.GetTvShowAsync(firstResult.Id, TvShowMethods.ExternalIds | TvShowMethods.Credits);
-
-            if (fullShow == null)
-            {
-                return null;
-            }
-
-            // 3. Determine the Target Season
-            int targetSeasonNumber = 1;
-            // WORKAROUND: Default to 1 (or 0) to avoid compiler ambiguity with int? checks.
-            int expectedCount = 1;
-
-            // Find the Season 1 object (or whatever season is targetted)
-            var seasonOne = fullShow.Seasons?
-                // Simpler filter: just find Season 1
-                .FirstOrDefault(s => s.SeasonNumber == targetSeasonNumber);
-
-            if (seasonOne != null)
-            {
-                // FINAL WORKAROUND: We explicitly cast the value to its nullable type (int?) 
-                // and then use GetValueOrDefault(1) to resolve the type conflict error (CS1501).
-                expectedCount = ((int?)seasonOne.EpisodeCount).GetValueOrDefault(1);
-            }
-
-            return (fullShow.Name, fullShow.Id, targetSeasonNumber, expectedCount);
         }
+
+        // We have removed the broken GetTvdbMetadataAsync method entirely.
     }
 }

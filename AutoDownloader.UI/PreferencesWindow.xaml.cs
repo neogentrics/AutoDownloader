@@ -23,6 +23,7 @@ namespace AutoDownloader.UI
             var settings = _settingsService.Settings;
             TmdbKeyTextBox.Text = settings.TmdbApiKey;
             GeminiKeyTextBox.Text = settings.GeminiApiKey;
+            TvdbKeyTextBox.Text = settings.TvdbApiKey; // <-- V1.9 NEW
             OutputFolderTextBox.Text = settings.DefaultOutputFolder;
             QualityTextBox.Text = settings.PreferredVideoQuality;
         }
@@ -34,6 +35,7 @@ namespace AutoDownloader.UI
             // 1. Update the Model
             settings.TmdbApiKey = TmdbKeyTextBox.Text.Trim();
             settings.GeminiApiKey = GeminiKeyTextBox.Text.Trim();
+            settings.TvdbApiKey = TvdbKeyTextBox.Text.Trim(); // <-- V1.9 NEW
             settings.DefaultOutputFolder = OutputFolderTextBox.Text.Trim();
             settings.PreferredVideoQuality = QualityTextBox.Text.Trim();
 

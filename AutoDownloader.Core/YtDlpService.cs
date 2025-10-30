@@ -158,12 +158,9 @@ namespace AutoDownloader.Core
                 // Wait for the process to exit asynchronously, respecting the cancellation token
                 await _process.WaitForExitAsync(_cancellationTokenSource.Token);
 
-                // NOTE: The process exit code and UI unlock is now FULLY handled
-                // by the _process.Exited event handler, which runs on the thread pool
-                // and safely uses the Dispatcher to update the UI.
+                // V1.8.1 FIX: CRITICAL: Add manual blocking wait to ensure asynchronous I/O read operations are complete.
+                _process.WaitForExit();
 
-                // We specifically avoid calling OnDownloadComplete or SetUiLock(false) here
-                // to prevent double-calls and race conditions with the Exited handler.
             }
             catch (OperationCanceledException)
             {

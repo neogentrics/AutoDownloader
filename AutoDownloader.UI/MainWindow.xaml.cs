@@ -33,8 +33,11 @@ namespace AutoDownloader.UI
         // V1.8 NEW: Settings Service
         private readonly SettingsService _settingsService;
 
+        // V1.9.5 NEW: XML Service
+        private readonly XmlService _xmlService;
+
         // NEW: Define the authoritative version number here
-        private const string CurrentVersion = "v1.8.1"; 
+        private const string CurrentVersion = "v1.9.5-Beta"; // <-- Updated to v1.9.5-Beta
 
         public MainWindow()
         {
@@ -50,12 +53,19 @@ namespace AutoDownloader.UI
             // B. ToolManager is self-contained
             _toolManagerService = new ToolManagerService();
 
+            // V1.9.5 NEW: Initialize XML Service
+            _xmlService = new XmlService();
+
             // C. YtDlpService depends on ToolManager
             _ytDlpService = new YtDlpService(_toolManagerService);
 
             // D. MetadataService and SearchService depend on Settings for keys
             // This is where your errors were! They MUST be initialized with the key.
-            _metadataService = new MetadataService(_settingsService.Settings.TmdbApiKey);
+            _metadataService = new MetadataService(
+                _settingsService.Settings.TmdbApiKey,
+                _settingsService.Settings.TvdbApiKey // <-- V1.9 NEW: Passing TVDB key
+            );
+
             _searchService = new SearchService(_settingsService.Settings.GeminiApiKey);
 
             // --- 2. Set Up Default Download Path ---
@@ -107,6 +117,8 @@ namespace AutoDownloader.UI
 
             // V1.8 Launch Validation
             ValidateApiKeysOnLaunch();
+
+
         }
 
         /// <summary>
@@ -198,9 +210,9 @@ namespace AutoDownloader.UI
             }
         }
 
-
         /// <summary>
         /// Contains the core logic to process a single URL or search term.
+        /// V1.9.0-alpha: Reworked for pop-up confirmation strategy.
         /// </summary>
         private async Task ProcessSingleDownloadAsync(string searchTerm)
         {
@@ -212,10 +224,9 @@ namespace AutoDownloader.UI
             string baseOutputFolder = OutputFolderTextBox.Text;
             string finalUrl = searchTerm;
             string finalOutputFolder = baseOutputFolder;
+            string searchTarget = searchTerm;
 
-            // V1.7.1 FIX: Always initialize the metadata object.
             DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
-            string searchTarget = searchTerm; // Start with the user's input as the search key
 
             // --- PHASE 1: Determine the Final Download URL ---
             if (!searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase))
@@ -223,25 +234,19 @@ namespace AutoDownloader.UI
                 // Case A: Input is a Search Term (Gemini Search is REQUIRED)
                 AppendLog($"--- Starting Gemini web search for: '{searchTarget}' ---", Brushes.Aqua);
                 StatusTextBlock.Text = $"Searching for content: {searchTarget}";
-
                 try
                 {
-                    // Call SearchService.FindShowUrlAsync
-                    // (Assuming you have updated the SearchService constructor to accept the API key)
                     var (type, url) = await _searchService.FindShowUrlAsync(searchTarget);
-
                     if (url == "not-found")
                     {
                         AppendLog($"Could not find a download page for '{searchTarget}'.", Brushes.Red);
                         AppendLog("--- Search failed. ---", Brushes.Red);
                         return;
                     }
-
                     AppendLog($"Found URL: {url}", Brushes.Aqua);
                     finalUrl = url;
                     metadataToPass.SourceUrl = url;
 
-                    // Set the output folder category 
                     string category = type.Contains("Anime") ? "Anime TV Shows" :
                                         type.Contains("TV Show") ? "TV Shows" :
                                         type.Contains("Movie") ? "Movies" : "Playlists";
@@ -257,75 +262,100 @@ namespace AutoDownloader.UI
             else
             {
                 // Case B: Input is a Direct URL (Gemini Search is SKIPPED)
-                finalUrl = searchTerm;
-                metadataToPass.SourceUrl = searchTerm;
-
                 AppendLog($"--- Direct URL detected. Skipping Gemini search. ---", Brushes.Aqua);
-
-                // For now, we assume TV Shows category for naming until we have better URL parsing
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows");
                 Directory.CreateDirectory(finalOutputFolder);
 
-                // V1.8.1 FIX: Extract show name from URL (Fixes the hardcoded 'How It's Made' bug)
-                searchTarget = ExtractShowNameFromUrl(searchTerm);
+                // V1.9.5 FIX: Extract show name and season number from URL
+                var (parsedName, parsedSeason) = ParseMetadataFromUrl(searchTerm);
 
-                // Fallback if parsing failed
-                if (string.IsNullOrWhiteSpace(searchTarget) || searchTarget == "Unknown Show")
+                searchTarget = parsedName;
+                if (parsedSeason.HasValue)
                 {
-                    searchTarget = "Unknown Show";
-                    AppendLog("WARNING: Could not parse show name from URL. Using fallback search term.", Brushes.Orange);
+                    // If season is found in the URL, prioritize it.
+                    metadataToPass.NextSeasonNumber = parsedSeason.Value;
+                    AppendLog($"Detected Season: {parsedSeason.Value} from URL.", Brushes.Yellow);
                 }
             }
 
-            // --- PHASE 2: Official Metadata Lookup (ALWAYS RUNS for a search target) ---
-            AppendLog($"--- Attempting TMDB metadata lookup with search target: '{searchTarget}' ---", Brushes.Aqua);
-            StatusTextBlock.Text = $"Looking up official metadata for: {searchTarget}";
+            // --- PHASE 2: V1.9.0-alpha POP-UP STRATEGY ---
 
-            var metadataResult = await _metadataService.FindShowMetadataAsync(searchTarget);
+            // Step 1: Confirm the name with the user (15s timeout)
+            AppendLog($"--- Parsing complete. Confirming show name for: '{searchTarget}' ---", Brushes.Aqua);
+            ConfirmNameWindow nameDialog = new ConfirmNameWindow(searchTarget) { Owner = this };
+            nameDialog.ShowDialog(); // Pauses execution
 
-            if (metadataResult != null)
+            if (!nameDialog.IsConfirmed)
             {
-                var (officialTitle, seriesId, targetSeasonNumber, expectedCount) = metadataResult.Value;
+                AppendLog("--- User cancelled metadata search. Download aborted. ---", Brushes.Red);
+                return;
+            }
 
-                // V1.8 Log: Show expected episode count
-                AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
-                AppendLog($"TMDB Season {targetSeasonNumber} Expected Episode Count: {expectedCount}", Brushes.Yellow);
+            string confirmedName = nameDialog.ShowName;
+            AppendLog($"--- User confirmed name: '{confirmedName}' ---", Brushes.Aqua);
 
-                metadataToPass.OfficialTitle = officialTitle;
-                metadataToPass.SeriesId = seriesId;
-                metadataToPass.NextSeasonNumber = targetSeasonNumber;
-                metadataToPass.ExpectedEpisodeCount = expectedCount;
+            // Step 2: Select the Database (30s timeout)
+            StatusTextBlock.Text = "Waiting for database selection...";
+            SelectDatabaseWindow dbDialog = new SelectDatabaseWindow() { Owner = this };
+            dbDialog.ShowDialog(); // Pauses execution
 
-                // CRITICAL: Update the final output folder using the official title.
-                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
-                Directory.CreateDirectory(finalOutputFolder);
-                AppendLog($"Output folder set to: {finalOutputFolder}", Brushes.Yellow);
+            if (dbDialog.SelectedSource == DatabaseSource.Canceled)
+            {
+                AppendLog("--- User cancelled database selection. Download aborted. ---", Brushes.Red);
+                return;
+            }
+
+            // Step 3: Call the correct metadata service based on selection
+            Task<(string, int, int, int)?>? metadataTask;
+            if (dbDialog.SelectedSource == DatabaseSource.TVDB)
+            {
+                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
+                StatusTextBlock.Text = "Searching TMDB...";
+                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
             }
             else
             {
-                AppendLog($"Could not find official TMDB metadata for '{searchTarget}'. Using yt-dlp metadata for naming.", Brushes.Orange);
+                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
+                StatusTextBlock.Text = "Searching TMDB...";
+                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
             }
 
-            // --- PHASE 3: Download and Verification Logic (V1.8 Content Verification) ---
+            var metadataResult = await metadataTask;
 
-            // CRITICAL V1.8 STEP 1: Define the specific Season Folder
+            // Step 4: Process Metadata and Save XML (V1.9.5 Feature)
+            if (metadataResult != null)
+            {
+                // ... (Existing metadata assignment code) ...
+
+                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
+                Directory.CreateDirectory(finalOutputFolder);
+                AppendLog($"Output folder set to: {finalOutputFolder}", Brushes.Yellow);
+
+                // V1.9.5 FIX: Save the metadata XML to the show's root folder
+                AppendLog("--- Saving metadata to local series.xml... ---", Brushes.Yellow);
+                await _xmlService.SaveMetadataAsync(finalOutputFolder, metadataToPass);
+                AppendLog("--- Metadata saved successfully. ---", Brushes.Green);
+            }
+            else
+            {
+                // This is the CRASH fix: if metadata fails, we stop gracefully.
+                AppendLog($"Could not find official metadata for '{confirmedName}'. Download aborted.", Brushes.Red);
+                return;
+            }
+
+            // --- PHASE 3: Download and Verification Logic ---
+
             string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
 
-            // CRITICAL V1.8 STEP 2: Count existing files BEFORE download
             int filesBefore = 0;
             if (Directory.Exists(finalSeasonFolder))
             {
-                // Count all video files (*.mp4, *.mkv, *.avi)
                 filesBefore = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
                     .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ||
-                                   file.EndsWith(".avi", StringComparison.OrdinalIgnoreCase));
+                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase));
             }
-
             AppendLog($"Files in Season Folder before download: {filesBefore}", Brushes.Cyan);
 
-
-            // CRITICAL V1.8 STEP 3: Execute Download
             StatusTextBlock.Text = $"Downloading: {metadataToPass.SourceUrl}";
             try
             {
@@ -334,10 +364,8 @@ namespace AutoDownloader.UI
             catch (Exception ex)
             {
                 AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
-                // Continue to verification to log status, but the process failed.
             }
 
-            // CRITICAL V1.8 STEP 4: Count files AFTER download
             int filesAfter = 0;
             int filesDownloaded = 0;
 
@@ -345,14 +373,11 @@ namespace AutoDownloader.UI
             {
                 filesAfter = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
                     .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ||
-                                   file.EndsWith(".avi", StringComparison.OrdinalIgnoreCase));
+                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase));
 
-                // Calculate files added during this operation
                 filesDownloaded = filesAfter - filesBefore;
             }
 
-            // CRITICAL V1.8 STEP 5: Compare Actual vs. Expected
             if (metadataToPass.ExpectedEpisodeCount > 0)
             {
                 int missingCount = metadataToPass.ExpectedEpisodeCount - filesAfter;
@@ -372,7 +397,7 @@ namespace AutoDownloader.UI
             }
             else
             {
-                AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session. (No TMDB count available)", Brushes.Cyan);
+                AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session. (No metadata count available)", Brushes.Cyan);
             }
         }
 
@@ -566,7 +591,8 @@ Thank you for using AutoDownloader!
         /// </summary>
         private void ValidateApiKeysOnLaunch()
         {
-            bool tmdbKeyMissing = !this._metadataService.IsKeyValid;
+            bool tmdbKeyMissing = !this._metadataService.IsTmdbKeyValid;
+
             bool geminiKeyMissing = string.IsNullOrWhiteSpace(_settingsService.Settings.GeminiApiKey) ||
                                     _settingsService.Settings.GeminiApiKey == "YOUR_GEMINI_API_KEY_HERE";
 
@@ -614,17 +640,55 @@ Thank you for using AutoDownloader!
         /// <summary>
         /// Helper to parse show name from a simple URL format like Tubi for metadata search.
         /// </summary>
-        private string ExtractShowNameFromUrl(string url)
+        /// <summary>
+        /// Helper to parse show name and season number from a given URL.
+        /// V1.9.5 FIX: Parses season number directly from URL path.
+        /// </summary>
+        private (string ShowName, int? SeasonNumber) ParseMetadataFromUrl(string url)
         {
-            // Find the last segment after the last '/'
-            string lastSegment = url.TrimEnd('/').Split('/').LastOrDefault() ?? string.Empty;
+            try
+            {
+                var uri = new Uri(url);
+                var segments = uri.Segments.Select(s => s.TrimEnd('/')).Where(s => !string.IsNullOrEmpty(s)).ToList();
 
-            // Replace hyphens with spaces
-            string cleanName = lastSegment.Replace('-', ' ');
+                // Example URL: /series/300014568/love-thy-neighbor/season-2
 
-            // Use crude Title Casing for a better search result in TMDB
-            System.Globalization.TextInfo ti = new System.Globalization.CultureInfo("en-US", false).TextInfo;
-            return ti.ToTitleCase(cleanName);
+                int? seasonNum = null;
+                string showName = "";
+
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    // Check if the current segment is 'season-X'
+                    if (segments[i].StartsWith("season-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parts = segments[i].Split('-');
+                        if (parts.Length > 1 && int.TryParse(parts[1], out int sNum))
+                        {
+                            seasonNum = sNum;
+                        }
+                    }
+                }
+
+                // CRITICAL FIX: Find the segment *before* the season segment, or the last non-numeric segment
+                string showSegment = segments
+                    .Where(s => !s.All(char.IsDigit) && !s.Contains("season") && !s.Contains("series"))
+                    .LastOrDefault() ?? "";
+
+                if (string.IsNullOrWhiteSpace(showSegment))
+                {
+                    // Fallback to the last segment if all else fails
+                    showSegment = segments.LastOrDefault() ?? "Unknown Show";
+                }
+
+                string cleanName = showSegment.Replace('-', ' ');
+                System.Globalization.TextInfo ti = new System.Globalization.CultureInfo("en-US", false).TextInfo;
+
+                return (ti.ToTitleCase(cleanName), seasonNum);
+            }
+            catch
+            {
+                return ("Unknown Show", null);
+            }
         }
 
     }
