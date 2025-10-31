@@ -123,6 +123,13 @@
             margin-top: 0;
             margin-bottom: 20px;
         }
+        .section h3 {
+            font-size: 1.3em;
+            font-weight: 500;
+            color: var(--color-text-primary);
+            border-bottom: 1px solid var(--color-border);
+            padding-bottom: 8px;
+        }
         .section p {
             color: var(--color-text-secondary);
         }
@@ -204,6 +211,37 @@
             font-weight: 700;
             color: var(--color-bug);
             white-space: nowrap;
+        }
+        
+        /* --- NEW CSS FOR CHANGELOG --- */
+        .changelog-list {
+            list-style: none;
+            padding-left: 0;
+        }
+        .changelog-list li {
+            position: relative;
+            padding-left: 35px;
+            font-size: 1.05em;
+            margin-bottom: 15px;
+            color: var(--color-text-secondary);
+        }
+        .changelog-list li::before {
+            position: absolute;
+            left: 5px;
+            top: 3px;
+            font-size: 1.2em;
+        }
+        .changelog-list li.fix::before {
+            content: '🔧';
+            color: var(--color-warning);
+        }
+        .changelog-list li.feature::before {
+            content: '✅';
+            color: var(--color-success);
+        }
+        .changelog-list li strong {
+            color: var(--color-text-primary);
+            font-weight: 500;
         }
 
         /* Roadmap Tab Navigation */
@@ -310,7 +348,7 @@
         <main class="main-content">
             
             <section class="section bugs">
-                <h2>🐛 Known Critical Issues (v1.8.1)</h2>
+                <h2>🐛 Open Critical Issues (v1.8.1)</h2>
                 <p>This stable release is effective, but contains known bugs scheduled for the v2.0 overhaul. These issues may cause crashes or incorrect file naming.</p>
                 <table class="bug-table">
                     <thead>
@@ -322,7 +360,7 @@
                     <tbody>
                         <tr>
                             <td>CRITICAL: App Crash</td>
-                            <td>The application crashes if a metadata lookup fails (e.g., from a Season 2 URL or an un-parsable link).</td>
+                            <td>The application crashes if a metadata lookup fails (e.q., from a Season 2 URL or an un-parsable link).</td>
                         </tr>
                         <tr>
                             <td>CRITICAL: URL Parsing</td>
@@ -338,6 +376,23 @@
                         </tr>
                     </tbody>
                 </table>
+            </section>
+
+            <section class="section">
+                <h2>✅ Project History & Completed Milestones</h2>
+                <p>This is a log of all major features and bug fixes that have been implemented and closed, leading to the current `v1.8.1` stable build.</p>
+                
+                <h3>Stable Release (v1.8.1)</h3>
+                <ul class="changelog-list">
+                    <li class="fix"><strong>CRITICAL FIX (v1.8.1):</strong> Resolved hardcoded search term bug, enabling dynamic URL parsing. (Closes #11)</li>
+                    <li class="feature"><strong>Content Verification (v1.8.0):</strong> Added system to check downloaded files against TMDB episode counts. (Closes #6)</li>
+                    <li class="feature"><strong>Settings System (v1.8.0):</strong> Implemented the "Preferences" window and backend service for API keys and paths. (Closes #7)</li>
+                    <li class="feature"><strong>UI Polish (v1.8.0):</strong> Added dark theme menus and a clear welcome/setup message to the log. (Closes #5)</li>
+                    <li class="feature"><strong>TMDB Integration (v1.7):</strong> Integrated `TMDbLib` to fetch official metadata, enabling Plex-friendly naming. (Closes #1)</li>
+                    <li class="fix"><strong>"NA" Folder Fix (v1.7):</strong> Corrected `yt-dlp` template syntax to use official TMDB titles and prevent naming failures. (Closes #4)</li>
+                    <li class="fix"><strong>App Freezing Fix (v1.6.1):</strong> Resolved critical race condition when stopping a download. (Closes #2)</li>
+                    <li class="feature"><strong>Batch Processing (v1.6):</strong> Implemented the multi-link toggle and sequential download logic. (Closes #3)</li>
+                </ul>
             </section>
             
             <section class="section">
