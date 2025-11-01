@@ -191,5 +191,7 @@ namespace AutoDownloader.Core
             var json = await response.Content.ReadAsStringAsync();
             _tvdbToken = JsonDocument.Parse(json).RootElement.GetProperty("data").GetProperty("token").GetString() ?? "";
         }
+
+        // We have removed the broken GetTvdbMetadataAsync method entirely.
     }
 }

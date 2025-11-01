@@ -33,6 +33,9 @@ namespace AutoDownloader.UI
         // V1.8 NEW: Settings Service
         private readonly SettingsService _settingsService;
 
+        // V1.9.5 NEW: XML Service
+        private readonly XmlService _xmlService;
+
         // NEW: Define the authoritative version number here
         private const string CurrentVersion = "v1.9.0-alpha"; // <-- Updated to v1.9.0-alpha
 
@@ -49,6 +52,9 @@ namespace AutoDownloader.UI
 
             // B. ToolManager is self-contained
             _toolManagerService = new ToolManagerService();
+
+            // V1.9.5 NEW: Initialize XML Service
+            _xmlService = new XmlService();
 
             // C. YtDlpService depends on ToolManager
             _ytDlpService = new YtDlpService(_toolManagerService);
@@ -111,6 +117,8 @@ namespace AutoDownloader.UI
 
             // V1.8 Launch Validation
             ValidateApiKeysOnLaunch();
+
+
         }
 
         /// <summary>
@@ -206,6 +214,7 @@ namespace AutoDownloader.UI
 
         /// <summary>
         /// Contains the core logic to process a single URL or search term.
+        /// V1.9.0-alpha: Reworked for pop-up confirmation strategy.
         /// </summary>
         private async Task ProcessSingleDownloadAsync(string searchTerm)
         {
@@ -219,7 +228,6 @@ namespace AutoDownloader.UI
             string finalOutputFolder = baseOutputFolder;
             string searchTarget = searchTerm; // The name we will search for
 
-            // V1.7.1 FIX: Always initialize the metadata object.
             DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
 
             // --- PHASE 1: Determine the Final Download URL ---
@@ -306,22 +314,49 @@ namespace AutoDownloader.UI
             // This call fixes CS1061 and CS8130
             var metadataResult = await _metadataService.GetMetadataAsync(confirmedName, confirmTvdbSearch);
 
-            if (metadataResult != null)
+            if (!nameDialog.IsConfirmed)
             {
-                var (officialTitle, seriesId, targetSeasonNumber, expectedCount) = metadataResult.Value;
+                AppendLog("--- User cancelled metadata search. Download aborted. ---", Brushes.Red);
+                return;
+            }
+
+            string confirmedName = nameDialog.ShowName;
+            AppendLog($"--- User confirmed name: '{confirmedName}' ---", Brushes.Aqua);
 
                 AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
                 AppendLog($"Metadata Source: {(seriesId > 1000000 ? "TMDB" : "TVDB")}", Brushes.Yellow); // Simple guess based on ID format
                 AppendLog($"Target Season {targetSeasonNumber} Expected Episode Count: {expectedCount}", Brushes.Yellow);
 
-                metadataToPass.OfficialTitle = officialTitle;
-                metadataToPass.SeriesId = seriesId;
-                metadataToPass.NextSeasonNumber = targetSeasonNumber;
-                metadataToPass.ExpectedEpisodeCount = expectedCount;
+            // Step 3: Call the correct metadata service based on selection
+            Task<(string, int, int, int)?>? metadataTask;
+            if (dbDialog.SelectedSource == DatabaseSource.TVDB)
+            {
+                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
+                StatusTextBlock.Text = "Searching TMDB...";
+                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
+            }
+            else
+            {
+                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
+                StatusTextBlock.Text = "Searching TMDB...";
+                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
+            }
+
+            var metadataResult = await metadataTask;
+
+            // Step 4: Process Metadata and Save XML (V1.9.5 Feature)
+            if (metadataResult != null)
+            {
+                // ... (Existing metadata assignment code) ...
 
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
                 Directory.CreateDirectory(finalOutputFolder);
                 AppendLog($"Output folder set to: {finalOutputFolder}", Brushes.Yellow);
+
+                // V1.9.5 FIX: Save the metadata XML to the show's root folder
+                AppendLog("--- Saving metadata to local series.xml... ---", Brushes.Yellow);
+                await _xmlService.SaveMetadataAsync(finalOutputFolder, metadataToPass);
+                AppendLog("--- Metadata saved successfully. ---", Brushes.Green);
             }
             else
             {
@@ -352,7 +387,6 @@ namespace AutoDownloader.UI
                 AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
             }
 
-            // CRITICAL V1.8 STEP 4: Count files AFTER download
             int filesAfter = 0;
             int filesDownloaded = 0;
 
@@ -365,7 +399,6 @@ namespace AutoDownloader.UI
                 filesDownloaded = filesAfter - filesBefore;
             }
 
-            // CRITICAL V1.8 STEP 5: Compare Actual vs. Expected
             if (metadataToPass.ExpectedEpisodeCount > 0)
             {
                 int missingCount = metadataToPass.ExpectedEpisodeCount - filesAfter;
