@@ -49,14 +49,14 @@ While `yt-dlp` supports over 1,000 sites, the "Smart Search" and "Metadata Looku
 
 ## 🔮 Future Development: v2.0 Roadmap
 
-The next major release, **v2.0**, will be a complete overhaul focusing on reliability and user experience. The goals for this milestone are:
+The next major release, **v2.0**, will be a complete overhaul focusing on reliability and user experience.
 
-1.  **UI Overhaul:** Implement dynamic download progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.
-2.  **Scraper Engine Refactor:**
-    * Fix all URL and playlist title parsing bugs (Season 2+ links, YouTube playlists).
+1.  **Major Architectural Refactor:** Restructure the solution into a clean 3-project architecture (`.Core`, `.Services`, `.UI`) to improve separation of concerns and make the `.Core` library publishable.
+2.  **UI Overhaul:** Implement dynamic download progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.
+3.  **Scraper Engine Refactor:**
+    * Fix all URL and playlist title parsing bugs.
     * Implement smarter page scraping (scan page text if URL parsing fails).
-3.  **TVDB Integration:** Fully implement **TVDB** as a user-selectable pop-up option, completing the work from the alpha branches.
-4.  **Content Limit Fix:** Implement the correct `yt-dlp` flag to fix the 20-item playlist limit on sites like Tubi.
+4.  **Multi-Scraper Integration:**
+    * Implement **TVDB** (using the new forked library) as a user-selectable pop-up option.
+    * Integrate external subtitle database support.
 5.  **Branding:** Design a new application icon and official name.
-
-*Future goals beyond v2.0 (like external subtitle support and advanced download manager integration) are planned for the v3.0+ roadmap.*
