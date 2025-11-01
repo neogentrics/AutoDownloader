@@ -71,6 +71,12 @@ namespace AutoDownloader.UI
             _toolManagerService = new ToolManagerService();
             _xmlService = new XmlService(); // Ready for the v3.2 feature
 
+            // NOTE for other developers:
+            // We subscribe to the DeveloperLogger here so any part of the app can forward
+            // verbose installer/scraper logs for debugging. The Developer Log UI is
+            // optional (hidden by default) and intended as a troubleshooting aid.
+            // Use DeveloperLogger.Append("message") from services to surface details.
+
             // Set Up Default Download Path in UI
             OutputFolderTextBox.Text = _settingsService.Settings.DefaultOutputFolder;
             Directory.CreateDirectory(_settingsService.Settings.DefaultOutputFolder);
@@ -109,7 +115,12 @@ namespace AutoDownloader.UI
             // Wire up ToolManager logging (must be done before EnsureToolsAvailableAsync)
             _toolManagerService.OnToolLogReceived += (logLine) =>
             {
+                // Keep the batched UI log queue in sync for performance (flushes on timer)
                 lock (_logLock) { _logQueue.Add(logLine); }
+
+                // Also forward raw tool/log output into the Developer Logger so
+                // engineers can inspect full stdout/stderr later (exportable).
+                // We intentionally forward unmodified lines to preserve original content.
                 DeveloperLogger.Append(logLine);
             };
 
@@ -172,6 +183,9 @@ namespace AutoDownloader.UI
 
             _ytDlpService.OnOutputReceived += (logLine) =>
             {
+                // yt-dlp outputs can be very chatty. We keep them batched to the UI
+                // (reduces cross-thread updates) and forward them to DeveloperLogger
+                // (timestamps and persistence) for post-mortem analysis.
                 lock (_logLock) { _logQueue.Add(logLine); }
                 DeveloperLogger.Append(logLine);
             };
@@ -339,6 +353,7 @@ namespace AutoDownloader.UI
                 metadataToPass.ExpectedEpisodeCount = expectedCount;
 
                 // Create final output folder (e.g., ".../TV Shows/The Mandalorian")
+                //var safeTitle = SanitizeFileName(metadataToPass.OfficialTitle ?? "Unknown Show");
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
                 Directory.CreateDirectory(finalOutputFolder);
 
@@ -596,8 +611,7 @@ namespace AutoDownloader.UI
         {
             string version = CurrentVersion;
 
-            // ** v1.9.2 UPDATE **
-            // Updated the "About" text to be accurate.
+            // Updated About text for v1.10.0-beta
             string aboutText = $@"
 AutoDownloader - Version {version}
 Developed By: Neo Gentrics
@@ -607,14 +621,26 @@ AI Development Partner: Gemini (Google)
  - Smart Search: Google Gemini API
  - Metadata: TMDB API & TVDB API
  - Framework: .NET9.0 (WPF)
---- Implemented Features (v1.9) ---
- - **Multi-Scraper Engine:** User-selectable metadata lookup (TMDB or TVDB).
- - **Local Metadata:** Saves downloaded show info to 'series_metadata.xml'.
- - **Smarter Parsing:** Detects season numbers (e.g., 'season-2') from direct URLs.
---- Implemented Features (v1.8) ---
- - **Content Verification:** Checks downloaded files against official episode counts.
- - **Settings System Backend:** Securely load/save API keys and user preferences.
- - **Multi-Link Batch Processing:** Sequential downloading of multiple items.
+--- v1.10.0-beta Highlights ---
+ - Playwright-based scraper fallback for JS/Cloudflare-protected sites (automatic browser install available in Preferences)
+ - TVDB reflection-based episode extraction and local caching
+ - Multi-scraper engine (AngleSharp + Playwright) with per-site scrapers
+ - Developer Log: detailed installer/scraper logs (View -> Log). Export/Retry Playwright install from there.
+ - Safe file/folder name sanitization to avoid invalid paths on Windows
+ - Metadata XML persistence: saves per-series metadata to 'series_metadata.xml'
+ - CI workflow: installs Playwright browsers during Windows CI builds to produce ready-to-run artifacts
+
+--- Usage Notes ---
+ - Edit -> Preferences... to set TMDB and Gemini API keys (TMDB required for naming/verification).
+ - Toggle automatic Playwright browser install in Preferences if you want the app to attempt browser installs automatically.
+ - Use the Developer Log to inspect detailed output and to retry Playwright installation when needed.
+
+--- Recent Improvements ---
+ - Improved URL parsing and season detection
+ - Better scraper reliability and fallback strategies
+ - Safer folder naming and improved error logging
+
+Thank you for using AutoDownloader. For issues or feature requests, open an issue on the project's GitHub page.
 ";
             MessageBox.Show(aboutText, "About AutoDownloader", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -912,8 +938,14 @@ AI Development Partner: Gemini (Google)
         /// </summary>
         private async Task<bool> RunPlaywrightInstallerAsync()
         {
-            try
-            {
+            // This method implements a multi-strategy approach to ensure Playwright
+            // browser binaries are available to the app. We try lighter-weight
+            // detection first (reflection/create+launch) to avoid unnecessary network
+            // use. If that fails, we run a generated PowerShell installer script
+            // (playwright.ps1) if present; finally we fall back to the 'playwright'
+            // CLI. All outputs are forwarded to DeveloperLogger for debugging.
+ try
+ {
                 // Try reflection InstallAsync
                 var playwrightType = Type.GetType("Microsoft.Playwright.Playwright, Microsoft.Playwright");
                 if (playwrightType != null)
@@ -1026,6 +1058,10 @@ AI Development Partner: Gemini (Google)
                           }
                           catch (Exception ex)
                           {
+                            // If post-install launch fails it usually indicates the
+                            // installer didn't complete successfully or the runtime
+                            // can't access the extracted browser files. The developer
+                            // log contains the full stderr to investigate further.
                             DeveloperLogger.Append($"Post-install launch failed: {ex}");
                             return false;
                           }
@@ -1096,6 +1132,35 @@ AI Development Partner: Gemini (Google)
             bool ok = await RunPlaywrightInstallerAsync();
             if (ok) AppendLog("--- Playwright install succeeded. ---", Brushes.Green);
             else AppendLog("--- Playwright install failed. Check Developer Log for details. ---", Brushes.Orange);
+        }
+
+        // Helper to sanitize strings for use as file/folder names on Windows
+        private static string SanitizeFileName(string name)
+        {
+            // Many streaming sites include characters that are illegal in Windows
+            // filenames (e.g., ':', '?', '|'). Creating directories using raw
+            // titles caused the IO exception reported by users. This helper
+            // normalizes title names to safe folder names and prevents runtime
+            // failures when creating directories. If sanitization produces an
+            // empty string, we fall back to "Unknown Show".
+            if (string.IsNullOrWhiteSpace(name)) return "Unknown Show";
+            // Remove control chars
+            var cleaned = new string(name.Where(c => !char.IsControl(c)).ToArray());
+            // Replace any invalid file name chars with underscore
+            foreach (var c in Path.GetInvalidFileNameChars())
+            {
+                cleaned = cleaned.Replace(c, '_');
+            }
+            // Also replace invalid path chars just in case
+            foreach (var c in Path.GetInvalidPathChars())
+            {
+                cleaned = cleaned.Replace(c, '_');
+            }
+            // Trim spaces and dots at end (Windows forbids trailing spaces/dots)
+            cleaned = cleaned.Trim();
+            while (cleaned.EndsWith(".") || cleaned.EndsWith(" ")) cleaned = cleaned.Substring(0, cleaned.Length -1);
+            if (string.IsNullOrWhiteSpace(cleaned)) return "Unknown Show";
+            return cleaned;
         }
     }
 }
