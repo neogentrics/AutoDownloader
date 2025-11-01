@@ -1,0 +1,34 @@
+name: CI - Build and Install Playwright Browsers
+
+on:
+ push:
+ branches: [ master ]
+ pull_request:
+ branches: [ master ]
+
+jobs:
+ build:
+ runs-on: windows-latest
+
+ steps:
+ - name: Checkout
+ uses: actions/checkout@v4
+
+ - name: Setup .NET
+ uses: actions/setup-dotnet@v4
+ with:
+ dotnet-version: '9.0.x'
+
+ - name: Restore
+ run: dotnet restore
+
+ - name: Build
+ run: dotnet build --configuration Release --no-restore
+
+ - name: Install Playwright Browsers
+ run: |
+ pwsh -NoProfile -ExecutionPolicy Bypass -Command "& './AutoDownloader.UI/bin/Debug/net9.0-windows/playwright.ps1' install"
+ shell: pwsh
+
+ - name: Run Tests
+ run: dotnet test --no-build --verbosity normal
