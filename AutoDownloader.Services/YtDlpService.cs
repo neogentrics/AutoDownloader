@@ -1,40 +1,94 @@
-﻿using AutoDownloader.Core;
+﻿using AutoDownloader.Core; // <-- CORRECT: For DownloadMetadata
 using System;
 using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AutoDownloader.Services
+namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services project
 {
     /// <summary>
-    /// Main service for handling the yt-dlp download process.
-    /// It now relies on ToolManagerService to provide the tool paths.
+    /// Main service for launching and managing the yt-dlp download process.
+    /// This service is "pure": it receives all required paths and settings from
+    /// the UI (its "host") via its constructor.
     /// </summary>
     public class YtDlpService
     {
-        // --- Events to send data back to the UI ---
+        // --- Events ---
+
+        /// <summary>
+        /// Fires every time yt-dlp writes a line to its standard output or error stream.
+        /// This is used to pipe log data back to the UI's log window.
+        /// </summary>
         public event Action<string>? OnOutputReceived;
+
+        /// <summary>
+        /// Fires once when the yt-dlp process exits.
+        /// The integer payload is the process's exit code (0 = success).
+        /// </summary>
         public event Action<int>? OnDownloadComplete;
 
         // --- Private Fields ---
-        private readonly string _ytDlpPath;
-        private readonly string _ariaPath;
-        private Process? _process;
-        private CancellationTokenSource? _cancellationTokenSource;
 
         /// <summary>
-        /// Constructor now "injects" the tool paths.
+        /// The full file path to the yt-dlp.exe executable.
+        /// Injected by MainWindow on startup.
         /// </summary>
-        public YtDlpService(string ytDlpPath, string ariaPath)
+        private readonly string _ytDlpPath;
+
+        /// <summary>
+        /// The full file path to the aria2c.exe executable.
+        /// Injected by MainWindow on startup.
+        /// </summary>
+        private readonly string _ariaPath;
+
+        /// <summary>
+        /// The user-agent string (e.g., Firefox) to pass to yt-dlp.
+        /// Injected by MainWindow on startup.
+        /// </summary>
+        private readonly string _userAgent;
+
+        /// <summary>
+        /// The user's preferred video quality string (e.g., "bestvideo+bestaudio/best").
+        /// Injected by MainWindow from SettingsService.
+        /// </summary>
+        private readonly string _videoQualityFormat;
+
+        /// <summary>
+        /// A reference to the currently running yt-dlp.exe process.
+        /// </summary>
+        private Process? _process;
+
+        /// <summary>
+        /// A token source used to gracefully cancel the process's async wait operation.
+        /// </summary>
+        private CancellationTokenSource? _cancellationTokenSource;
+
+        // --- Constructor ---
+
+        /// <summary>
+        /// Initializes a new instance of the YtDlpService.
+        /// This constructor "injects" all required paths and settings from the host (MainWindow).
+        /// </summary>
+        /// <param name="ytDlpPath">Path to yt-dlp.exe</param>
+        /// <param name="ariaPath">Path to aria2c.exe</param>
+        /// <param name="userAgent">User-agent string to use</param>
+        /// <param name="videoQualityFormat">yt-dlp format string (e.g., "bestvideo+bestaudio/best")</param>
+        public YtDlpService(string ytDlpPath, string ariaPath, string userAgent, string videoQualityFormat)
         {
             _ytDlpPath = ytDlpPath;
             _ariaPath = ariaPath;
+            _userAgent = userAgent;
+            _videoQualityFormat = videoQualityFormat;
         }
 
+        // --- Public Methods ---
+
         /// <summary>
-        /// Asynchronously downloads a video from a given URL.
+        /// Asynchronously launches the yt-dlp process to download a given URL.
         /// </summary>
+        /// <param name="metadata">The metadata object containing the URL and official title.</param>
+        /// <param name="outputFolder">The root folder for the show (e.g., ".../TV Shows/The Mandalorian").</param>
         public async Task DownloadVideoAsync(DownloadMetadata metadata, string outputFolder)
         {
             // Reset the cancellation token for this new download
@@ -50,46 +104,49 @@ namespace AutoDownloader.Services
                 string ytDlpPath = _ytDlpPath;
                 string ariaPath = _ariaPath;
 
-                // --- 2. Build Arguments ---
+                // --- 2. Build yt-dlp Arguments ---
 
-                // --- CODE in YtDlpService.cs (Inside DownloadVideoAsync, replace the argument building block) ---
-
-                // V1.7 FIX: Use Official Title from metadata if available!
+                // Use the official title from metadata, but if it's null,
+                // fall back to a dynamic yt-dlp variable to find the best title.
                 string titleForFolder = metadata.OfficialTitle ?? "%(series, show, playlist_title, title, 'NA')s";
 
-                // V1.7.3 FIX: Use pure YT-DLP template variables for padding.
-                // %02d in the tag name forces two-digit padding.
-                string seasonYtDlp = "%(season_number|season|1)02d";
+                // Use pure yt-dlp variables for season/episode padding
+                string seasonYtDlp = $"%(season_number|season|{metadata.NextSeasonNumber})02d";
                 string episodeYtDlp = "%(episode_number|episode|01)02d";
 
-                // We use '|' for fallback inside the tag for better compatibility.
-
-                // File Name: We will only use %(title)s, which usually contains the episode name.
+                // This is the final output template that defines the Plex-friendly file structure.
                 string outputTemplate = Path.Combine(outputFolder,
-                    // Season Folder: Use the correct two-digit padding tag.
-                    $"Season {seasonYtDlp}",
-                    // File Name: Uses the official title and the correct two-digit tags, 
-                    // then uses %(title)s, which we hope contains just the episode title.
-                    $"{titleForFolder} - s{seasonYtDlp}e{episodeYtDlp} - %(episode)s.%(ext)s"); // <--- Changed to %(episode)s
+                    $"Season {seasonYtDlp}", // -> .../Season 01/
+                    $"{titleForFolder} - s{seasonYtDlp}e{episodeYtDlp} - %(episode)s.%(ext)s"); // -> Show - s01e01 - Episode Name.mp4
 
                 var arguments = new StringBuilder();
 
                 // 1. Core arguments
-                arguments.Append($"--windows-filenames ");
-                arguments.Append($"--embed-metadata ");
-                arguments.Append($"--ignore-errors ");
-                // arguments.Append($"--no-paged-list "); // <--- V1.7.5 FIX: Use correct argument to force all items!
+                arguments.Append($"--windows-filenames "); // Allow long file paths
+                arguments.Append($"--embed-metadata ");    // Embed metadata into the file
+                arguments.Append($"--ignore-errors ");      // Don't stop if one video in a playlist fails
+
+                // *** FIX for Issue #8 (20-Item Limit) ***
+                // This flag forces yt-dlp to load all items in a paged playlist (like Tubi).
+                arguments.Append($"--no-paged-list ");
+
+                // *** FIX for Issue #7 (Preferred Quality) ***
+                // Use the video quality string injected from our settings.
+                if (!string.IsNullOrWhiteSpace(_videoQualityFormat))
+                {
+                    arguments.Append($"-f \"{_videoQualityFormat}\" ");
+                }
 
                 // 2. Subtitle arguments
-                arguments.Append($"--all-subs ");
+                arguments.Append($"--all-subs ");           // Download all available languages
                 arguments.Append($"--sub-langs all ");
-                arguments.Append($"--sub-format srt ");
+                arguments.Append($"--sub-format srt ");    // Download in .srt format
 
                 // 3. Downloader and Browser arguments
-                arguments.Append($"--downloader aria2c ");
+                arguments.Append($"--downloader aria2c "); // Use aria2c for multi-threaded downloads
                 arguments.Append($"--downloader-args \"aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M\" ");
-                arguments.Append($"--user-agent \"{ToolManagerService.FIREFOX_USER_AGENT}\" ");
-                arguments.Append($"--cookies-from-browser firefox ");
+                arguments.Append($"--user-agent \"{_userAgent}\" "); // Use the Firefox user agent
+                arguments.Append($"--cookies-from-browser firefox "); // Try to use browser cookies
 
                 // 4. Output Template (MUST be placed before the URL)
                 arguments.Append($"-o \"{outputTemplate}\" ");
@@ -105,18 +162,19 @@ namespace AutoDownloader.Services
                     {
                         FileName = ytDlpPath,
                         Arguments = arguments.ToString(),
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        // Set encoding for output streams
-                        StandardOutputEncoding = Encoding.UTF8,
+                        RedirectStandardOutput = true, // Capture output
+                        RedirectStandardError = true,  // Capture errors
+                        UseShellExecute = false,       // Required for redirection
+                        CreateNoWindow = true,         // Don't show the black console window
+                        StandardOutputEncoding = Encoding.UTF8, // Ensure correct encoding
                         StandardErrorEncoding = Encoding.UTF8
                     },
-                    EnableRaisingEvents = true
+                    EnableRaisingEvents = true // Allows us to use the .Exited event
                 };
 
-                // --- 4. Set Up Event Handlers ---
+                // --- 4. Set Up Asynchronous Event Handlers ---
+
+                // Handle standard output (download progress, etc.)
                 _process.OutputDataReceived += (sender, args) =>
                 {
                     if (args.Data != null)
@@ -124,6 +182,8 @@ namespace AutoDownloader.Services
                         OnOutputReceived?.Invoke(args.Data);
                     }
                 };
+
+                // Handle error output
                 _process.ErrorDataReceived += (sender, args) =>
                 {
                     if (args.Data != null)
@@ -132,15 +192,19 @@ namespace AutoDownloader.Services
                     }
                 };
 
+                // Handle the process exiting (either finished or was killed)
                 _process.Exited += (sender, args) =>
                 {
-                    // Ensure all output is processed before completing
+                    // This is the v1.6.1 "App Freeze" fix.
+                    // We consolidate all cleanup logic here.
+
+                    // Ensure all buffered output is read before we continue.
                     _process?.WaitForExit();
+
                     OnOutputReceived?.Invoke($"--- Download finished. Process exited with code {_process?.ExitCode}. ---");
                     OnDownloadComplete?.Invoke(_process?.ExitCode ?? -1);
 
-                    // --- NEW CLEANUP LOGIC FOR BUGFIX v1.6 ---
-                    // Clean up and dispose resources safely after the process exits.
+                    // Safely dispose all resources.
                     _process?.Dispose();
                     _process = null;
                     _cancellationTokenSource?.Dispose();
@@ -149,44 +213,47 @@ namespace AutoDownloader.Services
 
                 // --- 5. Start Process ---
                 _process.Start();
+
+                // Begin reading the output and error streams asynchronously.
                 _process.BeginOutputReadLine();
                 _process.BeginErrorReadLine();
 
-                // Wait for the process to exit asynchronously, respecting the cancellation token
+                // Wait for the process to exit asynchronously, respecting the cancellation token.
                 await _process.WaitForExitAsync(_cancellationTokenSource.Token);
 
-                // V1.8.1 FIX: CRITICAL: Add manual blocking wait to ensure asynchronous I/O read operations are complete.
+                // This final blocking wait is a safety net to ensure all async I/O is flushed
+                // before the 'Exited' event fires.
                 _process.WaitForExit();
-
             }
             catch (OperationCanceledException)
             {
-                // This is thrown when StopDownload() is called gracefully BEFORE Kill()
+                // This is a "clean" exception, thrown when the user clicks "Stop".
                 OnOutputReceived?.Invoke("--- Download was stopped by the user. ---");
-                // The StopDownload() method takes over the final process kill, 
-                // and the Exited handler will fire after the kill.
+                // The StopDownload() method takes over, and the .Exited handler will do the cleanup.
             }
             catch (Exception ex)
             {
+                // This is a "dirty" exception (e.g., file not found, permissions error).
                 OnOutputReceived?.Invoke($"--- [FATAL] Download task failed: {ex.Message} ---");
                 OnDownloadComplete?.Invoke(-1);
-                // The Exited handler will clean up the process.
+                // The .Exited handler will still run and clean up the process.
             }
-            // We remove the entire 'finally' block that was causing a race condition and cleanup issues.
-            // Cleanup is now consolidated into the Exited event handler.
         }
 
         /// <summary>
         /// Stops the currently running download process.
+        /// This is called by the "Stop" button in MainWindow.
         /// </summary>
         public void StopDownload()
         {
             if (_process != null && !_process.HasExited)
             {
                 OnOutputReceived?.Invoke("--- Sending stop signal... ---");
+
+                // 1. Cancel the async wait task
                 _cancellationTokenSource?.Cancel();
 
-                // --- IMMEDIATELY KILL THE PROCESS AND ALL CHILDREN ---
+                // 2. Force-kill the process and all its children
                 try
                 {
                     // The 'true' argument ensures all child processes (like aria2c) are also terminated.

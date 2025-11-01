@@ -1,22 +1,41 @@
-﻿namespace AutoDownloader.Core
+﻿namespace AutoDownloader.Core // <-- CORRECT: This is a data model, it belongs in .Core
 {
     /// <summary>
-    /// Data structure to pass official metadata from the UI to the download service.
+    /// A data structure (POCO) used to pass information between the UI, 
+    /// the metadata services, and the download service.
+    /// It collects all necessary data for a single download job.
     /// </summary>
     public class DownloadMetadata
     {
+        /// <summary>
+        /// The official show title as found by a metadata service (TMDB or TVDB).
+        /// Example: "The Mandalorian"
+        /// </summary>
         public string? OfficialTitle { get; set; }
+
+        /// <summary>
+        /// The unique ID for the series from the metadata database (TMDB or TVDB).
+        /// Example: 82856 (TMDB ID)
+        /// </summary>
         public int? SeriesId { get; set; }
+
+        /// <summary>
+        /// The season number to be downloaded.
+        /// This defaults to 1 but can be overridden by the URL parser.
+        /// </summary>
         public int NextSeasonNumber { get; set; } = 1;
 
-        // V1.8 NEW: Expected count for the season being downloaded (Fixes CS1061)
+        /// <summary>
+        /// The official number of episodes for the 'NextSeasonNumber'.
+        /// This is used by the Content Verification step in MainWindow.
+        /// </summary>
         public int ExpectedEpisodeCount { get; set; } = 0;
 
-        // V1.9 NEW: TVDB Fallback Key (This belongs in SettingsModel, not DownloadMetadata)
-        // **I will correct the implementation here to ensure the logic is sound.** // We will assume the key is in SettingsModel as planned.
-
-        // The URL found by Gemini/User
-        // Fixes CS9035: Removed 'required' keyword for simpler initialization
+        /// <summary>
+        /// The source URL for the content, either provided by the user
+        /// or found by the SearchService (Gemini).
+        /// Example: "https://tubitv.com/series/12345/show-name"
+        /// </summary>
         public string SourceUrl { get; set; } = string.Empty;
     }
 }

@@ -10,16 +10,11 @@
         /* --- Root Variables (Dark Theme) --- */
         :root {
             --bg-primary: #121212;
-            --bg-secondary: #1A1A1A;
-            --bg-card: #242424;
+            --bg-secondary: #1E1E1E; 
             --color-accent: #007ACC;
-            --color-accent-hover: #0099FF;
-            --color-text-primary: #E0E0E0;
-            --color-text-secondary: #AAAAAA;
-            --color-border: #333333;
-            --color-success: #28a745;
-            --color-warning: #FFC107;
-            --color-bug: #E57373;
+            --color-text: #E0E0E0;
+            --color-link: #5aa9e6;
+            --color-warning: #FFC107; 
         }
 
         /* --- Base & Animations --- */
@@ -334,242 +329,51 @@
     </style>
 </head>
 <body>
-
-    <header class="header">
-        <img src="Logo2.png" alt="AutoDownloader Logo">
-        <div class="title-block">
-            <h1>AutoDownloader</h1>
-            <p>Your Intelligent Media Archival & Organization Tool</p>
-        </div>
-    </header>
+    <div class="header">
+        <h1>AutoDownloader <span>Development Hub</span></h1>
+        <p>A WPF application for professional media archival and organization.</p>
+        <p>Current Version: v1.8.1</p>
+    </div>
 
     <div class="container">
         
-        <main class="main-content">
-            
-            <section class="section bugs">
-                <h2>🐛 Open Critical Issues (v1.8.1)</h2>
-                <p>This stable release is effective, but contains known bugs scheduled for the v2.0 overhaul. These issues may cause crashes or incorrect file naming.</p>
-                <table class="bug-table">
-                    <thead>
-                        <tr>
-                            <th>Component</th>
-                            <th>Issue Description</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>CRITICAL: App Crash</td>
-                            <td>The application crashes if a metadata lookup fails (e.q., from a Season 2 URL or an un-parsable link).</td>
-                        </tr>
-                        <tr>
-                            <td>CRITICAL: URL Parsing</td>
-                            <td>The app incorrectly parses "Season 2" as the show name from Season 2+ URLs, causing the lookup to fail.</td>
-                        </tr>
-                        <tr>
-                            <td>CRITICAL: Playlist Parsing</td>
-                            <td>When given a YouTube playlist, the app incorrectly parses the *URL* instead of the *on-page playlist title*, failing the metadata search.</td>
-                        </tr>
-                        <tr>
-                            <td>Playlist Extraction</td>
-                            <td>Downloads are limited to 20 items/episodes on some series pages (e.g., Tubi). This is a `yt-dlp` flag issue.</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </section>
+        <div class="section">
+            <h2>Project Actions & Status</h2>
+            <div class="link-group">
+                <a href="https://github.com/neogentrics/AutoDownloader" target="_blank">View Source Code</a>
+                <a href="https://github.com/neogentrics/AutoDownloader/issues" target="_blank">View Public Issue Tracker</a> 
+                <a href="https://github.com/neogentrics/AutoDownloader/releases/latest" target="_blank">Download Latest v1.8.1 Installer</a> </div>
+        </div>
 
-            <section class="section">
-                <h2>✅ Project History & Completed Milestones</h2>
-                <p>This is a log of all major features and bug fixes that have been implemented and closed, leading to the current `v1.8.1` stable build.</p>
-                
-                <h3>Stable Release (v1.8.1)</h3>
-                <ul class="changelog-list">
-                    <li class="fix"><strong>CRITICAL FIX (v1.8.1):</strong> Resolved hardcoded search term bug, enabling dynamic URL parsing. (Closes #11)</li>
-                    <li class="feature"><strong>Content Verification (v1.8.0):</strong> Added system to check downloaded files against TMDB episode counts. (Closes #6)</li>
-                    <li class="feature"><strong>Settings System (v1.8.0):</strong> Implemented the "Preferences" window and backend service for API keys and paths. (Closes #7)</li>
-                    <li class="feature"><strong>UI Polish (v1.8.0):</strong> Added dark theme menus and a clear welcome/setup message to the log. (Closes #5)</li>
-                    <li class="feature"><strong>TMDB Integration (v1.7):</strong> Integrated `TMDbLib` to fetch official metadata, enabling Plex-friendly naming. (Closes #1)</li>
-                    <li class="fix"><strong>"NA" Folder Fix (v1.7):</strong> Corrected `yt-dlp` template syntax to use official TMDB titles and prevent naming failures. (Closes #4)</li>
-                    <li class="fix"><strong>App Freezing Fix (v1.6.1):</strong> Resolved critical race condition when stopping a download. (Closes #2)</li>
-                    <li class="feature"><strong>Batch Processing (v1.6):</strong> Implemented the multi-link toggle and sequential download logic. (Closes #3)</li>
-                </ul>
-            </section>
-            
-            <section class="section">
-                <h2>🚀 Full Development Roadmap</h2>
-                <p>This project is developed in phases. The current work on the `v1.9.0-alpha` branch completes Phase 1.</p>
-                
-                <div class="tab-nav">
-                    <button class="tab-link" onclick="openPhase(event, 'phase1')">Phase 1: Stability & Metadata</button>
-                    <button class="tab-link" onclick="openPhase(event, 'phase2')">Phase 2: UX & Reliability</button>
-                    <button class="tab-link" onclick="openPhase(event, 'phase3')">Phase 3: Advanced Automation</button>
-                </div>
-                
-                <div class="tab-content">
-                    
-                    <div id="phase1" class="tab-pane">
-                        <h3>Focus: Establishing a stable base, eliminating critical bugs, and integrating essential naming services.</h3>
-                        <table class="roadmap-table">
-                            <thead>
-                                <tr>
-                                    <th>Version</th>
-                                    <th>Key Accomplishment</th>
-                                    <th>Architectural / Code Changes</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>v1.0 (Initial)</td>
-                                    <td>Initial structure, basic logging, and singular download logic.</td>
-                                    <td>WPF UI; `Process.Start` used to call yt-dlp.exe; `ToolManagerService.cs` created.</td>
-                                </tr>
-                                <tr>
-                                    <td>v1.6 (Multi-Batch)</td>
-                                    <td>Added multi-link support and fixed initial UI freezing.</td>
-                                    <td>Multi-Batch Logic: Implemented `StartDownloadButton_Click` orchestrator loop.</td>
-                                </tr>
-                                <tr>
-                                    <td>v1.7 (TMDB Naming)</td>
-                                    <td>Integrated TMDB for intelligent naming and stabilized template syntax.</td>
-                                    <td>Metadata: Integrated `TMDbLib` for metadata lookup.</td>
-                                </tr>
-                                <tr>
-                                    <td>v1.8.0 (Verification/Settings)</td>
-                                    <td>Introduced Content Verification structure and User Settings.</td>
-                                    <td>Settings: Implemented `SettingsModel.cs` and `SettingsService.cs`. Validation: Added `PreferencesWindow.xaml`.</td>
-                                </tr>
-                                <tr>
-                                    <td>v1.8.1 (CRITICAL FIX)</td>
-                                    <td>Fixed the hardcoded metadata search bug.</td>
-                                    <td>CRITICAL FIX: Implemented `ExtractShowNameFromUrl` helper to dynamically parse titles.</td>
-                                </tr>
-                                <tr>
-                                    <td>v1.9.0-alpha (Current)</td>
-                                    <td>Implemented Pop-up Strategy and TVDB Micro-Client.</td>
-                                    <td>Architecture Rework: Removed broken `TvDbSharper` dependency. Integration: Rewrote `GetTvdbMetadataAsync` using stable `HttpClient` micro-client calls to TVDB v4 API.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div id="phase2" class="tab-pane">
-    <h3>Focus: Overhauling the UI, making the download process transparent, and ensuring every single feature is rock-solid.</h3>
-    <table class="roadmap-table">
-        <thead>
-            <tr>
-                <th>Version</th>
-                <th>Feature / Enhancement</th>
-                <th>Impact</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td>v2.0 (Major Release)</td>
-                <td>Architectural Refactor</td>
-                <td>Refactor solution into `.Core` (Models), `.Services` (Logic), and `.UI` (Host) to create a clean, maintainable, and publishable structure.</td>
-            </tr>
-            <tr>
-                <td>v2.0 (Major Release)</td>
-                <td>UI Overhaul & Dynamic Progress</td>
-                <td>Replaces the raw log with a status bar (Percentage, Speed, ETA). Converts raw log to a toggleable **Developer Log** window.</td>
-            </tr>
-            <tr>
-                <td>v2.1</td>
-                <td>TVDB User-Selectable Scraper</td>
-                <td>Fully implements the user-confirm pop-up for TVDB search, dramatically increasing metadata success for Anime/Plex users.</td>
-            </tr>
-            <tr>
-                <td>v2.2</td>
-                <td>Metadata Engine Completion</td>
-                <td>**CRITICAL FIX:** Fixes all known URL parsing bugs (Season 2+, YouTube playlist titles) by implementing **Smarter Page Scraping** (scanning HTML body for titles).</td>
-            </tr>
-            <tr>
-                <td>v2.3</td>
-                <td>Content Limit Fix</td>
-                <td>**CRITICAL FIX:** Dedicates research to finding the correct `yt-dlp` flag to resolve the **20-Item Playlist Limit** on sites like Tubi.</td>
-            </tr>
-            <tr>
-                <td>v2.5</td>
-                <td>Branding & Polish</td>
-                <td>Designs and implements a final application icon and logo. Integrates a proper name (replacing "AutoDownloader").</td>
-            </tr>
-        </tbody>
-    </table>
-</div>
-                    
-                    <div id="phase3" class="tab-pane">
-                        <h3>Focus: Adding high-value, complex features like multi-source content syncing, external file processing, and advanced configuration.</h3>
-                        <table class="roadmap-table">
-                            <thead>
-                                <tr>
-                                    <th>Version</th>
-                                    <th>Feature / Enhancement</th>
-                                    <th>Scope</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>v3.0 (Major Release)</td>
-                                    <td>External Subtitle Integration</td>
-                                    <td>Adds option to search external subtitle databases (e.g., OpenSubtitles) and download/rename subtitles.</td>
-                                </tr>
-                                <tr>
-                                    <td>v3.1</td>
-                                    <td>Advanced Download Manager API</td>
-                                    <td>Integrates API calls to popular external download managers (like IDM) for specific URLs.</td>
-                                </tr>
-                                <tr>
-                                    <td>v3.2</td>
-                                    <td>Metadata XML Save/Load</td>
-                                    <td>**CRITICAL FIX:** Fully implements saving/loading metadata into a local `series.xml` file to solve the **"already downloaded season"** bug.</td>
-                                </tr>
-                                <tr>
-                                    <td>v3.5</td>
-                                    <td>Profile Management</td>
-                                    <td>Allows users to save and load different configurations (e.g., "Standard Quality Profile," "4K Max Profile") in the Preferences window.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-        </main>
+        <div class="section">
+            <h2>Next Focus: v2.0 User Experience Overhaul</h2>
+            <p>The next major version will focus entirely on improving stability and user feedback.</p>
+            <ul>
+                <li><strong>UI Overhaul:</strong> Implement dynamic download progress bars (Percentage, Speed, ETA) in the main window.</li>
+                <li><strong>Developer Log:</strong> Convert the verbose raw output into an optional, toggleable developer log window.</li>
+                <li><strong>TVDB Integration:</strong> Implement TVDB as a secondary metadata source for improved coverage (Anime/Plex).</li>
+                <li class="bug-fix"><strong>20-Item Fix:</strong> Resolve the persistent playlist download limit bug.</li>
+            </ul>
+        </div>
         
-        <aside class="sidebar">
-            
-            <section class="section">
-                <h2>Project Links</h2>
-                <div class="button-group">
-                    <a href="https://github.com/neogentrics/AutoDownloader/releases/latest">Download Latest Stable (v1.8.1)</a>
-                    <a href="https://github.com/neogentrics/AutoDownloader" class="secondary">View Source Code</a>
-                    <a href="https://github.com/neogentrics/AutoDownloader/issues" class="secondary">Report an Issue</a>
-                </div>
-            </section>
-            
-            <section class="section stable">
-                <h2>✅ Stable Release: v1.8.1</h2>
-                <p>The recommended build for general use. Includes critical bug fixes for metadata parsing.</p>
-                <ul>
-                    <li>✅ <strong>CRITICAL FIX:</strong> Dynamically parses show names from URLs.</li>
-                    <li>✅ <strong>Content Verification:</strong> Checks downloads against TMDB episode counts.</li>
-                    <li>✅ <strong>Settings System:</strong> Manages API keys and paths (Ctrl+P).</li>
-                    <li>✅ <strong>Intelligent Naming:</strong> Uses TMDB for Plex-friendly folder names.</li>
-                    <li>✅ <strong>Smart Search:</strong> Finds download links from just a show name.</li>
-                </ul>
-            </section>
-            
-            <section class="section experimental">
-                <h2>💡 Experimental: v1.9.0-alpha</h2>
-                <p>An unstable branch focused on replacing the broken TVDB library and improving the UI flow.</p>
-                <ul>
-                    <li>🚀 <strong>TVDB Micro-Client:</strong> Replaces broken `TvDbSharper` with a custom, modern API client.</li>
-                    <li>🚀 <strong>Pop-up Strategy:</strong> Adds UI pop-ups to confirm show names and select a metadata source (TMDB or TVDB).</li>
-                </ul>
-                <div class="button-group">
-                    <a href="https://github.com/neogentrics/AutoDownloader/tree/v1.9.0-alpha" class="secondary">Browse Alpha Branch</a>
-                </div>
-            </section>
-        </aside>
+        <div class="section">
+            <h2>v1.8.1 Release Summary (Critical Bugfix)</h2>
+            <p><strong>Fix:</strong> The primary bug where direct URLs defaulted to 'How It's Made' for metadata lookup has been resolved by implementing URL path parsing.</p>
+            <ul>
+                <li class="bug-fix">**Critical Fix:** Direct URL parsing now dynamically extracts the correct show title (e.g., 'Love Thy Neighbor') for TMDB lookup and naming.</li>
+                <li class="bug-fix">**Stability Fix:** Finalized compilation by resolving stubborn nullable type conflicts (`int?`) in `MetadataService.cs`.</li>
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>v1.8.0 Feature Implementation</h2>
+            <p>The first step toward Content Verification and User Configuration.</p>
+            <ul>
+                <li>**Content Verification:** Added structure to count downloaded files and check against official TMDB episode counts.</li>
+                <li>**Settings System:** Implemented Preferences UI (Ctrl+P) and backend service for API key management.</li>
+                <li>**Validation:** Added launch-time pop-up warnings for missing required API keys.</li>
+            </ul>
+        </div>
 
     </div>
 

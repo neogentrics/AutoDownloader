@@ -1,8 +1,10 @@
-﻿using AutoDownloader.Core;
+﻿using AutoDownloader.Core; // For the data models (SettingsModel, DownloadMetadata)
+using AutoDownloader.Services; // For all the logic (YtDlpService, SettingsService, etc.)
 using Microsoft.WindowsAPICodePack.Dialogs;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
@@ -10,74 +12,71 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using System.Linq;
-using AutoDownloader.Services;
 
 namespace AutoDownloader.UI
 {
+    /// <summary>
+    /// Interaction logic for MainWindow.xaml
+    /// This class is the "Host" or "Orchestrator" for the entire application.
+    /// Its job is to:
+    /// 1. Initialize all services from the .Services project.
+    /// 2. Handle all user UI events (button clicks, key presses).
+    /// 3. Call the appropriate services to perform logic.
+    /// 4. Receive data and events back from the services to update the UI (log, status bar).
+    /// </summary>
     public partial class MainWindow : Window
     {
-        // --- Our Core "Engines" ---
-        private YtDlpService _ytDlpService = null!; // Will be initialized async
-        private SearchService _searchService = null!; // Will be initialized async
+        // --- Service Fields (Injected from AutoDownloader.Services) ---
+
+        private YtDlpService _ytDlpService = null!; // Initialized async in InitializeAsyncServices
+        private SearchService _searchService = null!; // Initialized async
+        private MetadataService _metadataService = null!; // Initialized async
         private readonly ToolManagerService _toolManagerService;
-        private MetadataService _metadataService = null!; // Will be initialized async
         private readonly SettingsService _settingsService;
         private readonly XmlService _xmlService;
 
-        // --- High-Performance Log Batching ---
+        // --- UI & Logging Fields ---
+
         private readonly DispatcherTimer _logUpdateTimer;
         private readonly List<string> _logQueue = new List<string>();
         private readonly object _logLock = new object();
-
-        // NEW: Track the current input mode
         private bool _isMultiLinkMode = false;
 
-        // V1.9.5 NEW: XML Service
-        private readonly XmlService _xmlService;
+        /// <summary>
+        /// The authoritative version number for the application.
+        /// </summary>
+        private const string CurrentVersion = "v1.9.2-Alpha";
 
-        // NEW: Define the authoritative version number here
-        private const string CurrentVersion = "v1.9.5-Beta";
+        // --- Constructor & Initializers ---
 
+        /// <summary>
+        /// Main entry point for the application window.
+        /// </summary>
         public MainWindow()
         {
             InitializeComponent();
             this.Title = $"AutoDownloader {CurrentVersion} - (For Personal Use Only)";
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
 
-            // --- 1. Initialize Services in Dependency Order ---
+            // ---1. Initialize Synchronous Services (Order matters!) ---
 
-            // A. Settings must load first to get API keys
             _settingsService = new SettingsService();
-            _settingsService.LoadSettings(); // Synchronous load
+            _settingsService.LoadSettings(); // Loads keys and paths immediately
 
-            // B. ToolManager is self-contained
             _toolManagerService = new ToolManagerService();
+            _xmlService = new XmlService(); // Ready for the v3.2 feature
 
-<<<<<<< HEAD
-            // C. XML Service is self-contained
-            _xmlService = new XmlService();
-=======
-            // V1.9.5 NEW: Initialize XML Service
-            _xmlService = new XmlService();
-
-            // C. YtDlpService depends on ToolManager
-            _ytDlpService = new YtDlpService(_toolManagerService);
->>>>>>> 4e35c7b3c3590746212c02f744cf00e2e2635a3b
-
-            // D. Set Up Default Download Path
+            // Set Up Default Download Path in UI
             OutputFolderTextBox.Text = _settingsService.Settings.DefaultOutputFolder;
             Directory.CreateDirectory(_settingsService.Settings.DefaultOutputFolder);
 
-            // E. Set Up Log Batching Timer
+            // Set Up Log Batching Timer
             _logUpdateTimer = new DispatcherTimer();
             _logUpdateTimer.Interval = TimeSpan.FromMilliseconds(100);
             _logUpdateTimer.Tick += LogUpdateTimer_Tick;
             _logUpdateTimer.Start();
 
-            // F. Start Asynchronous Initialization
-            // We run this in a separate async method so the window can load
-            // while we download/check for tools.
+            // Start Asynchronous Initialization of services that rely on settings/tools
             _ = InitializeAsyncServices();
         }
 
@@ -86,14 +85,20 @@ namespace AutoDownloader.UI
         /// </summary>
         private async Task InitializeAsyncServices()
         {
-            SetUiLock(true); // Lock UI while we init
-            StatusTextBlock.Text = "Initializing tools...";
+            SetUiLock(true); // Lock the UI
+            StatusTextBlock.Text = "Initializing tools (yt-dlp, aria2c)...";
 
-            // 1. Ensure yt-dlp and aria2c are present
+            // Wire up ToolManager logging (must be done before EnsureToolsAvailableAsync)
+            _toolManagerService.OnToolLogReceived += (logLine) =>
+            {
+                lock (_logLock) { _logQueue.Add(logLine); }
+            };
+
+            //1. Download/Verify yt-dlp and aria2c.
             var (ytDlpPath, ariaPath) = await _toolManagerService.EnsureToolsAvailableAsync();
-            StatusTextBlock.Text = "Tools ready. Initializing services...";
+            StatusTextBlock.Text = "Tools ready. Initializing API services...";
 
-            // 2. Now we can initialize all the services that depend on settings or tools
+            //2. Initialize API-dependent services with keys from settings.
             _metadataService = new MetadataService(
                 _settingsService.Settings.TmdbApiKey,
                 _settingsService.Settings.TvdbApiKey
@@ -101,16 +106,37 @@ namespace AutoDownloader.UI
 
             _searchService = new SearchService(_settingsService.Settings.GeminiApiKey);
 
-            // 3. Inject the tool paths into YtDlpService
-            _ytDlpService = new YtDlpService(ytDlpPath, ariaPath);
+            //3. Initialize the Download service, injecting the tool paths and settings.
+            _ytDlpService = new YtDlpService(
+                ytDlpPath,
+                ariaPath,
+                ToolManagerService.FIREFOX_USER_AGENT,
+                _settingsService.Settings.PreferredVideoQuality
+            );
 
-            // 4. Set Up Event Handlers
+            //4. Wire up the event handlers for the download service.
+            WireUpDlpEvents();
+
+            //5. Run final checks and unlock the UI.
+            ValidateApiKeysOnLaunch();
+            StatusTextBlock.Text = "Ready.";
+            SetUiLock(false); // Unlock the UI
+        }
+
+        /// <summary>
+        /// Helper method to wire up YtDlpService events (used in init and preferences reload).
+        /// </summary>
+        private void WireUpDlpEvents()
+        {
+            // Do not attempt to assign to events directly. Attach handlers only.
+            // The _ytDlpService instance is recreated when preferences change, so duplicate subscriptions are unlikely.
+
             _ytDlpService.OnDownloadComplete += (exitCode) =>
             {
                 Dispatcher.Invoke(() =>
                 {
                     SetUiLock(false);
-                    StatusTextBlock.Text = exitCode == 0 ? "Download complete" : "Download failed or stopped";
+                    StatusTextBlock.Text = exitCode ==0 ? "Download complete" : "Download failed or stopped";
                 });
             };
 
@@ -118,41 +144,237 @@ namespace AutoDownloader.UI
             {
                 lock (_logLock) { _logQueue.Add(logLine); }
             };
-
-            // Also forward logs from the ToolManager
-            _toolManagerService.OnToolLogReceived += (logLine) =>
-            {
-                lock (_logLock) { _logQueue.Add(logLine); }
-            };
-
-            // 5. Run validation and unlock UI
-            ValidateApiKeysOnLaunch();
-<<<<<<< HEAD
-            StatusTextBlock.Text = "Ready.";
-            SetUiLock(false); // Unlock UI
-=======
-
-
->>>>>>> 4e35c7b3c3590746212c02f744cf00e2e2635a3b
         }
 
+        // --- Core Application Logic ---
+
         /// <summary>
-        /// This method runs 10x per second to "flush" all queued logs
-        /// to the screen at once. This prevents the UI from freezing.
+        /// This is the main download orchestration method, called by StartDownloadButton_Click.
+        /// </summary>
+        private async Task ProcessSingleDownloadAsync(string searchTerm)
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm)) return;
+
+            // CRITICAL: Guard against premature button click.
+            if (_ytDlpService == null || _metadataService == null || _searchService == null)
+            {
+                AppendLog("--- ERROR: Services are still initializing. Please wait a moment and try again. ---", Brushes.Red);
+                return;
+            }
+
+            string baseOutputFolder = OutputFolderTextBox.Text;
+            string finalUrl = searchTerm;
+            string finalOutputFolder = baseOutputFolder;
+            string searchTarget = searchTerm;
+
+            DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
+
+            // --- PHASE1: Determine the Final Download URL ---
+            if (!searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                // Case A: Search Term
+                AppendLog($"--- Starting Gemini web search for: '{searchTarget}' ---", Brushes.Aqua);
+                StatusTextBlock.Text = $"Searching for content: {searchTarget}";
+                try
+                {
+                    var (type, url) = await _searchService.FindShowUrlAsync(searchTarget);
+                    if (url == "not-found")
+                    {
+                        AppendLog($"Could not find a download page for '{searchTarget}'.", Brushes.Red);
+                        AppendLog("--- Search failed. ---", Brushes.Red);
+                        return;
+                    }
+                    finalUrl = url;
+                    metadataToPass.SourceUrl = url;
+                    string category = type.Contains("Anime") ? "Anime TV Shows" :
+                                        type.Contains("TV Show") ? "TV Shows" : "Playlists";
+                    finalOutputFolder = Path.Combine(baseOutputFolder, category);
+                    Directory.CreateDirectory(finalOutputFolder);
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"--- Smart search failed: {ex.Message} ---", Brushes.Red);
+                    return;
+                }
+            }
+            else
+            {
+                // Case B: Direct URL
+                AppendLog("--- Direct URL detected. Skipping Gemini search. ---", Brushes.Aqua);
+                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows");
+                Directory.CreateDirectory(finalOutputFolder);
+
+                // Parse the URL for a name and (hopefully) a season number.
+                var (parsedName, parsedSeason) = ParseMetadataFromUrl(searchTerm);
+
+                searchTarget = parsedName;
+                if (parsedSeason.HasValue)
+                {
+                    metadataToPass.NextSeasonNumber = parsedSeason.Value;
+                    AppendLog($"Detected Season: {parsedSeason.Value} from URL.", Brushes.Yellow);
+                }
+            }
+
+            // --- PHASE2: Official Metadata Lookup (v1.9.2 Pop-up Strategy) ---
+            AppendLog($"--- Starting metadata lookup for: '{searchTarget}' ---", Brushes.Aqua);
+            StatusTextBlock.Text = $"Looking up official metadata for: {searchTarget}";
+
+            // Step1: Confirm the show name (v1.9.2 Pop-up)
+            ConfirmNameWindow confirmDialog = new ConfirmNameWindow(searchTarget) { Owner = this };
+            bool? confirmResult = confirmDialog.ShowDialog();
+
+            if (confirmResult != true)
+            {
+                AppendLog("--- Metadata lookup cancelled by user. Aborting. ---", Brushes.Red);
+                return;
+            }
+
+            string confirmedSearchTarget = confirmDialog.ShowName;
+
+            // Step2: Select the database (v1.9.2 Pop-up)
+            SelectDatabaseWindow selectDbDialog = new SelectDatabaseWindow(
+                _metadataService.IsTmdbKeyValid,
+                _metadataService.IsTvdbKeyValid
+            )
+            { Owner = this };
+            selectDbDialog.ShowDialog();
+            DatabaseSource dbChoice = selectDbDialog.SelectedSource;
+
+            // Step3: Run the selected metadata search
+            (string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)? metadataResult = null;
+
+            if (dbChoice == DatabaseSource.TMDB)
+            {
+                AppendLog($"--- Searching TMDB for: '{confirmedSearchTarget}' ---", Brushes.Aqua);
+                metadataResult = await _metadataService.GetTmdbMetadataAsync(confirmedSearchTarget);
+            }
+            else if (dbChoice == DatabaseSource.TVDB)
+            {
+                AppendLog($"--- Searching TVDB for: '{confirmedSearchTarget}' ---", Brushes.Aqua);
+                metadataResult = await _metadataService.GetTvdbMetadataAsync(confirmedSearchTarget);
+            }
+            else
+            {
+                AppendLog("--- No database selected or canceled. Aborting. ---", Brushes.Red);
+                return;
+            }
+
+            // Step4: Process Metadata and Save XML
+            if (metadataResult != null)
+            {
+                var (officialTitle, seriesId, targetSeasonNumber, expectedCount) = metadataResult.Value;
+
+                AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
+                AppendLog($"Metadata Source: {dbChoice}", Brushes.Yellow);
+
+                // If the URL parser found a season (Case B), override the default season1.
+                if (metadataToPass.NextSeasonNumber !=1)
+                {
+                    AppendLog($"Using Season {metadataToPass.NextSeasonNumber} (Detected from URL)", Brushes.Yellow);
+                }
+                else
+                {
+                    metadataToPass.NextSeasonNumber = targetSeasonNumber; // Use the one from metadata (usually1)
+                }
+
+                AppendLog($"Expected Episode Count: {expectedCount}", Brushes.Yellow);
+
+                metadataToPass.OfficialTitle = officialTitle;
+                metadataToPass.SeriesId = seriesId;
+                metadataToPass.ExpectedEpisodeCount = expectedCount;
+
+                // Create final output folder (e.g., ".../TV Shows/The Mandalorian")
+                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
+                Directory.CreateDirectory(finalOutputFolder);
+
+                // V1.9.2 FIX: Save the metadata XML to the show's root folder
+                AppendLog("--- Saving metadata to local series.xml... ---", Brushes.Yellow);
+                await _xmlService.SaveMetadataAsync(finalOutputFolder, metadataToPass);
+                AppendLog("--- Metadata saved successfully. ---", Brushes.Green);
+            }
+            else
+            {
+                // CRITICAL FIX (Closes Issue #13)
+                AppendLog($"Could not find official metadata for '{confirmedSearchTarget}'. Download aborted.", Brushes.Red);
+                return;
+            }
+
+            // --- PHASE3: Download and Verification Logic ---
+
+            string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
+
+            // Count files *before* download
+            int filesBefore =0;
+            if (Directory.Exists(finalSeasonFolder))
+            {
+                filesBefore = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
+                    .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Execute Download
+            StatusTextBlock.Text = $"Downloading: {metadataToPass.SourceUrl}";
+            try
+            {
+                await _ytDlpService.DownloadVideoAsync(metadataToPass, finalOutputFolder);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
+            }
+
+            // Run Content Verification
+            int filesAfter =0;
+            int filesDownloaded =0;
+
+            if (Directory.Exists(finalSeasonFolder))
+            {
+                filesAfter = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
+                    .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase));
+                filesDownloaded = filesAfter - filesBefore;
+            }
+
+            if (metadataToPass.ExpectedEpisodeCount >0)
+            {
+                int missingCount = metadataToPass.ExpectedEpisodeCount - filesAfter;
+
+                if (missingCount ==0)
+                {
+                    AppendLog("CONTENT VERIFICATION: SUCCESS! All expected episodes are present.", Brushes.Green);
+                }
+                else if (missingCount >0)
+                {
+                    AppendLog($"CONTENT VERIFICATION: WARNING! {missingCount} episode(s) are MISSING from the Season folder (Found {filesAfter} of {metadataToPass.ExpectedEpisodeCount} expected).", Brushes.OrangeRed);
+                }
+                else
+                {
+                    AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session. (Found {filesAfter} files, {metadataToPass.ExpectedEpisodeCount} expected)", Brushes.Cyan);
+                }
+            }
+            else
+            {
+                AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session. (No metadata count available)", Brushes.Cyan);
+            }
+        }
+
+        // --- UI Event Handlers & Helpers ---
+
+        /// <summary>
+        /// This method runs10x per second to "flush" all queued logs
+        /// to the screen at once.
         /// </summary>
         private void LogUpdateTimer_Tick(object? sender, EventArgs e)
         {
             List<string> logsToFlush;
             lock (_logLock)
             {
-                if (_logQueue.Count == 0) return;
-
-                // Copy the current queue and clear it in one atomic operation
+                if (_logQueue.Count ==0) return;
                 logsToFlush = new List<string>(_logQueue);
                 _logQueue.Clear();
             }
 
-            if (logsToFlush.Count > 0)
+            if (logsToFlush.Count >0)
             {
                 var sb = new StringBuilder();
                 foreach (var line in logsToFlush)
@@ -160,15 +382,11 @@ namespace AutoDownloader.UI
                     sb.AppendLine(line);
                 }
 
-                // **** THIS IS THE FIX ****
-                // Create the Paragraph 'p' from the string builder
                 var p = new Paragraph(new Run(sb.ToString()));
-
-                // Smartly color-code the output
-                // We check the *raw string* for faster performance
                 string logText = sb.ToString();
                 if (!string.IsNullOrEmpty(logText))
                 {
+                    // Coloring logic for different output types
                     if (logText.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase))
                     {
                         p.Foreground = Brushes.Red;
@@ -181,14 +399,11 @@ namespace AutoDownloader.UI
                     {
                         p.Foreground = Brushes.Aqua;
                     }
-                    else if (logText.StartsWith("Downloading tool:", StringComparison.OrdinalIgnoreCase) ||
-                             logText.StartsWith("Extracting tool:", StringComparison.OrdinalIgnoreCase))
+                    else if (logText.Contains("Downloading tool:") || logText.Contains("Extracting tool:"))
                     {
                         p.Foreground = Brushes.Orange;
                     }
                 }
-
-                // Add the formatted paragraph to the log
                 OutputLogTextBox.Document.Blocks.Add(p);
                 LogScrollViewer.ScrollToEnd();
             }
@@ -210,7 +425,6 @@ namespace AutoDownloader.UI
         /// </summary>
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
         {
-            // This requires the Microsoft.WindowsAPICodePack-Shell NuGet package
             var dialog = new CommonOpenFileDialog
             {
                 IsFolderPicker = true,
@@ -219,236 +433,7 @@ namespace AutoDownloader.UI
 
             if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
             {
-                // **** THIS IS THE FIX ****
-                // This line was wrong and caused the build error.
                 OutputFolderTextBox.Text = dialog.FileName;
-            }
-        }
-
-        /// <summary>
-        /// Contains the core logic to process a single URL or search term.
-        /// V1.9.0-alpha: Reworked for pop-up confirmation strategy.
-        /// </summary>
-        private async Task ProcessSingleDownloadAsync(string searchTerm)
-        {
-            if (string.IsNullOrWhiteSpace(searchTerm))
-            {
-                return;
-            }
-
-            string baseOutputFolder = OutputFolderTextBox.Text;
-            string finalUrl = searchTerm;
-            string finalOutputFolder = baseOutputFolder;
-            string searchTarget = searchTerm;
-
-            DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
-
-            // --- PHASE 1: Determine the Final Download URL ---
-            if (!searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-            {
-                // Case A: Input is a Search Term (Gemini Search is REQUIRED)
-                AppendLog($"--- Starting Gemini web search for: '{searchTarget}' ---", Brushes.Aqua);
-                StatusTextBlock.Text = $"Searching for content: {searchTarget}";
-                try
-                {
-                    var (type, url) = await _searchService.FindShowUrlAsync(searchTarget);
-                    if (url == "not-found")
-                    {
-                        AppendLog($"Could not find a download page for '{searchTarget}'.", Brushes.Red);
-                        AppendLog("--- Search failed. ---", Brushes.Red);
-                        return;
-                    }
-                    AppendLog($"Found URL: {url}", Brushes.Aqua);
-                    finalUrl = url;
-                    metadataToPass.SourceUrl = url;
-
-                    string category = type.Contains("Anime") ? "Anime TV Shows" :
-                                        type.Contains("TV Show") ? "TV Shows" :
-                                        type.Contains("Movie") ? "Movies" : "Playlists";
-                    finalOutputFolder = Path.Combine(baseOutputFolder, category);
-                    Directory.CreateDirectory(finalOutputFolder);
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"--- Smart search failed: {ex.Message} ---", Brushes.Red);
-                    return;
-                }
-            }
-            else
-            {
-                // Case B: Input is a Direct URL (Gemini Search is SKIPPED)
-                AppendLog($"--- Direct URL detected. Skipping Gemini search. ---", Brushes.Aqua);
-                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows");
-                Directory.CreateDirectory(finalOutputFolder);
-
-                // V1.9.5 FIX: Extract show name and season number from URL
-                var (parsedName, parsedSeason) = ParseMetadataFromUrl(searchTerm);
-
-                searchTarget = parsedName;
-                if (parsedSeason.HasValue)
-                {
-                    // If season is found in the URL, prioritize it.
-                    metadataToPass.NextSeasonNumber = parsedSeason.Value;
-                    AppendLog($"Detected Season: {parsedSeason.Value} from URL.", Brushes.Yellow);
-                }
-            }
-
-            // --- PHASE 2: V1.9.0-alpha POP-UP STRATEGY ---
-
-            // Step 1: Confirm the name with the user (15s timeout)
-            AppendLog($"--- Parsing complete. Confirming show name for: '{searchTarget}' ---", Brushes.Aqua);
-            ConfirmNameWindow nameDialog = new ConfirmNameWindow(searchTarget) { Owner = this };
-            nameDialog.ShowDialog(); // Pauses execution
-
-            if (!nameDialog.IsConfirmed)
-            {
-                AppendLog("--- User cancelled metadata search. Download aborted. ---", Brushes.Red);
-                return;
-            }
-
-            string confirmedName = nameDialog.ShowName;
-            AppendLog($"--- User confirmed name: '{confirmedName}' ---", Brushes.Aqua);
-
-            // Step 2: Select the Database (30s timeout)
-            StatusTextBlock.Text = "Waiting for database selection...";
-            SelectDatabaseWindow dbDialog = new SelectDatabaseWindow() { Owner = this };
-            dbDialog.ShowDialog(); // Pauses execution
-
-            if (dbDialog.SelectedSource == DatabaseSource.Canceled)
-            {
-                AppendLog("--- User cancelled database selection. Download aborted. ---", Brushes.Red);
-                return;
-            }
-
-            // Step 3: Call the correct metadata service based on selection
-            Task<(string, int, int, int)?>? metadataTask;
-            if (dbDialog.SelectedSource == DatabaseSource.TVDB)
-            {
-                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
-                StatusTextBlock.Text = "Searching TMDB...";
-                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
-            }
-            else
-            {
-                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
-                StatusTextBlock.Text = "Searching TMDB...";
-                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
-            }
-
-            var metadataResult = await metadataTask;
-
-<<<<<<< HEAD
-            // Step 4: Process Metadata and Save XML (V1.9.5 Feature)
-            if (metadataResult != null)
-            {
-=======
-            if (!nameDialog.IsConfirmed)
-            {
-                AppendLog("--- User cancelled metadata search. Download aborted. ---", Brushes.Red);
-                return;
-            }
-
-            string confirmedName = nameDialog.ShowName;
-            AppendLog($"--- User confirmed name: '{confirmedName}' ---", Brushes.Aqua);
-
-                AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
-                AppendLog($"Metadata Source: {(seriesId > 1000000 ? "TMDB" : "TVDB")}", Brushes.Yellow); // Simple guess based on ID format
-                AppendLog($"Target Season {targetSeasonNumber} Expected Episode Count: {expectedCount}", Brushes.Yellow);
-
-            // Step 3: Call the correct metadata service based on selection
-            Task<(string, int, int, int)?>? metadataTask;
-            if (dbDialog.SelectedSource == DatabaseSource.TVDB)
-            {
-                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
-                StatusTextBlock.Text = "Searching TMDB...";
-                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
-            }
-            else
-            {
-                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
-                StatusTextBlock.Text = "Searching TMDB...";
-                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
-            }
-
-            var metadataResult = await metadataTask;
-
-            // Step 4: Process Metadata and Save XML (V1.9.5 Feature)
-            if (metadataResult != null)
-            {
->>>>>>> 4e35c7b3c3590746212c02f744cf00e2e2635a3b
-                // ... (Existing metadata assignment code) ...
-
-                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
-                Directory.CreateDirectory(finalOutputFolder);
-                AppendLog($"Output folder set to: {finalOutputFolder}", Brushes.Yellow);
-
-                // V1.9.5 FIX: Save the metadata XML to the show's root folder
-                AppendLog("--- Saving metadata to local series.xml... ---", Brushes.Yellow);
-                await _xmlService.SaveMetadataAsync(finalOutputFolder, metadataToPass);
-                AppendLog("--- Metadata saved successfully. ---", Brushes.Green);
-            }
-            else
-            {
-                // This is the CRASH fix: if metadata fails, we stop gracefully.
-                AppendLog($"Could not find official metadata for '{confirmedName}'. Download aborted.", Brushes.Red);
-                return;
-            }
-
-            // --- PHASE 3: Download and Verification Logic ---
-
-            string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
-
-            int filesBefore = 0;
-            if (Directory.Exists(finalSeasonFolder))
-            {
-                filesBefore = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
-                    .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase));
-            }
-            AppendLog($"Files in Season Folder before download: {filesBefore}", Brushes.Cyan);
-
-            StatusTextBlock.Text = $"Downloading: {metadataToPass.SourceUrl}";
-            try
-            {
-                await _ytDlpService.DownloadVideoAsync(metadataToPass, finalOutputFolder);
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
-            }
-
-            int filesAfter = 0;
-            int filesDownloaded = 0;
-
-            if (Directory.Exists(finalSeasonFolder))
-            {
-                filesAfter = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
-                    .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase));
-
-                filesDownloaded = filesAfter - filesBefore;
-            }
-
-            if (metadataToPass.ExpectedEpisodeCount > 0)
-            {
-                int missingCount = metadataToPass.ExpectedEpisodeCount - filesAfter;
-
-                if (missingCount == 0)
-                {
-                    AppendLog("CONTENT VERIFICATION: SUCCESS! All expected episodes are present.", Brushes.Green);
-                }
-                else if (missingCount > 0)
-                {
-                    AppendLog($"CONTENT VERIFICATION: WARNING! {missingCount} episode(s) are MISSING from the Season folder (Found {filesAfter} of {metadataToPass.ExpectedEpisodeCount} expected).", Brushes.OrangeRed);
-                }
-                else
-                {
-                    AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session.", Brushes.Cyan);
-                }
-            }
-            else
-            {
-                AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session. (No metadata count available)", Brushes.Cyan);
             }
         }
 
@@ -457,8 +442,7 @@ namespace AutoDownloader.UI
         /// </summary>
         private void StopDownloadButton_Click(object sender, RoutedEventArgs e)
         {
-            _ytDlpService.StopDownload();
-            // The OnDownloadComplete event will handle unlocking the UI
+            _ytDlpService?.StopDownload();
             StatusTextBlock.Text = "Stopping download...";
         }
 
@@ -470,14 +454,12 @@ namespace AutoDownloader.UI
             UrlTextBox.IsEnabled = !isLocked;
             OutputFolderTextBox.IsEnabled = !isLocked;
             BrowseButton.IsEnabled = !isLocked;
-
-            // Swap button visibility
             StartDownloadButton.Visibility = isLocked ? Visibility.Collapsed : Visibility.Visible;
             StopDownloadButton.Visibility = isLocked ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>
-        /// A helper to add a single, colored log line (used for important messages)
+        /// A helper to add a single, colored log line to the UI.
         /// </summary>
         private void AppendLog(string message, SolidColorBrush color)
         {
@@ -487,9 +469,8 @@ namespace AutoDownloader.UI
             LogScrollViewer.ScrollToEnd();
         }
 
-
         /// <summary>
-        /// Handles the "Exit" menu item click.
+        /// Handles the "File -> Exit" menu item click.
         /// </summary>
         private void Exit_Click(object sender, RoutedEventArgs e)
         {
@@ -497,55 +478,68 @@ namespace AutoDownloader.UI
         }
 
         /// <summary>
-        /// Handles the "Preferences" menu item click, opening the settings window.
+        /// Handles the "Edit -> Preferences..." menu item click.
         /// </summary>
         private void Preferences_Click(object sender, RoutedEventArgs e)
         {
-            // Create a new instance of the PreferencesWindow, passing the SettingsService instance
-            PreferencesWindow settingsWindow = new PreferencesWindow(_settingsService);
-
-            // Show the window modally (blocks input to the main window until closed)
+            PreferencesWindow settingsWindow = new PreferencesWindow(_settingsService) { Owner = this };
             settingsWindow.ShowDialog();
 
-            // When the preferences window closes, reload the default path just in case it was changed
-            OutputFolderTextBox.Text = _settingsService.Settings.DefaultOutputFolder;
+            // ** CRITICAL RELOAD FIX **
+            // After the user saves settings, we must re-load everything to apply changes.
+            _settingsService.LoadSettings();
 
-            // Log that the action was performed
-            AppendLog("Preferences window opened. Settings may require app restart to take full effect.", Brushes.Yellow);
+            //1. Re-initialize services that depend on new keys.
+            _metadataService = new MetadataService(
+                _settingsService.Settings.TmdbApiKey,
+                _settingsService.Settings.TvdbApiKey
+            );
+            _searchService = new SearchService(_settingsService.Settings.GeminiApiKey);
+
+            //2. Re-initialize YtDlpService with the (potentially new) video quality setting.
+            // We use GetToolPaths() to avoid re-downloading tools.
+            var (ytDlpPath, ariaPath) = _toolManagerService.GetToolPaths();
+            _ytDlpService = new YtDlpService(
+               ytDlpPath,
+               ariaPath,
+               ToolManagerService.FIREFOX_USER_AGENT,
+               _settingsService.Settings.PreferredVideoQuality
+           );
+
+            //3. Re-wire events for the new service instance.
+            WireUpDlpEvents();
+
+            //4. Update the UI.
+            OutputFolderTextBox.Text = _settingsService.Settings.DefaultOutputFolder;
+            AppendLog("Preferences updated. API keys and settings reloaded.", Brushes.Yellow);
         }
 
         /// <summary>
-        /// Handles the "About" menu item click, showing project information.
+        /// Handles the "Help -> About" menu item click.
         /// </summary>
         private void About_Click(object sender, RoutedEventArgs e)
         {
-            // Use the authoritative constant instead of parsing the window title.
             string version = CurrentVersion;
 
+            // ** v1.9.2 UPDATE **
+            // Updated the "About" text to be accurate.
             string aboutText = $@"
 AutoDownloader - Version {version}
-
 Developed By: Neo Gentrics
 AI Development Partner: Gemini (Google)
-
 --- Core Technologies ---
-  - High-Speed Downloads: yt-dlp, aria2c
-  - Smart Search: Google Gemini API
-  - Metadata: TMDB API
-  - Framework: .NET 9.0 (WPF)
-
+ - High-Speed Downloads: yt-dlp, aria2c
+ - Smart Search: Google Gemini API
+ - Metadata: TMDB API & TVDB API
+ - Framework: .NET9.0 (WPF)
+--- Implemented Features (v1.9) ---
+ - **Multi-Scraper Engine:** User-selectable metadata lookup (TMDB or TVDB).
+ - **Local Metadata:** Saves downloaded show info to 'series_metadata.xml'.
+ - **Smarter Parsing:** Detects season numbers (e.g., 'season-2') from direct URLs.
 --- Implemented Features (v1.8) ---
-  - **Content Verification Structure:** Added structure to retrieve official TMDB episode counts.
-  - **Settings System Backend:** Implemented data model and service to securely load/save API keys and user preferences (v1.8.0).
-  - **API Key Validation:** Added launch time pop-up warning for required missing API keys.
-  - **Multi-Link Batch Processing:** Enabled sequential downloading of multiple items (v1.6).
-
---- Bug Fixes (v1.6.1 - v1.7.5) ---
-  - **Fixed:** Critical app freezing when stopping a download (v1.6.1).
-  - **Fixed:** Incorrect file/folder naming (NA/Duplication) (v1.7.3).
-  - **Fixed:** Template syntax error and UI visibility issues (v1.7.4).
-
-Thank you for using AutoDownloader!
+ - **Content Verification:** Checks downloaded files against official episode counts.
+ - **Settings System Backend:** Securely load/save API keys and user preferences.
+ - **Multi-Link Batch Processing:** Sequential downloading of multiple items.
 ";
             MessageBox.Show(aboutText, "About AutoDownloader", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -575,8 +569,8 @@ Thank you for using AutoDownloader!
             }
         }
 
-         /// <summary>
-        /// Handles the "Download" button click, supporting single or multiple links.
+        /// <summary>
+        /// Handles the "Download" button click. This is the main orchestrator for batch jobs.
         /// </summary>
         private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
         {
@@ -584,11 +578,10 @@ Thank you for using AutoDownloader!
             OutputLogTextBox.Document.Blocks.Clear(); // Clear the log
             StatusTextBlock.Text = "Starting...";
 
-            // 1. Get the list of search terms/URLs
+            //1. Get the list of search terms/URLs
             List<string> searchTerms;
             if (_isMultiLinkMode)
             {
-                // Split the multi-line text box by new lines, filter out empty lines
                 searchTerms = MultiUrlTextBox.Text
                     .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                     .Select(s => s.Trim())
@@ -596,18 +589,17 @@ Thank you for using AutoDownloader!
             }
             else
             {
-                // Single link mode
                 searchTerms = new List<string> { UrlTextBox.Text.Trim() };
             }
 
-            if (searchTerms.Count == 0 || (searchTerms.Count == 1 && string.IsNullOrWhiteSpace(searchTerms[0])))
+            if (searchTerms.Count ==0 || (searchTerms.Count ==1 && string.IsNullOrWhiteSpace(searchTerms[0])))
             {
                 AppendLog("Please enter at least one URL or search term.", Brushes.Red);
                 SetUiLock(false);
                 return;
             }
 
-            // 2. Process each item sequentially
+            //2. Process each item sequentially
             AppendLog($"--- Starting Batch Download ({searchTerms.Count} items) ---", Brushes.Aqua);
 
             foreach (var term in searchTerms)
@@ -617,15 +609,14 @@ Thank you for using AutoDownloader!
                 AppendLog($"\n--- Processing Item: {term} ---", Brushes.Aqua);
                 await ProcessSingleDownloadAsync(term);
 
-                // Crucial: check for user cancellation after each download
+                // Check if user cancelled after each download
                 if (StopDownloadButton.Visibility == Visibility.Collapsed)
                 {
-                    // The UI was unlocked, meaning the download either failed or completed
+                    // The UI was unlocked by a completed or failed download
                 }
                 else
                 {
-                    // If the UI is still locked (Stop button is visible), 
-                    // the user must have hit the Stop button during the last download.
+                    // If the Stop button is still visible, the user manually hit Stop.
                     AppendLog("--- Batch operation cancelled by user. ---", Brushes.Red);
                     SetUiLock(false);
                     return;
@@ -642,33 +633,38 @@ Thank you for using AutoDownloader!
         /// </summary>
         private void ValidateApiKeysOnLaunch()
         {
-            bool tmdbKeyMissing = !this._metadataService.IsTmdbKeyValid;
+            string message = ""; // This variable holds all warning/error text.
+
+            bool tmdbKeyMissing = !_metadataService.IsTmdbKeyValid;
+            if (tmdbKeyMissing)
+            {
+                message += "CRITICAL: The TMDB API Key is missing or invalid. TMDB metadata search will fail.\n\n";
+            }
+
+            // v1.9.2: Check for TVDB key
+            bool tvdbKeyMissing = !_metadataService.IsTvdbKeyValid;
+            if (tvdbKeyMissing)
+            {
+                if (!string.IsNullOrEmpty(message)) message += "\n---\n\n";
+                message += "WARNING: The TVDB API Key is missing. Fallback search for Anime and other shows will be disabled.\n\n";
+            }
 
             bool geminiKeyMissing = string.IsNullOrWhiteSpace(_settingsService.Settings.GeminiApiKey) ||
                                     _settingsService.Settings.GeminiApiKey == "YOUR_GEMINI_API_KEY_HERE";
-
-            string message = "";
-
-            if (tmdbKeyMissing)
-            {
-                message += "CRITICAL: The TMDB API Key is missing or invalid. Metadata lookup (official show names, episode counts) will fail.\n\n";
-                message += "Please get a key and enter it in the 'Edit -> Preferences...' menu (v1.8 feature).\n";
-            }
-
             if (geminiKeyMissing)
             {
                 if (!string.IsNullOrEmpty(message)) message += "\n---\n\n";
-                message += "WARNING: The Gemini API Key is missing. Smart Search functionality will be disabled. You must use direct URLs.\n\n";
-                message += "Find your key and enter it in the 'Edit -> Preferences...' menu (v1.8 feature).\n";
+                message += "WARNING: The Gemini API Key is missing. Smart Search (non-URL) functionality will be disabled.\n\n";
             }
 
             if (!string.IsNullOrEmpty(message))
             {
+                message += "Please get the required keys and enter them in the 'Edit -> Preferences...' menu.";
                 MessageBox.Show(
                     message,
                     "API Key Validation Warning",
                     MessageBoxButton.OK,
-                    tmdbKeyMissing ? MessageBoxImage.Error : MessageBoxImage.Warning // Critical error if TMDB is missing
+                    tmdbKeyMissing ? MessageBoxImage.Error : MessageBoxImage.Warning // Show Error icon if TMDB is missing
                 );
             }
         }
@@ -680,20 +676,14 @@ Thank you for using AutoDownloader!
         {
             if (e.Key == Key.P && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
-                // Prevent the key from being processed further
                 e.Handled = true;
-
-                // Call the existing menu click handler
                 Preferences_Click(sender, e);
             }
         }
 
         /// <summary>
-        /// Helper to parse show name from a simple URL format like Tubi for metadata search.
-        /// </summary>
-        /// <summary>
         /// Helper to parse show name and season number from a given URL.
-        /// V1.9.5 FIX: Parses season number directly from URL path.
+        /// V1.9.2 FIX: This logic fixes the "Season2" bug (Issue #14).
         /// </summary>
         private (string ShowName, int? SeasonNumber) ParseMetadataFromUrl(string url)
         {
@@ -702,36 +692,38 @@ Thank you for using AutoDownloader!
                 var uri = new Uri(url);
                 var segments = uri.Segments.Select(s => s.TrimEnd('/')).Where(s => !string.IsNullOrEmpty(s)).ToList();
 
-                // Example URL: /series/300014568/love-thy-neighbor/season-2
-
                 int? seasonNum = null;
                 string showName = "";
 
-                for (int i = 0; i < segments.Count; i++)
+                // Look for a "season-X" segment and extract the season number.
+                for (int i =0; i < segments.Count; i++)
                 {
-                    // Check if the current segment is 'season-X'
                     if (segments[i].StartsWith("season-", StringComparison.OrdinalIgnoreCase))
                     {
                         var parts = segments[i].Split('-');
-                        if (parts.Length > 1 && int.TryParse(parts[1], out int sNum))
+                        if (parts.Length >1 && int.TryParse(parts[1], out int sNum))
                         {
                             seasonNum = sNum;
+                            // The show name is *probably* the segment right before it.
+                            if (i >0)
+                            {
+                                showName = segments[i -1];
+                            }
+                            break;
                         }
                     }
                 }
 
-                // CRITICAL FIX: Find the segment *before* the season segment, or the last non-numeric segment
-                string showSegment = segments
-                    .Where(s => !s.All(char.IsDigit) && !s.Contains("season") && !s.Contains("series"))
-                    .LastOrDefault() ?? "";
-
-                if (string.IsNullOrWhiteSpace(showSegment))
+                // If showName is empty, try to find the last meaningful segment.
+                if (string.IsNullOrWhiteSpace(showName))
                 {
-                    // Fallback to the last segment if all else fails
-                    showSegment = segments.LastOrDefault() ?? "Unknown Show";
+                    showName = segments
+                        .Where(s => !s.All(char.IsDigit) && !s.Equals("series", StringComparison.OrdinalIgnoreCase))
+                        .LastOrDefault() ?? "Unknown Show";
                 }
 
-                string cleanName = showSegment.Replace('-', ' ');
+                // Clean up the name (e.g., "love-thy-neighbor" -> "Love Thy Neighbor")
+                string cleanName = showName.Replace('-', ' ');
                 System.Globalization.TextInfo ti = new System.Globalization.CultureInfo("en-US", false).TextInfo;
 
                 return (ti.ToTitleCase(cleanName), seasonNum);
@@ -741,7 +733,5 @@ Thank you for using AutoDownloader!
                 return ("Unknown Show", null);
             }
         }
-
     }
 }
-
