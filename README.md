@@ -15,10 +15,24 @@ utilizing the power of `yt-dlp`, `aria2c`, and multiple metadata APIs for seamle
 Development is active on the `v1.10.0-beta` branch, which focuses on metadata and scraper improvements.
 
 * **TVDB Micro-Client:** The broken and outdated `TvDbSharper` dependency has been **removed**. It is replaced by a lightweight, custom `HttpClient` micro-client that communicates directly with the modern TVDB v4 API.
-* **Playwright Fallback:** Added Playwright-based page rendering as a fallback for JS/Cloudflare-protected sites.
+* **Playwright Fallback:** Added Playwright-based page rendering as a fallback for JS/Cloudflare-protected sites. The application can attempt to automatically install required Playwright browsers (toggleable in Preferences).
+* **Developer Log Window:** Added an in-app Developer Log panel (View → Log) which captures verbose installer and scraper logs. Use the Developer Log to export or clear logs and retry Playwright installation.
 * **New Pop-up Strategy:** This branch introduces a new user-driven UI flow. When a download starts, the app presents pop-up windows (with timeouts) to:
 1. Confirm the auto-detected show name.
 2. [cite_start]Allow the user to manually select the metadata source (TMDB or TVDB).
+
+---
+
+## 🔧 Playwright Automatic Install Notes
+
+The app attempts the following in order to ensure Playwright browsers are available:
+
+1. Reflection call to `Playwright.InstallAsync()` if exposed by the Playwright package.
+2. Create + Launch to detect already-present browsers.
+3. Run a packaged `playwright.ps1` installer script via `pwsh` or `powershell` if present in the build output.
+4. As a last fallback, invoke the `playwright` CLI: `playwright install chromium`.
+
+If automatic install fails, open View → Log to inspect detailed output and use the "Retry Playwright Install" button in the Developer Log.
 
 ---
 
@@ -46,7 +60,7 @@ This project is developed in phases. The current `v1.10.0-beta` work completes P
 | v1.7 | Integrated TMDB for intelligent naming and stabilized template syntax. | Metadata: Integrated `TMDbLib`. Template Fixes: Resolved yt-dlp format syntax errors. |
 | v1.8.0 | Introduced Content Verification structure and User Settings. | Settings: Implemented `SettingsModel.cs` and `SettingsService.cs`. Validation: Added `PreferencesWindow.xaml`. |
 | v1.8.1 | **CRITICAL FIX:** Fixed the hardcoded metadata search bug. | **CRITICAL FIX:** Implemented `ExtractShowNameFromUrl` helper to dynamically parse titles. |
-| v1.10.0-beta | **Integration Rework:** Implemented Pop-up Strategy, TVDB episode extraction, Playwright fallback. | **Architecture Rework:** Added scrapers and Playwright fallback; TVDB reflection-based extraction; improved XML metadata persistence. |
+| v1.10.0-beta | **Integration Rework:** Implemented Pop-up Strategy, TVDB episode extraction, Playwright fallback and Developer Log. | **Architecture Rework:** Added scrapers and Playwright fallback; TVDB reflection-based extraction; improved XML metadata persistence; added developer logging and retryable installers. |
 
 ### Phase2: User Experience & Scraper Reliability (v2.0 - v2.9)
 **Focus:** Overhauling the UI, making the download process transparent, and fixing all known parsing and extraction bugs[cite:117].

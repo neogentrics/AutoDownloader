@@ -167,7 +167,7 @@
                           InputGestureText="Ctrl+P"/>
             </MenuItem>
             <MenuItem Header="_View">
-                <MenuItem Header="_Log" IsChecked="True" IsCheckable="True" />
+                <MenuItem Header="_Log" IsChecked="True" IsCheckable="True" Click="ToggleDeveloperLog_Click" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="About_Click"/>
@@ -263,53 +263,74 @@
 
         <!-- Log Output (fills the rest of the space) -->
         <Border Background="#FF2D2D2D" CornerRadius="5" Padding="5">
-            <ScrollViewer x:Name="LogScrollViewer" VerticalScrollBarVisibility="Auto">
-                <!-- Use a RichTextBox for colored text -->
-                <RichTextBox x:Name="OutputLogTextBox" 
-                             Background="Black" 
-                             Foreground="#FFCCCCCC" 
-                             FontFamily="Consolas" 
-                             FontSize="12"
-                             BorderThickness="0"
-                             IsReadOnly="True"
-                             VerticalScrollBarVisibility="Auto">
-                    <!-- Changed to Disabled to prevent double scrollbar -->
-                    <FlowDocument>
-                        <Paragraph FontWeight="Bold" Foreground="White" TextAlignment="Center" Margin="0,5,0,0">
-                            <Run Text="Welcome to AutoDownloader v1.9.0-alpha!"/>
-                        </Paragraph>
-                        <Paragraph Foreground="LightGray" TextAlignment="Center" Margin="0,0,0,10">
-                            <Run Text="Your high-speed media archival and organization tool."/>
-                        </Paragraph>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-                        <Paragraph Margin="0,15,0,5" FontWeight="Bold" Foreground="#FF007ACC">
-                            <Run Text="▶ CRITICAL SETUP:"/>
-                        </Paragraph>
-                        <Paragraph Foreground="Red" FontWeight="Bold" Margin="10,0,0,5">
-                            <Run Text="1. GO TO Edit -> Preferences... TO ENTER YOUR TMDB AND GEMINI API KEYS."/>
-                        </Paragraph>
-                        <Paragraph Foreground="White" Margin="10,0,0,10">
-                            <Run Text="   The TMDB Key is REQUIRED for the official naming and Content Verification (v1.8)."/>
-                        </Paragraph>
+                <ScrollViewer x:Name="LogScrollViewer" VerticalScrollBarVisibility="Auto" Grid.Row="0">
+                    <!-- Use a RichTextBox for colored text -->
+                    <RichTextBox x:Name="OutputLogTextBox" 
+                                 Background="Black" 
+                                 Foreground="#FFCCCCCC" 
+                                 FontFamily="Consolas" 
+                                 FontSize="12"
+                                 BorderThickness="0"
+                                 IsReadOnly="True"
+                                 VerticalScrollBarVisibility="Auto">
+                        <!-- Changed to Disabled to prevent double scrollbar -->
+                        <FlowDocument>
+                            <Paragraph FontWeight="Bold" Foreground="White" TextAlignment="Center" Margin="0,5,0,0">
+                                <Run Text="Welcome to AutoDownloader v1.9.0-alpha!"/>
+                            </Paragraph>
+                            <Paragraph Foreground="LightGray" TextAlignment="Center" Margin="0,0,0,10">
+                                <Run Text="Your high-speed media archival and organization tool."/>
+                            </Paragraph>
 
-                        <Paragraph Margin="0,15,0,5" FontWeight="Bold" Foreground="#FF007ACC">
-                            <Run Text="▶ Usage:"/>
-                        </Paragraph>
-                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="2. Click the 'Browse...' button to select your base download folder."/>
-                        </Paragraph>
-                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="3. Paste a URL or enter a search term (e.g., 'The Mandalorian')."/>
-                        </Paragraph>
-                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="4. Click 'Download'. The program uses TMDB to name and structure files: /TV Shows/Official Title/Season 01/..."/>
-                        </Paragraph>
-                        <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
-                            <Run Text="5. Use the 'Toggle Multi-Link' button for batch downloads."/>
-                        </Paragraph>
-                    </FlowDocument>
-                </RichTextBox>
-            </ScrollViewer>
+                            <Paragraph Margin="0,15,0,5" FontWeight="Bold" Foreground="#FF007ACC">
+                                <Run Text="▶ CRITICAL SETUP:"/>
+                            </Paragraph>
+                            <Paragraph Foreground="Red" FontWeight="Bold" Margin="10,0,0,5">
+                                <Run Text="1. GO TO Edit -> Preferences... TO ENTER YOUR TMDB AND GEMINI API KEYS."/>
+                            </Paragraph>
+                            <Paragraph Foreground="White" Margin="10,0,0,10">
+                                <Run Text="   The TMDB Key is REQUIRED for the official naming and Content Verification (v1.8)."/>
+                            </Paragraph>
+
+                            <Paragraph Margin="0,15,0,5" FontWeight="Bold" Foreground="#FF007ACC">
+                                <Run Text="▶ Usage:"/>
+                            </Paragraph>
+                            <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                                <Run Text="2. Click the 'Browse...' button to select your base download folder."/>
+                            </Paragraph>
+                            <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                                <Run Text="3. Paste a URL or enter a search term (e.g., 'The Mandalorian')."/>
+                            </Paragraph>
+                            <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                                <Run Text="4. Click 'Download'. The program uses TMDB to name and structure files: /TV Shows/Official Title/Season 01/..."/>
+                            </Paragraph>
+                            <Paragraph Foreground="#FFCCCCCC" Margin="10,0,0,5">
+                                <Run Text="5. Use the 'Toggle Multi-Link' button for batch downloads."/>
+                            </Paragraph>
+                        </FlowDocument>
+                    </RichTextBox>
+                </ScrollViewer>
+
+                <Border Grid.Row="1" Background="#FF151515" Padding="6" Visibility="Collapsed" x:Name="DeveloperLogPanel">
+                    <StackPanel Orientation="Vertical">
+                        <TextBlock Foreground="#FFAAAAAA" FontWeight="Bold">Developer Log (Detailed)</TextBlock>
+                        <ScrollViewer Height="160" VerticalScrollBarVisibility="Auto">
+                            <TextBox x:Name="DeveloperLogTextBox" Background="#FF0B0B0B" Foreground="#FFDDDDDD" FontFamily="Consolas" FontSize="12" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"/>
+                        </ScrollViewer>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+                            <Button Content="Clear" Click="DeveloperLogClear_Click" Style="{StaticResource BrowseButtonStyle}"/>
+                            <Button Content="Export" Click="DeveloperLogExport_Click" Style="{StaticResource GoButtonStyle}" Margin="8,0,0,0"/>
+                            <Button Content="Retry Playwright Install" Click="RetryPlaywrightInstall_Click" Style="{StaticResource GoButtonStyle}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Border>
     </DockPanel>
 </Window>

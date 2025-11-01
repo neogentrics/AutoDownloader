@@ -83,6 +83,19 @@ namespace AutoDownloader.UI
 
             // Start Asynchronous Initialization of services that rely on settings/tools
             _ = InitializeAsyncServices();
+
+            // Subscribe to developer logger events
+            DeveloperLogger.OnLogReceived += (line) =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (DeveloperLogTextBox != null)
+                    {
+                        DeveloperLogTextBox.AppendText(line + "\n");
+                        DeveloperLogTextBox.ScrollToEnd();
+                    }
+                });
+            };
         }
 
         /// <summary>
@@ -97,6 +110,7 @@ namespace AutoDownloader.UI
             _toolManagerService.OnToolLogReceived += (logLine) =>
             {
                 lock (_logLock) { _logQueue.Add(logLine); }
+                DeveloperLogger.Append(logLine);
             };
 
             //1. Download/Verify yt-dlp and aria2c.
@@ -114,78 +128,8 @@ namespace AutoDownloader.UI
             // Kick off a non-blocking task to ensure Playwright browsers are installed if user allows it in preferences.
             if (_settingsService.Settings.AutoInstallPlaywrightBrowsers)
             {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        // Try to find a static InstallAsync via reflection (some Playwright builds expose it)
-                        var playwrightType = Type.GetType("Microsoft.Playwright.Playwright, Microsoft.Playwright");
-                        if (playwrightType != null)
-                        {
-                            var installMethod = playwrightType.GetMethod("InstallAsync", BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
-                            if (installMethod != null)
-                            {
-                                try
-                                {
-                                    var installTask = (Task?)installMethod.Invoke(null, null);
-                                    if (installTask != null) await installTask.ConfigureAwait(false);
-                                    Dispatcher.Invoke(() => AppendLog("--- Playwright browsers installed (reflection) ---", Brushes.Green));
-                                    return;
-                                }
-                                catch (Exception ex)
-                                {
-                                    Dispatcher.Invoke(() => AppendLog($"--- Playwright reflection install failed: {ex.Message} ---", Brushes.Orange));
-                                }
-                            }
-                        }
-
-                        // Fallback: try to create Playwright and launch Chromium to detect presence
-                        try
-                        {
-                            var pl = await Microsoft.Playwright.Playwright.CreateAsync();
-                            try
-                            {
-                                await pl.Chromium.LaunchAsync(new Microsoft.Playwright.BrowserTypeLaunchOptions { Headless = true });
-                                Dispatcher.Invoke(() => AppendLog("--- Playwright is usable; browsers present. ---", Brushes.Green));
-                            }
-                            catch (Exception launchEx)
-                            {
-                                Dispatcher.Invoke(() => AppendLog($"--- Playwright browsers missing or launch failed: {launchEx.Message} ---", Brushes.Orange));
-
-                                // Try CLI fallback: run `playwright install chromium` if 'playwright' CLI is available
-                                try
-                                {
-                                    var psi = new ProcessStartInfo
-                                    {
-                                        FileName = "playwright",
-                                        Arguments = "install chromium",
-                                        CreateNoWindow = true,
-                                        UseShellExecute = false,
-                                        RedirectStandardOutput = true,
-                                        RedirectStandardError = true
-                                    };
-                                    var proc = Process.Start(psi);
-                                    if (proc != null)
-                                    {
-                                        string outp = await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
-                                        string err = await proc.StandardError.ReadToEndAsync().ConfigureAwait(false);
-                                        await proc.WaitForExitAsync().ConfigureAwait(false);
-                                        Dispatcher.Invoke(() => AppendLog($"--- Playwright CLI install finished. Output length: {outp.Length}. Error length: {err.Length} ---", Brushes.Yellow));
-                                    }
-                                }
-                                catch (Exception cliEx)
-                                {
-                                    Dispatcher.Invoke(() => AppendLog($"--- Playwright CLI install failed: {cliEx.Message} ---", Brushes.Orange));
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Dispatcher.Invoke(() => AppendLog($"--- Playwright initialization failed: {ex.Message} ---", Brushes.Orange));
-                        }
-                    }
-                    catch { /* swallow */ }
-                });
+                // Run the installer in background but reuse the same installer code so retry can call it later
+                _ = Task.Run(async () => await RunPlaywrightInstallerAsync());
             }
             else
             {
@@ -229,6 +173,7 @@ namespace AutoDownloader.UI
             _ytDlpService.OnOutputReceived += (logLine) =>
             {
                 lock (_logLock) { _logQueue.Add(logLine); }
+                DeveloperLogger.Append(logLine);
             };
         }
 
@@ -596,6 +541,7 @@ namespace AutoDownloader.UI
             p.Foreground = color;
             OutputLogTextBox.Document.Blocks.Add(p);
             LogScrollViewer.ScrollToEnd();
+            try { DeveloperLogger.Append(message); } catch { }
         }
 
         /// <summary>
@@ -923,6 +869,233 @@ AI Development Partner: Gemini (Google)
             {
                 return ("Unknown Show", null);
             }
+        }
+
+        private void ToggleDeveloperLog_Click(object sender, RoutedEventArgs e)
+        {
+         if (DeveloperLogPanel.Visibility == Visibility.Visible)
+         {
+          DeveloperLogPanel.Visibility = Visibility.Collapsed;
+         }
+         else
+         {
+          DeveloperLogPanel.Visibility = Visibility.Visible;
+         }
+        }
+
+        private void DeveloperLogClear_Click(object sender, RoutedEventArgs e)
+        {
+         DeveloperLogTextBox.Clear();
+        }
+
+        private void DeveloperLogExport_Click(object sender, RoutedEventArgs e)
+        {
+         try
+         {
+          var dlg = new Microsoft.Win32.SaveFileDialog { Filter = "Text Files|*.txt", FileName = "developer_log.txt" };
+          if (dlg.ShowDialog() == true)
+          {
+           File.WriteAllText(dlg.FileName, DeveloperLogTextBox.Text);
+           AppendLog($"Developer log exported to: {dlg.FileName}", Brushes.Green);
+          }
+         }
+         catch (Exception ex)
+         {
+          AppendLog($"Failed to export developer log: {ex.Message}", Brushes.Red);
+         }
+        }
+
+        /// <summary>
+        /// Runs the Playwright installation flow (reflection, create+launch, script, or CLI fallback).
+        /// Returns true if installation/detection succeeded, false otherwise.
+        /// Also forwards verbose output to DeveloperLogger.
+        /// </summary>
+        private async Task<bool> RunPlaywrightInstallerAsync()
+        {
+            try
+            {
+                // Try reflection InstallAsync
+                var playwrightType = Type.GetType("Microsoft.Playwright.Playwright, Microsoft.Playwright");
+                if (playwrightType != null)
+                {
+                    var installMethod = playwrightType.GetMethod("InstallAsync", BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
+                    if (installMethod != null)
+                    {
+                        try
+                        {
+                            var installTask = (Task?)installMethod.Invoke(null, null);
+                            if (installTask != null) await installTask.ConfigureAwait(false);
+                            Dispatcher.Invoke(() => AppendLog("--- Playwright browsers installed (reflection) ---", Brushes.Green));
+                            DeveloperLogger.Append("Playwright install via reflection succeeded.");
+                            return true;
+                        }
+                        catch (Exception ex)
+                        {
+                            Dispatcher.Invoke(() => AppendLog($"--- Playwright reflection install failed: {ex.Message} ---", Brushes.Orange));
+                            DeveloperLogger.Append($"Reflection install failed: {ex}");
+                        }
+                    }
+                }
+
+                // Try create and launch to detect already-present browsers
+                try
+                {
+                    var pl = await Microsoft.Playwright.Playwright.CreateAsync();
+                    try
+                    {
+                        await pl.Chromium.LaunchAsync(new Microsoft.Playwright.BrowserTypeLaunchOptions { Headless = true });
+                        Dispatcher.Invoke(() => AppendLog("--- Playwright is usable; browsers present. ---", Brushes.Green));
+                        DeveloperLogger.Append("Playwright create+launch succeeded; browsers present.");
+                        return true;
+                    }
+                    catch (Exception launchEx)
+                    {
+                        Dispatcher.Invoke(() => AppendLog($"--- Playwright browsers missing or launch failed: {launchEx.Message} ---", Brushes.Orange));
+                        DeveloperLogger.Append($"Playwright launch failed: {launchEx}");
+
+                        // Continue to installer fallbacks below
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => AppendLog($"--- Playwright initialization failed: {ex.Message} ---", Brushes.Orange));
+                    DeveloperLogger.Append($"Playwright CreateAsync failed: {ex}");
+                }
+
+                // Look for playwright.ps1 and run it via pwsh/powershell if present
+                try
+                {
+                    string? scriptPath = null;
+                    string baseDir = AppContext.BaseDirectory ?? Environment.CurrentDirectory;
+                    string[] candidates = new string[] {
+                        Path.Combine(baseDir, "playwright.ps1"),
+                        Path.Combine(baseDir, "..", "playwright.ps1"),
+                        Path.Combine(baseDir, "bin", "Debug", "net9.0-windows", "playwright.ps1"),
+                        Path.Combine(baseDir, "..", "..", "playwright.ps1")
+                    };
+                    foreach (var c in candidates)
+                    {
+                        try { var p = Path.GetFullPath(c); if (File.Exists(p)) { scriptPath = p; break; } } catch { }
+                    }
+
+                    if (!string.IsNullOrEmpty(scriptPath))
+                    {
+                        DeveloperLogger.Append($"Found playwright script at: {scriptPath}");
+                        var shell = "pwsh";
+                        var psiShell = new ProcessStartInfo(shell, $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" install")
+                        {
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        };
+
+                        Process? procShell = null;
+                        try { procShell = Process.Start(psiShell); }
+                        catch (Exception)
+                        {
+                            // try windows powershell if pwsh not found
+                            shell = "powershell";
+                            psiShell = new ProcessStartInfo(shell, $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" install")
+                            {
+                                CreateNoWindow = true,
+                                UseShellExecute = false,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true
+                            };
+                            procShell = Process.Start(psiShell);
+                        }
+
+                        if (procShell != null)
+                        {
+                          string outp = await procShell.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                          string err = await procShell.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                          await procShell.WaitForExitAsync().ConfigureAwait(false);
+                          Dispatcher.Invoke(() => AppendLog($"--- Playwright script install finished. Output len: {outp.Length}. Error len: {err.Length} ---", Brushes.Yellow));
+                          DeveloperLogger.Append($"playwright.ps1 stdout:\n{outp}");
+                          if (!string.IsNullOrWhiteSpace(err)) DeveloperLogger.Append($"playwright.ps1 stderr:\n{err}");
+
+                          // After running script, try create+launch again
+                          try
+                          {
+                            var pl2 = await Microsoft.Playwright.Playwright.CreateAsync();
+                            await pl2.Chromium.LaunchAsync(new Microsoft.Playwright.BrowserTypeLaunchOptions { Headless = true });
+                            Dispatcher.Invoke(() => AppendLog("--- Playwright browsers now installed and usable. ---", Brushes.Green));
+                            DeveloperLogger.Append("Playwright browsers installed via script and are now usable.");
+                            return true;
+                          }
+                          catch (Exception ex)
+                          {
+                            DeveloperLogger.Append($"Post-install launch failed: {ex}");
+                            return false;
+                          }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DeveloperLogger.Append($"Playwright script execution error: {ex}");
+                }
+
+                // Final fallback: attempt 'playwright install chromium' via CLI
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "playwright",
+                        Arguments = "install chromium",
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+                    var proc = Process.Start(psi);
+                    if (proc != null)
+                    {
+                        string outp2 = await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                        string err2 = await proc.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                        await proc.WaitForExitAsync().ConfigureAwait(false);
+                        Dispatcher.Invoke(() => AppendLog($"--- Playwright CLI install finished. Output length: {outp2.Length}. Error length: {err2.Length} ---", Brushes.Yellow));
+                        DeveloperLogger.Append($"playwright CLI stdout:\n{outp2}");
+                        if (!string.IsNullOrWhiteSpace(err2)) DeveloperLogger.Append($"playwright CLI stderr:\n{err2}");
+
+                        // Try create+launch after CLI
+                        try
+                        {
+                          var pl3 = await Microsoft.Playwright.Playwright.CreateAsync();
+                          await pl3.Chromium.LaunchAsync(new Microsoft.Playwright.BrowserTypeLaunchOptions { Headless = true });
+                          Dispatcher.Invoke(() => AppendLog("--- Playwright browsers now installed (CLI) and usable. ---", Brushes.Green));
+                          DeveloperLogger.Append("Playwright browsers installed via CLI and are now usable.");
+                          return true;
+                        }
+                        catch (Exception ex)
+                        {
+                          DeveloperLogger.Append($"Post-CLI launch failed: {ex}");
+                          return false;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DeveloperLogger.Append($"Playwright CLI install attempt failed: {ex}");
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                DeveloperLogger.Append($"RunPlaywrightInstallerAsync unhandled error: {ex}");
+                return false;
+            }
+        }
+
+        private async void RetryPlaywrightInstall_Click(object sender, RoutedEventArgs e)
+        {
+            AppendLog("--- Manual Playwright install retry started... ---", Brushes.Aqua);
+            DeveloperLogger.Append("User triggered manual Playwright install retry.");
+            bool ok = await RunPlaywrightInstallerAsync();
+            if (ok) AppendLog("--- Playwright install succeeded. ---", Brushes.Green);
+            else AppendLog("--- Playwright install failed. Check Developer Log for details. ---", Brushes.Orange);
         }
     }
 }
