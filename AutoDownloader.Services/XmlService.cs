@@ -3,6 +3,7 @@ using System.IO;
 using System.Xml.Linq;
 using System.Threading.Tasks;
 using AutoDownloader.Core; // <-- CORRECT: References the .Core project for DownloadMetadata
+using System.Linq;
 
 namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services project
 {
@@ -26,7 +27,7 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
         /// <param name="metadata">The metadata object (from TMDB/TVDB) to be saved.</param>
         public async Task SaveMetadataAsync(string seriesRootPath, DownloadMetadata metadata)
         {
-            // --- 1. Guard Clause ---
+            // ---1. Guard Clause ---
             // Don't save anything if the metadata lookup failed and we have no title.
             if (string.IsNullOrWhiteSpace(metadata.OfficialTitle)) return;
 
@@ -36,7 +37,7 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
             XDocument doc;
             XElement root;
 
-            // --- 2. Load or Create the XML Document ---
+            // ---2. Load or Create the XML Document ---
 
             // Check if the file already exists
             if (File.Exists(filePath))
@@ -50,7 +51,7 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
                 }
                 catch
                 {
-                    // File exists but is corrupt (e.g., 0 bytes, malformed XML).
+                    // File exists but is corrupt (e.g.,0 bytes, malformed XML).
                     // Create a new, blank document structure in memory to overwrite it.
                     root = new XElement("SeriesData");
                     doc = new XDocument(root);
@@ -63,7 +64,7 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
                 doc = new XDocument(root);
             }
 
-            // --- 3. Add or Update Series Info (once) ---
+            // ---3. Add or Update Series Info (once) ---
 
             // Ensure the main series info is only written once.
             if (root.Element("SeriesId") == null)
@@ -73,7 +74,7 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
                 root.Add(new XElement("Source", "TMDB/TVDB")); // Placeholder for which DB we used
             }
 
-            // --- 4. Add or Update Season Info ---
+            // ---4. Add or Update Season Info ---
 
             // Find an existing <Season> element where the "Number" attribute matches this season.
             var seasonElement = root.Elements("Season").FirstOrDefault(e =>
@@ -96,7 +97,26 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
                 seasonElement.SetElementValue("DownloadDate", DateTime.UtcNow.ToString("yyyy-MM-dd"));
             }
 
-            // --- 5. Save the File ---
+            // ---5. Add Episode List (if available) ---
+            // Remove existing Episodes element for this season to replace it with fresh data.
+            var episodesNode = seasonElement.Element("Episodes");
+            if (episodesNode != null) episodesNode.Remove();
+
+            if (metadata.Episodes != null && metadata.Episodes.Any())
+            {
+                var eps = new XElement("Episodes");
+                foreach (var ep in metadata.Episodes)
+                {
+                    var epEl = new XElement("Episode",
+                        new XAttribute("Number", ep.EpisodeNumber),
+                        new XElement("Title", ep.EpisodeTitle ?? string.Empty)
+                    );
+                    eps.Add(epEl);
+                }
+                seasonElement.Add(eps);
+            }
+
+            // ---6. Save the File ---
 
             // Save the document to disk.
             // We use Task.Run() to perform the blocking file I/O on a background thread,

@@ -55,5 +55,12 @@ namespace AutoDownloader.Core // <-- CORRECT: This is a data model, it belongs i
         /// likely by controlling aria2c or running multiple yt-dlp instances.
         /// </summary>
         public int MaxConcurrentDownloads { get; set; } = 3;
+
+        /// <summary>
+        /// If true, the application will attempt to automatically install Playwright browsers
+        /// (or use the Playwright API) on first run. This may require network access.
+        /// Default: true (recommended for scraper fallback).
+        /// </summary>
+        public bool AutoInstallPlaywrightBrowsers { get; set; } = true;
     }
 }

@@ -53,6 +53,7 @@ namespace AutoDownloader.UI // <-- CORRECT: This is a UI file
             TvdbKeyTextBox.Text = settings.TvdbApiKey; // v1.9.2: Added TVDB key
             OutputFolderTextBox.Text = settings.DefaultOutputFolder;
             QualityTextBox.Text = settings.PreferredVideoQuality;
+            AutoInstallPlaywrightCheckBox.IsChecked = settings.AutoInstallPlaywrightBrowsers;
         }
 
         /// <summary>
@@ -69,6 +70,7 @@ namespace AutoDownloader.UI // <-- CORRECT: This is a UI file
             settings.TvdbApiKey = TvdbKeyTextBox.Text.Trim(); // v1.9.2: Added TVDB key
             settings.DefaultOutputFolder = OutputFolderTextBox.Text.Trim();
             settings.PreferredVideoQuality = QualityTextBox.Text.Trim();
+            settings.AutoInstallPlaywrightBrowsers = AutoInstallPlaywrightCheckBox.IsChecked == true;
 
             // 2. Save the updated Model to the "settings.json" file
             _settingsService.SaveSettings();

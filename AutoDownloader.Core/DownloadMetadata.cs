@@ -37,5 +37,11 @@
         /// Example: "https://tubitv.com/series/12345/show-name"
         /// </summary>
         public string SourceUrl { get; set; } = string.Empty;
+
+        /// <summary>
+        /// A list of episodes (episode number + title) for the targeted season.
+        /// Filled by MetadataService when available (e.g., from TMDB).
+        /// </summary>
+        public List<DownloadEpisode> Episodes { get; set; } = new List<DownloadEpisode>();
     }
 }

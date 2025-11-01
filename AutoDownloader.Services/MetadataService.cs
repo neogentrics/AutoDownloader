@@ -9,6 +9,7 @@ using TMDbLib.Objects.General;
 using TMDbLib.Objects.Search;
 using TMDbLib.Objects.TvShows;
 using TvDbSharper; // The patched client library
+using System.Collections.Generic;
 
 namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
 {
@@ -94,7 +95,6 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
 
  int expectedCount =1;
 
- // TMDB FIX: Use reflection helper to safely read EpisodeCount which may be int or int?
  if (seasonOne != null)
  {
  int? epCount = GetIntFromObject(seasonOne, "EpisodeCount", "episode_count", "episodecount");
@@ -104,10 +104,9 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  }
  else
  {
- // Fallback: attempt direct access (handles int typed property)
  try
  {
- var directVal = seasonOne.EpisodeCount; // may be int or int?
+ var directVal = seasonOne.EpisodeCount;
  if (directVal != null)
  {
  int v = Convert.ToInt32(directVal);
@@ -117,6 +116,23 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  catch { }
  }
  }
+
+ // Attempt to cache episodes from TMDB season details
+ try
+ {
+ var seasonDetails = await _tmdbClient.GetTvSeasonAsync(firstResult.Id, targetSeasonNumber);
+ if (seasonDetails != null && seasonDetails.Episodes != null)
+ {
+ var episodes = seasonDetails.Episodes.Select(e => new DownloadEpisode
+ {
+ EpisodeNumber = e.EpisodeNumber,
+ EpisodeTitle = e.Name
+ }).ToList();
+
+ EpisodeCache.StoreEpisodes(firstResult.Id, targetSeasonNumber, episodes);
+ }
+ }
+ catch { /* ignore */ }
 
  return (fullShow.Name, firstResult.Id, targetSeasonNumber, expectedCount);
  }
@@ -139,7 +155,6 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
 
  try
  {
- // Try to login - keep the direct call if available on the patched client.
  var loginMethod = _tvdbClient.GetType().GetMethod("Login", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
  if (loginMethod != null)
  {
@@ -150,13 +165,11 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  }
  }
 
- // Candidate method names for searching series
  var searchCandidates = new[] { "SearchSeriesByNameAsync", "SearchAsync", "SearchSeriesAsync", "SearchSeriesByName", "Search" };
 
  object? searchResult = await InvokeClientAsyncMethodIfExists(_tvdbClient, searchCandidates, new object[] { showName });
  if (searchResult == null)
  {
- // Some clients expose a Search property/object; try invoking a method on it
  var searchProp = _tvdbClient.GetType().GetProperty("Search", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
  if (searchProp != null)
  {
@@ -170,22 +183,18 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
 
  if (searchResult == null) return null;
 
- // Extract first result from Data/Results collection if present
  object? dataCollection = GetPropertyValue(searchResult, "Data", "data", "Results", "results");
  object? firstResult = GetFirstFromEnumerable(dataCollection ?? searchResult);
  if (firstResult == null) return null;
 
- // Get an ID from the firstResult
  long? seriesIdLong = GetLongFromObject(firstResult, "Id", "id", "SeriesId", "seriesId");
  if (!seriesIdLong.HasValue) return null;
  int seriesId = (int)seriesIdLong.Value;
 
- // Fetch full series details
  var seriesFetchCandidates = new[] { "GetAsync", "GetSeriesAsync", "GetSeries", "Get", "Series" };
  object? fullShowResponse = await InvokeClientAsyncMethodIfExists(_tvdbClient, seriesFetchCandidates, new object[] { seriesId });
  if (fullShowResponse == null)
  {
- // try Series property/method on client
  var seriesProp = _tvdbClient.GetType().GetProperty("Series", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
  if (seriesProp != null)
  {
@@ -199,24 +208,19 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
 
  if (fullShowResponse == null)
  {
- // Many client variants return the Series object directly from the search result
  fullShowResponse = GetPropertyValue(firstResult, "Series", "series") ?? firstResult;
  }
 
- // Official title
  string? officialTitle = GetStringFromObject(fullShowResponse, "Name", "name", "SeriesName", "seriesName", "title");
  if (string.IsNullOrWhiteSpace(officialTitle))
  {
- // Try to get name from firstResult
  officialTitle = GetStringFromObject(firstResult, "Name", "name", "SeriesName", "seriesName", "title");
  }
 
- // Fetch seasons - try client methods first
  var seasonsCandidates = new[] { "GetSeasonsAsync", "GetSeasons", "GetSeasonList", "GetAllSeasonsAsync", "GetAllSeasons" };
  object? seasonsResponse = await InvokeClientAsyncMethodIfExists(_tvdbClient, seasonsCandidates, new object[] { seriesId });
  if (seasonsResponse == null)
  {
- // try Series property object
  var seriesObj = fullShowResponse;
  seasonsResponse = GetPropertyValue(seriesObj, "Seasons", "seasons");
  }
@@ -237,6 +241,27 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  expectedCount = epCount.Value;
  }
 
+ // Attempt to cache episodes from found season
+ try
+ {
+ var episodesList = GetPropertyValue(seasonOne, "Episodes", "episodes") as IEnumerable;
+ if (episodesList != null)
+ {
+ var eps = new List<DownloadEpisode>();
+ foreach (var e in episodesList)
+ {
+ int? num = GetIntFromObject(e, "Number", "number", "EpisodeNumber", "episodeNumber", "EpisodeNumberValue");
+ string? title = GetStringFromObject(e, "Name", "name", "EpisodeName", "episodeName", "Title");
+ if (num.HasValue)
+ {
+ eps.Add(new DownloadEpisode { EpisodeNumber = num.Value, EpisodeTitle = title });
+ }
+ }
+ if (eps.Any()) EpisodeCache.StoreEpisodes(seriesId, targetSeasonNumber, eps);
+ }
+ }
+ catch { /* ignore */ }
+
  if (string.IsNullOrWhiteSpace(officialTitle)) return null;
 
  return (officialTitle, seriesId, targetSeasonNumber, expectedCount);
@@ -247,10 +272,97 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  }
  }
 
+ /// <summary>
+ /// Fetches episodes for a given series and season using TMDB (if available) or TVDB via reflection.
+ /// Returns null if episodes could not be retrieved.
+ /// </summary>
+ public async Task<List<DownloadEpisode>?> GetEpisodesForSeasonAsync(int seriesId, int seasonNumber)
+ {
+ try
+ {
+ // Try TMDB first
+ if (IsTmdbKeyValid && _tmdbClient != null)
+ {
+ try
+ {
+ var seasonDetails = await _tmdbClient.GetTvSeasonAsync(seriesId, seasonNumber);
+ if (seasonDetails != null && seasonDetails.Episodes != null)
+ {
+ var episodes = seasonDetails.Episodes.Select(e => new DownloadEpisode
+ {
+ EpisodeNumber = e.EpisodeNumber,
+ EpisodeTitle = e.Name
+ }).ToList();
+ EpisodeCache.StoreEpisodes(seriesId, seasonNumber, episodes);
+ return episodes;
+ }
+ }
+ catch { /* ignore TMDB failures and try TVDB/cache */ }
+ }
+
+ // Try cached value
+ var cached = EpisodeCache.GetEpisodes(seriesId, seasonNumber);
+ if (cached != null) return cached;
+
+ // Try TVDB via reflection (if available)
+ if (IsTvdbKeyValid && _tvdbClient != null)
+ {
+ try
+ {
+ // Ensure login if required
+ var loginMethod = _tvdbClient.GetType().GetMethod("Login", BindingFlags.Instance | BindingFlags.Public | BindingFlags.IgnoreCase);
+ if (loginMethod != null)
+ {
+ var loginResult = loginMethod.Invoke(_tvdbClient, new object[] { _tvdbApiKey, string.Empty });
+ if (loginResult is Task loginTask) await loginTask.ConfigureAwait(false);
+ }
+
+ var seasonsCandidates = new[] { "GetSeasonsAsync", "GetSeasons", "GetSeasonList", "GetAllSeasonsAsync", "GetAllSeasons" };
+ object? seasonsResponse = await InvokeClientAsyncMethodIfExists(_tvdbClient, seasonsCandidates, new object[] { seriesId });
+ if (seasonsResponse == null)
+ {
+ var seriesObj = await InvokeClientAsyncMethodIfExists(_tvdbClient, new[] { "GetAsync", "GetSeriesAsync", "GetSeries", "Get" }, new object[] { seriesId });
+ seasonsResponse = GetPropertyValue(seriesObj, "Seasons", "seasons");
+ }
+
+ object? seasonsCollection = GetPropertyValue(seasonsResponse, "Data", "data", "Seasons", "seasons") ?? seasonsResponse;
+ var seasonObj = FindSeasonByNumber(seasonsCollection, seasonNumber);
+ if (seasonObj != null)
+ {
+ var episodesList = GetPropertyValue(seasonObj, "Episodes", "episodes") as IEnumerable;
+ if (episodesList != null)
+ {
+ var eps = new List<DownloadEpisode>();
+ foreach (var e in episodesList)
+ {
+ int? num = GetIntFromObject(e, "Number", "number", "EpisodeNumber", "episodeNumber", "EpisodeNumberValue");
+ string? title = GetStringFromObject(e, "Name", "name", "EpisodeName", "episodeName", "Title");
+ if (num.HasValue)
+ {
+ eps.Add(new DownloadEpisode { EpisodeNumber = num.Value, EpisodeTitle = title });
+ }
+ }
+ if (eps.Any())
+ {
+ EpisodeCache.StoreEpisodes(seriesId, seasonNumber, eps);
+ return eps;
+ }
+ }
+ }
+ }
+ catch { /* ignore TVDB reflection errors */ }
+ }
+
+ return null;
+ }
+ catch
+ {
+ return null;
+ }
+ }
+
  // --- Reflection / helper methods ---
 
- // Attempts to invoke an async method on a target object from a list of candidate names.
- // Returns the awaited Result (for Task<T>) or the synchronous return value, or null if none invoked.
  private static async Task<object?> InvokeClientAsyncMethodIfExists(object target, string[] candidateMethodNames, object[] args)
  {
  if (target == null) return null;
@@ -301,7 +413,6 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  return null;
  }
 
- // Safely get the first element from a non-generic IEnumerable
  private static object? GetFirstFromEnumerable(object? enumerable)
  {
  if (enumerable == null) return null;
@@ -314,7 +425,6 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  return null;
  }
 
- // Get a property value trying multiple property names (case-insensitive)
  private static object? GetPropertyValue(object? obj, params string[] propertyNames)
  {
  if (obj == null) return null;
@@ -378,7 +488,6 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  try { return Convert.ToString(val); } catch { return null; }
  }
 
- // Find season object by number and optionally by type name (e.g., "Aired")
  private static object? FindSeasonByNumberAndType(object? seasonsCollection, int number, string typeName)
  {
  if (seasonsCollection == null) return null;
@@ -412,5 +521,38 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  }
  return null;
  }
+
+ /// <summary>
+ /// Returns any episodes cached during metadata lookup for the given series and season.
+ /// </summary>
+ public List<DownloadEpisode>? GetCachedEpisodes(int seriesId, int seasonNumber)
+ {
+ return EpisodeCache.GetEpisodes(seriesId, seasonNumber);
+ }
+ }
+
+ // Simple in-memory cache to attach episodes discovered during metadata lookup to the series ID + season
+ internal static class EpisodeCache
+ {
+ private static readonly Dictionary<string, List<DownloadEpisode>> _cache = new Dictionary<string, List<DownloadEpisode>>();
+
+ public static void StoreEpisodes(int seriesId, int seasonNumber, List<DownloadEpisode> episodes)
+ {
+ try
+ {
+ string key = Key(seriesId, seasonNumber);
+ _cache[key] = episodes;
+ }
+ catch { }
+ }
+
+ public static List<DownloadEpisode>? GetEpisodes(int seriesId, int seasonNumber)
+ {
+ string key = Key(seriesId, seasonNumber);
+ if (_cache.TryGetValue(key, out var list)) return list;
+ return null;
+ }
+
+ private static string Key(int seriesId, int seasonNumber) => $"{seriesId}:{seasonNumber}";
  }
 }

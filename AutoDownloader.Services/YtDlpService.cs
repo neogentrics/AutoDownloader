@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO;
 
 namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services project
 {
@@ -96,15 +97,27 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
             OnOutputReceived?.Invoke("--- Download process started. ---");
 
+            Process? processRef = null;
+
             try
             {
-                // --- 1. Get Tool Paths ---
-                // Paths are now provided by the constructor.
+                // ---0. Basic validation ---
+                if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath))
+                {
+                    OnOutputReceived?.Invoke($"[FATAL] yt-dlp executable not found at '{_ytDlpPath}'.");
+                    OnDownloadComplete?.Invoke(-1);
+                    return;
+                }
+
+                // Ensure base output folder exists (yt-dlp will create deeper folders, but be safe)
+                try { Directory.CreateDirectory(outputFolder); } catch { }
+
+                // ---1. Get Tool Paths ---
                 OnOutputReceived?.Invoke("Tools are ready.");
                 string ytDlpPath = _ytDlpPath;
                 string ariaPath = _ariaPath;
 
-                // --- 2. Build yt-dlp Arguments ---
+                // ---2. Build yt-dlp Arguments ---
 
                 // Use the official title from metadata, but if it's null,
                 // fall back to a dynamic yt-dlp variable to find the best title.
@@ -116,63 +129,67 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
                 // This is the final output template that defines the Plex-friendly file structure.
                 string outputTemplate = Path.Combine(outputFolder,
-                    $"Season {seasonYtDlp}", // -> .../Season 01/
+                    $"Season {seasonYtDlp}", // -> .../Season01/
                     $"{titleForFolder} - s{seasonYtDlp}e{episodeYtDlp} - %(episode)s.%(ext)s"); // -> Show - s01e01 - Episode Name.mp4
 
-                var arguments = new StringBuilder();
-
-                // 1. Core arguments
-                arguments.Append($"--windows-filenames "); // Allow long file paths
-                arguments.Append($"--embed-metadata ");    // Embed metadata into the file
-                arguments.Append($"--ignore-errors ");      // Don't stop if one video in a playlist fails
-
-                // *** FIX for Issue #8 (20-Item Limit) ***
-                // This flag forces yt-dlp to load all items in a paged playlist (like Tubi).
-                arguments.Append($"--no-paged-list ");
-
-                // *** FIX for Issue #7 (Preferred Quality) ***
-                // Use the video quality string injected from our settings.
-                if (!string.IsNullOrWhiteSpace(_videoQualityFormat))
+                // Build argument list using ArgumentList to avoid shell quoting issues
+                var startInfo = new ProcessStartInfo
                 {
-                    arguments.Append($"-f \"{_videoQualityFormat}\" ");
-                }
-
-                // 2. Subtitle arguments
-                arguments.Append($"--all-subs ");           // Download all available languages
-                arguments.Append($"--sub-langs all ");
-                arguments.Append($"--sub-format srt ");    // Download in .srt format
-
-                // 3. Downloader and Browser arguments
-                arguments.Append($"--downloader aria2c "); // Use aria2c for multi-threaded downloads
-                arguments.Append($"--downloader-args \"aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M\" ");
-                arguments.Append($"--user-agent \"{_userAgent}\" "); // Use the Firefox user agent
-                arguments.Append($"--cookies-from-browser firefox "); // Try to use browser cookies
-
-                // 4. Output Template (MUST be placed before the URL)
-                arguments.Append($"-o \"{outputTemplate}\" ");
-
-                // 5. URL (MUST be the final argument)
-                arguments.Append($"\"{metadata.SourceUrl}\"");
-
-
-                // --- 3. Configure Process ---
-                _process = new Process
-                {
-                    StartInfo =
-                    {
-                        FileName = ytDlpPath,
-                        Arguments = arguments.ToString(),
-                        RedirectStandardOutput = true, // Capture output
-                        RedirectStandardError = true,  // Capture errors
-                        UseShellExecute = false,       // Required for redirection
-                        CreateNoWindow = true,         // Don't show the black console window
-                        StandardOutputEncoding = Encoding.UTF8, // Ensure correct encoding
-                        StandardErrorEncoding = Encoding.UTF8
-                    },
-                    EnableRaisingEvents = true // Allows us to use the .Exited event
+                    FileName = ytDlpPath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
                 };
 
-                // --- 4. Set Up Asynchronous Event Handlers ---
+                // Core flags
+                startInfo.ArgumentList.Add("--windows-filenames");
+                startInfo.ArgumentList.Add("--embed-metadata");
+                startInfo.ArgumentList.Add("--ignore-errors");
+
+                // Format
+                if (!string.IsNullOrWhiteSpace(_videoQualityFormat))
+                {
+                    startInfo.ArgumentList.Add("-f");
+                    startInfo.ArgumentList.Add(_videoQualityFormat);
+                }
+
+                // Subtitles
+                startInfo.ArgumentList.Add("--all-subs");
+                startInfo.ArgumentList.Add("--sub-langs");
+                startInfo.ArgumentList.Add("all");
+                startInfo.ArgumentList.Add("--sub-format");
+                startInfo.ArgumentList.Add("srt");
+
+                // Downloader args (single value)
+                startInfo.ArgumentList.Add("--downloader");
+                startInfo.ArgumentList.Add("aria2c");
+                startInfo.ArgumentList.Add("--downloader-args");
+                startInfo.ArgumentList.Add($"aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M");
+
+                // User agent and cookies
+                startInfo.ArgumentList.Add("--user-agent");
+                startInfo.ArgumentList.Add(_userAgent);
+                startInfo.ArgumentList.Add("--cookies-from-browser");
+                startInfo.ArgumentList.Add("firefox");
+
+                // Output template
+                startInfo.ArgumentList.Add("-o");
+                startInfo.ArgumentList.Add(outputTemplate);
+
+                // URL (final argument)
+                startInfo.ArgumentList.Add(metadata.SourceUrl);
+
+                // ---3. Configure Process ---
+                _process = new Process
+                {
+                    StartInfo = startInfo,
+                    EnableRaisingEvents = true
+                };
+
+                // ---4. Set Up Asynchronous Event Handlers ---
 
                 // Handle standard output (download progress, etc.)
                 _process.OutputDataReceived += (sender, args) =>
@@ -192,51 +209,97 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                     }
                 };
 
-                // Handle the process exiting (either finished or was killed)
+                // Handle the process exiting (log only). Do NOT dispose or null _process here --
+                // disposal is centralized below in this method to avoid races.
                 _process.Exited += (sender, args) =>
                 {
-                    // This is the v1.6.1 "App Freeze" fix.
-                    // We consolidate all cleanup logic here.
-
-                    // Ensure all buffered output is read before we continue.
-                    _process?.WaitForExit();
-
-                    OnOutputReceived?.Invoke($"--- Download finished. Process exited with code {_process?.ExitCode}. ---");
-                    OnDownloadComplete?.Invoke(_process?.ExitCode ?? -1);
-
-                    // Safely dispose all resources.
-                    _process?.Dispose();
-                    _process = null;
-                    _cancellationTokenSource?.Dispose();
-                    _cancellationTokenSource = null;
+                    try
+                    {
+                        OnOutputReceived?.Invoke("--- Process exited (handler) ---");
+                    }
+                    catch { /* swallow logging exceptions */ }
                 };
 
-                // --- 5. Start Process ---
-                _process.Start();
+                // ---5. Start Process ---
+                try
+                {
+                    _process.Start();
+                }
+                catch (Exception ex)
+                {
+                    OnOutputReceived?.Invoke($"--- Failed to start yt-dlp: {ex.Message} ---");
+                    OnDownloadComplete?.Invoke(-1);
+                    return;
+                }
 
                 // Begin reading the output and error streams asynchronously.
                 _process.BeginOutputReadLine();
                 _process.BeginErrorReadLine();
 
-                // Wait for the process to exit asynchronously, respecting the cancellation token.
-                await _process.WaitForExitAsync(_cancellationTokenSource.Token);
+                // Capture a local stable reference to the process to avoid races
+                // with external callers swapping/disposing the field.
+                processRef = _process;
+                if (processRef == null)
+                {
+                    // Unexpected: process became null before we could wait. Exit gracefully.
+                    return;
+                }
 
-                // This final blocking wait is a safety net to ensure all async I/O is flushed
-                // before the 'Exited' event fires.
-                _process.WaitForExit();
+                // Wait for the process to exit asynchronously, respecting the cancellation token.
+                await processRef.WaitForExitAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
+
+                // After WaitForExitAsync completes we centrally handle exit logic and cleanup.
+                int exitCode = -1;
+                try
+                {
+                    exitCode = processRef.ExitCode;
+                }
+                catch { /* ignore */ }
+
+                OnOutputReceived?.Invoke($"--- Download finished. Process exited with code {exitCode}. ---");
+                OnDownloadComplete?.Invoke(exitCode);
             }
             catch (OperationCanceledException)
             {
                 // This is a "clean" exception, thrown when the user clicks "Stop".
                 OnOutputReceived?.Invoke("--- Download was stopped by the user. ---");
-                // The StopDownload() method takes over, and the .Exited handler will do the cleanup.
+                // StopDownload() already attempted to kill the process; we still centralize disposal below.
             }
             catch (Exception ex)
             {
                 // This is a "dirty" exception (e.g., file not found, permissions error).
                 OnOutputReceived?.Invoke($"--- [FATAL] Download task failed: {ex.Message} ---");
                 OnDownloadComplete?.Invoke(-1);
-                // The .Exited handler will still run and clean up the process.
+            }
+            finally
+            {
+                // CENTRALIZED CLEANUP: only this method disposes and nulls _process and the token source.
+                try
+                {
+                    if (processRef != null)
+                    {
+                        try
+                        {
+                            // If it hasn't exited yet for any reason, ensure it's terminated.
+                            if (!processRef.HasExited)
+                            {
+                                try { processRef.Kill(true); } catch { /* ignore kill failures */ }
+                                // Wait a short time for termination to avoid racing Dispose with Exited handler.
+                                try { processRef.WaitForExit(2000); } catch { }
+                            }
+                        }
+                        catch { /* ignore */ }
+
+                        try { processRef.Dispose(); } catch { /* ignore */ }
+                    }
+                }
+                finally
+                {
+                    // Clear shared field and dispose token source.
+                    _process = null;
+                    try { _cancellationTokenSource?.Dispose(); } catch { }
+                    _cancellationTokenSource = null;
+                }
             }
         }
 
@@ -246,18 +309,20 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// </summary>
         public void StopDownload()
         {
-            if (_process != null && !_process.HasExited)
+            // Snapshot reference to avoid races with central cleanup.
+            var proc = _process;
+            if (proc != null && !proc.HasExited)
             {
                 OnOutputReceived?.Invoke("--- Sending stop signal... ---");
 
-                // 1. Cancel the async wait task
+                //1. Cancel the async wait task
                 _cancellationTokenSource?.Cancel();
 
-                // 2. Force-kill the process and all its children
+                //2. Force-kill the process and all its children
                 try
                 {
                     // The 'true' argument ensures all child processes (like aria2c) are also terminated.
-                    _process.Kill(true);
+                    proc.Kill(true);
                     OnOutputReceived?.Invoke("--- All download processes terminated successfully. ---");
                 }
                 catch (Exception ex)

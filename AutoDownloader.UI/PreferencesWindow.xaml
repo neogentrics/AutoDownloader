@@ -1,7 +1,7 @@
 ﻿<Window x:Class="AutoDownloader.UI.PreferencesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="AutoDownloader Preferences - v1.8" Height="495" Width="695"
+        Title="AutoDownloader Preferences - v1.10.0-beta" Height="495" Width="695"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         FontFamily="Segoe UI"
@@ -98,6 +98,11 @@
                 <Label Content="Preferred Video Quality (yt-dlp format):" Foreground="White"/>
                 <TextBox x:Name="QualityTextBox" Height="30" Margin="0,0,0,10" 
                          ToolTip="Example: bestvideo+bestaudio/best. (Advanced setting)"/>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5,0,15">
+                    <CheckBox x:Name="AutoInstallPlaywrightCheckBox" VerticalAlignment="Center" />
+                    <Label Content="Automatically install Playwright browsers on first run" Foreground="White" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </StackPanel>
 
             </StackPanel>
         </ScrollViewer>

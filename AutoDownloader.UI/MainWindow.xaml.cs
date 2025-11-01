@@ -12,6 +12,11 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Text.RegularExpressions;
+using System.Globalization;
+using System.Net.Http;
+using System.Reflection;
+using System.Diagnostics;
 
 namespace AutoDownloader.UI
 {
@@ -45,7 +50,7 @@ namespace AutoDownloader.UI
         /// <summary>
         /// The authoritative version number for the application.
         /// </summary>
-        private const string CurrentVersion = "v1.9.2-Alpha";
+        private const string CurrentVersion = "v1.10.0-beta";
 
         // --- Constructor & Initializers ---
 
@@ -105,6 +110,87 @@ namespace AutoDownloader.UI
             );
 
             _searchService = new SearchService(_settingsService.Settings.GeminiApiKey);
+
+            // Kick off a non-blocking task to ensure Playwright browsers are installed if user allows it in preferences.
+            if (_settingsService.Settings.AutoInstallPlaywrightBrowsers)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Try to find a static InstallAsync via reflection (some Playwright builds expose it)
+                        var playwrightType = Type.GetType("Microsoft.Playwright.Playwright, Microsoft.Playwright");
+                        if (playwrightType != null)
+                        {
+                            var installMethod = playwrightType.GetMethod("InstallAsync", BindingFlags.Public | BindingFlags.Static | BindingFlags.IgnoreCase);
+                            if (installMethod != null)
+                            {
+                                try
+                                {
+                                    var installTask = (Task?)installMethod.Invoke(null, null);
+                                    if (installTask != null) await installTask.ConfigureAwait(false);
+                                    Dispatcher.Invoke(() => AppendLog("--- Playwright browsers installed (reflection) ---", Brushes.Green));
+                                    return;
+                                }
+                                catch (Exception ex)
+                                {
+                                    Dispatcher.Invoke(() => AppendLog($"--- Playwright reflection install failed: {ex.Message} ---", Brushes.Orange));
+                                }
+                            }
+                        }
+
+                        // Fallback: try to create Playwright and launch Chromium to detect presence
+                        try
+                        {
+                            var pl = await Microsoft.Playwright.Playwright.CreateAsync();
+                            try
+                            {
+                                await pl.Chromium.LaunchAsync(new Microsoft.Playwright.BrowserTypeLaunchOptions { Headless = true });
+                                Dispatcher.Invoke(() => AppendLog("--- Playwright is usable; browsers present. ---", Brushes.Green));
+                            }
+                            catch (Exception launchEx)
+                            {
+                                Dispatcher.Invoke(() => AppendLog($"--- Playwright browsers missing or launch failed: {launchEx.Message} ---", Brushes.Orange));
+
+                                // Try CLI fallback: run `playwright install chromium` if 'playwright' CLI is available
+                                try
+                                {
+                                    var psi = new ProcessStartInfo
+                                    {
+                                        FileName = "playwright",
+                                        Arguments = "install chromium",
+                                        CreateNoWindow = true,
+                                        UseShellExecute = false,
+                                        RedirectStandardOutput = true,
+                                        RedirectStandardError = true
+                                    };
+                                    var proc = Process.Start(psi);
+                                    if (proc != null)
+                                    {
+                                        string outp = await proc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                                        string err = await proc.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                                        await proc.WaitForExitAsync().ConfigureAwait(false);
+                                        Dispatcher.Invoke(() => AppendLog($"--- Playwright CLI install finished. Output length: {outp.Length}. Error length: {err.Length} ---", Brushes.Yellow));
+                                    }
+                                }
+                                catch (Exception cliEx)
+                                {
+                                    Dispatcher.Invoke(() => AppendLog($"--- Playwright CLI install failed: {cliEx.Message} ---", Brushes.Orange));
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Dispatcher.Invoke(() => AppendLog($"--- Playwright initialization failed: {ex.Message} ---", Brushes.Orange));
+                        }
+                    }
+                    catch { /* swallow */ }
+                });
+            }
+            else
+            {
+                AppendLog("--- Automatic Playwright browser install is disabled in Preferences. ---", Brushes.Yellow);
+            }
 
             //3. Initialize the Download service, injecting the tool paths and settings.
             _ytDlpService = new YtDlpService(
@@ -205,13 +291,37 @@ namespace AutoDownloader.UI
                 Directory.CreateDirectory(finalOutputFolder);
 
                 // Parse the URL for a name and (hopefully) a season number.
-                var (parsedName, parsedSeason) = ParseMetadataFromUrl(searchTerm);
+                var (parsedName, parsedSeason) = await ParseMetadataFromUrlAsync(searchTerm);
 
                 searchTarget = parsedName;
                 if (parsedSeason.HasValue)
                 {
                     metadataToPass.NextSeasonNumber = parsedSeason.Value;
                     AppendLog($"Detected Season: {parsedSeason.Value} from URL.", Brushes.Yellow);
+                }
+
+                // Try site-specific scraping to find playable episode URLs (AngleSharp). If found, prefer first playable link as source.
+                try
+                {
+                    var scraper = ScraperFactory.GetScraperForUrl(searchTerm);
+                    if (scraper != null)
+                    {
+                        var playables = await scraper.GetPlayableUrlsAsync(searchTerm);
+                        if (playables != null && playables.Count >0)
+                        {
+                            // Prefer first playable URL
+                            metadataToPass.SourceUrl = playables[0];
+                            AppendLog($"Scraper found {playables.Count} playable link(s). Using first: {playables[0]}", Brushes.Yellow);
+                        }
+                        else
+                        {
+                            AppendLog("Scraper did not find playable links (site may be JS-protected). Falling back to original URL.", Brushes.Orange);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"Scraper error: {ex.Message}. Falling back to original URL.", Brushes.Orange);
                 }
             }
 
@@ -287,7 +397,26 @@ namespace AutoDownloader.UI
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
                 Directory.CreateDirectory(finalOutputFolder);
 
-                // V1.9.2 FIX: Save the metadata XML to the show's root folder
+                // Attempt to fetch episode list for this season and attach to metadata
+                try
+                {
+                    var eps = await _metadataService.GetEpisodesForSeasonAsync(seriesId, metadataToPass.NextSeasonNumber);
+                    if (eps != null && eps.Any())
+                    {
+                        metadataToPass.Episodes = eps;
+                        AppendLog($"--- Found {eps.Count} episode(s) for Season {metadataToPass.NextSeasonNumber}. ---", Brushes.Yellow);
+                    }
+                    else
+                    {
+                        AppendLog("--- Episode list not found via metadata service; XML will contain only season summary. ---", Brushes.Orange);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog($"--- Failed to retrieve episode list: {ex.Message} ---", Brushes.Orange);
+                }
+
+                // V1.9.2 FIX: Save the metadata XML to the show's root folder (including episodes if available)
                 AppendLog("--- Saving metadata to local series.xml... ---", Brushes.Yellow);
                 await _xmlService.SaveMetadataAsync(finalOutputFolder, metadataToPass);
                 AppendLog("--- Metadata saved successfully. ---", Brushes.Green);
@@ -684,8 +813,9 @@ AI Development Partner: Gemini (Google)
         /// <summary>
         /// Helper to parse show name and season number from a given URL.
         /// V1.9.2 FIX: This logic fixes the "Season2" bug (Issue #14).
+        /// This async variant attempts to scrape the page for a title when the URL segments don't yield a clear show name.
         /// </summary>
-        private (string ShowName, int? SeasonNumber) ParseMetadataFromUrl(string url)
+        private async Task<(string ShowName, int? SeasonNumber)> ParseMetadataFromUrlAsync(string url)
         {
             try
             {
@@ -695,36 +825,97 @@ AI Development Partner: Gemini (Google)
                 int? seasonNum = null;
                 string showName = "";
 
-                // Look for a "season-X" segment and extract the season number.
+                // Look for explicit season-like segments (e.g., "season-2", "s2", "season", or "s/2")
                 for (int i =0; i < segments.Count; i++)
                 {
-                    if (segments[i].StartsWith("season-", StringComparison.OrdinalIgnoreCase))
+                    var seg = segments[i].Trim().Trim('/');
+                    if (string.IsNullOrEmpty(seg)) continue;
+
+                    // Normalize for matching
+                    string segLower = seg.ToLowerInvariant();
+
+                    // Pattern: "season-2", "season_2", "s2", "s02"
+                    var m = Regex.Match(segLower, "^(?:season[-_]?|s)(\\d{1,3})$", RegexOptions.IgnoreCase);
+                    if (m.Success)
                     {
-                        var parts = segments[i].Split('-');
-                        if (parts.Length >1 && int.TryParse(parts[1], out int sNum))
+                        if (int.TryParse(m.Groups[1].Value, out int s)) seasonNum = s;
+                        if (i >0) showName = segments[i -1];
+                        break;
+                    }
+
+                    // Pattern: segment == "season" and next segment is numeric (e.g., "/season/2/")
+                    if (segLower == "season" && i +1 < segments.Count)
+                    {
+                        var next = segments[i +1].ToLowerInvariant();
+                        if (int.TryParse(next, out int s2))
                         {
-                            seasonNum = sNum;
-                            // The show name is *probably* the segment right before it.
-                            if (i >0)
-                            {
-                                showName = segments[i -1];
-                            }
+                            seasonNum = s2;
+                            if (i >0) showName = segments[i -1];
                             break;
                         }
                     }
                 }
 
-                // If showName is empty, try to find the last meaningful segment.
+                // If we didn't find an explicit season segment, fall back to older logic: pick the last meaningful segment
                 if (string.IsNullOrWhiteSpace(showName))
                 {
                     showName = segments
-                        .Where(s => !s.All(char.IsDigit) && !s.Equals("series", StringComparison.OrdinalIgnoreCase))
-                        .LastOrDefault() ?? "Unknown Show";
+                        .Where(s => !s.All(char.IsDigit)
+                        && !s.Equals("series", StringComparison.OrdinalIgnoreCase)
+                        && !s.Equals("seasons", StringComparison.OrdinalIgnoreCase)
+                        && !Regex.IsMatch(s, "^(?:season[-_]?|s)\\d+$", RegexOptions.IgnoreCase))
+                        .LastOrDefault() ?? string.Empty;
+                }
+
+                // If showName is still empty or looks like a season placeholder, try scraping the page for a title as a fallback.
+                if (string.IsNullOrWhiteSpace(showName) || Regex.IsMatch(showName, "^(?:season[-_]?|s)\\d+$", RegexOptions.IgnoreCase))
+                {
+                    try
+                    {
+                        using var http = new HttpClient();
+                        http.Timeout = TimeSpan.FromSeconds(6);
+                        var resp = await http.GetAsync(uri).ConfigureAwait(false);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            var html = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                            // Try common metadata tags in order: og:title, twitter:title, <title>
+                            string? title = null;
+                            var og = Regex.Match(html, "<meta\\s+property=[\"']og:title[\"']\\s+content=[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase);
+                            if (!og.Success)
+                                og = Regex.Match(html, "<meta\\s+name=[\"']og:title[\"']\\s+content=[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase);
+                            if (og.Success) title = og.Groups[1].Value;
+
+                            if (string.IsNullOrWhiteSpace(title))
+                            {
+                                var tw = Regex.Match(html, "<meta\\s+name=[\"']twitter:title[\"']\\s+content=[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase);
+                                if (tw.Success) title = tw.Groups[1].Value;
+                            }
+
+                            if (string.IsNullOrWhiteSpace(title))
+                            {
+                                var t = Regex.Match(html, "<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                                if (t.Success) title = Regex.Replace(t.Groups[1].Value, "\\s+", " ").Trim();
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(title))
+                            {
+                                // Remove site suffixes (e.g., " - Tubi", " | YouTube")
+                                var cleaned = title.Split(new[] { "|", " - ", " — " }, StringSplitOptions.None)[0].Trim();
+                                showName = cleaned;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore network failures; we will fall back to URL segment logic
+                    }
                 }
 
                 // Clean up the name (e.g., "love-thy-neighbor" -> "Love Thy Neighbor")
-                string cleanName = showName.Replace('-', ' ');
-                System.Globalization.TextInfo ti = new System.Globalization.CultureInfo("en-US", false).TextInfo;
+                if (string.IsNullOrWhiteSpace(showName)) showName = "Unknown Show";
+                string cleanName = showName.Replace('-', ' ').Replace('_', ' ').Trim();
+                TextInfo ti = new CultureInfo("en-US", false).TextInfo;
 
                 return (ti.ToTitleCase(cleanName), seasonNum);
             }
