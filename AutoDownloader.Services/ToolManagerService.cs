@@ -5,7 +5,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-namespace AutoDownloader.Core
+namespace AutoDownloader.Services
 {
     /// <summary>
     /// Manages the download, extraction, and updating of external CLI tools.

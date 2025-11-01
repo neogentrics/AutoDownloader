@@ -2,34 +2,27 @@ name: .NET Core Desktop Build and Publish
 
 on:
   push:
-    # Trigger a run on any push to 'master' (for simple testing/artifacts)
     branches: [ "master" ]
     
-  # CRITICAL: Trigger the full release process ONLY when a tag (e.g., v1.8.1) is pushed.
   create:
     tags:
-      - 'v*'
+      - 'v*' # This is the trigger for your releases
       
   workflow_dispatch:
-    # Allows manual running from the Actions tab on GitHub
 
 jobs:
 
   build:
-    # Grants write permission to the GITHUB_TOKEN for uploading release assets.
     permissions:
-      contents: write 
+      contents: write # This is required to create a release
 
-    # We will only run on Release configuration for the publish step
     runs-on: windows-latest 
 
     env:
-      # --- START CUSTOM CONFIGURATION ---
       Solution_Name: AutoDownloader.sln
       DotNet_Version: 9.0.x
-      Publish_Project_Path: AutoDownloader.UI/AutoDownloader.UI.csproj # Path to the .csproj to publish
-      # --- END CUSTOM CONFIGURATION ---
-      
+      Publish_Project_Path: AutoDownloader.UI/AutoDownloader.UI.csproj 
+
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
@@ -44,23 +37,20 @@ jobs:
     - name: Setup MSBuild.exe
       uses: microsoft/setup-msbuild@v2
 
-    # 1. ANALYZE TAG, SET DYNAMIC VARIABLES (NEW ROBUST STEP)
+    # 1. ANALYZE TAG, SET DYNAMIC VARIABLES
     - name: Analyze Tag for Release Type
       id: tag_analysis
       shell: pwsh
       run: |
         $tagName = "${{ github.ref_name }}"
-        # Check if tag contains '-alpha' or '-beta' (case-insensitive)
         $isPreRelease = $tagName -match "-alpha|-beta"
         
-        # Determine the release name based on stability
         if ($isPreRelease) {
           $releaseName = "Pre-Release $tagName (Alpha/Beta)"
         } else {
           $releaseName = "Release $tagName - Stable"
         }
         
-        # Set outputs for use in the final release step (FINAL STABLE SYNTAX)
         "IS_PRERELEASE=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         "RELEASE_NAME=$releaseName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -79,7 +69,7 @@ jobs:
       run: |
         Compress-Archive -Path ${{ github.workspace }}/publish_output/* -DestinationPath ${{ github.workspace }}/AutoDownloader_${{ github.ref_name }}.zip
 
-    # 5. UPLOAD ARTIFACT (for testing/debugging builds only)
+    # 5. UPLOAD ARTIFACT (This is for debugging, not the release)
     - name: Upload Build Artifact (Debug)
       uses: actions/upload-artifact@v4
       with:
@@ -89,18 +79,17 @@ jobs:
     # 6. CRITICAL: Create Release and Upload Assets
     - name: Create GitHub Release and Upload Assets
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      # --- FIX 1: Use the newer v2 of the action ---
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        # Uses dynamically set variables from the 'tag_analysis' step
         tag_name: ${{ steps.tag_analysis.outputs.TAG_NAME }}
         name: ${{ steps.tag_analysis.outputs.RELEASE_NAME }}
-        # Use the single-line body we finalized
-        body: "Release ${{ github.ref_name }} - Stable.\n\n**IMPORTANT:** Please use the **Installer ZIP** for full functionality.\n\n**Next Focus:** Version 2.0 UI Overhaul."
-        prerelease: ${{ steps.tag_analysis.outputs.IS_PRERELEASE }} # CRITICAL: Sets the pre-release flag
+        body: "Release ${{ github.ref_name }}. See the project page for full changelog."
+        prerelease: ${{ steps.tag_analysis.outputs.IS_PRERELEASE }} 
         
-        # Uploads BOTH the ZIP package and the standalone EXE
+        # --- FIX 2: Use RELATIVE paths, not absolute paths ---
         files: |
-          ${{ github.workspace }}/AutoDownloader_${{ github.ref_name }}.zip
-          ${{ github.workspace }}/publish_output/AutoDownloader.UI.exe
+          AutoDownloader_${{ github.ref_name }}.zip
+          publish_output/AutoDownloader.UI.exe

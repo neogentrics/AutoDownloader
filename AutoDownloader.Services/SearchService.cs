@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace AutoDownloader.Core
+namespace AutoDownloader.Services
 {
     /// <summary>
     /// Service to find a valid yt-dlp URL from a search term using the Gemini API.

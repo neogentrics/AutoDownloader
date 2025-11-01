@@ -1,4 +1,4 @@
-﻿using AutoDownloader.Core;
+﻿using AutoDownloader.Services;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using System;
 using System.IO;

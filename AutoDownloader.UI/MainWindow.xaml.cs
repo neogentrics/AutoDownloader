@@ -11,15 +11,19 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Linq;
+using AutoDownloader.Services;
 
 namespace AutoDownloader.UI
 {
     public partial class MainWindow : Window
     {
         // --- Our Core "Engines" ---
-        private readonly YtDlpService _ytDlpService;
-        private readonly SearchService _searchService;
+        private YtDlpService _ytDlpService = null!; // Will be initialized async
+        private SearchService _searchService = null!; // Will be initialized async
         private readonly ToolManagerService _toolManagerService;
+        private MetadataService _metadataService = null!; // Will be initialized async
+        private readonly SettingsService _settingsService;
+        private readonly XmlService _xmlService;
 
         // --- High-Performance Log Batching ---
         private readonly DispatcherTimer _logUpdateTimer;
@@ -28,16 +32,12 @@ namespace AutoDownloader.UI
 
         // NEW: Track the current input mode
         private bool _isMultiLinkMode = false;
-        private readonly MetadataService _metadataService;
-
-        // V1.8 NEW: Settings Service
-        private readonly SettingsService _settingsService;
 
         // V1.9.5 NEW: XML Service
         private readonly XmlService _xmlService;
 
         // NEW: Define the authoritative version number here
-        private const string CurrentVersion = "v1.9.5-Beta"; // <-- Updated to v1.9.5-Beta
+        private const string CurrentVersion = "v1.9.5-Beta";
 
         public MainWindow()
         {
@@ -49,76 +49,91 @@ namespace AutoDownloader.UI
 
             // A. Settings must load first to get API keys
             _settingsService = new SettingsService();
+            _settingsService.LoadSettings(); // Synchronous load
 
             // B. ToolManager is self-contained
             _toolManagerService = new ToolManagerService();
 
+<<<<<<< HEAD
+            // C. XML Service is self-contained
+            _xmlService = new XmlService();
+=======
             // V1.9.5 NEW: Initialize XML Service
             _xmlService = new XmlService();
 
             // C. YtDlpService depends on ToolManager
             _ytDlpService = new YtDlpService(_toolManagerService);
+>>>>>>> 4e35c7b3c3590746212c02f744cf00e2e2635a3b
 
-            // D. MetadataService and SearchService depend on Settings for keys
-            // This is where your errors were! They MUST be initialized with the key.
+            // D. Set Up Default Download Path
+            OutputFolderTextBox.Text = _settingsService.Settings.DefaultOutputFolder;
+            Directory.CreateDirectory(_settingsService.Settings.DefaultOutputFolder);
+
+            // E. Set Up Log Batching Timer
+            _logUpdateTimer = new DispatcherTimer();
+            _logUpdateTimer.Interval = TimeSpan.FromMilliseconds(100);
+            _logUpdateTimer.Tick += LogUpdateTimer_Tick;
+            _logUpdateTimer.Start();
+
+            // F. Start Asynchronous Initialization
+            // We run this in a separate async method so the window can load
+            // while we download/check for tools.
+            _ = InitializeAsyncServices();
+        }
+
+        /// <summary>
+        /// Asynchronously initializes all services that require API keys or tool checks.
+        /// </summary>
+        private async Task InitializeAsyncServices()
+        {
+            SetUiLock(true); // Lock UI while we init
+            StatusTextBlock.Text = "Initializing tools...";
+
+            // 1. Ensure yt-dlp and aria2c are present
+            var (ytDlpPath, ariaPath) = await _toolManagerService.EnsureToolsAvailableAsync();
+            StatusTextBlock.Text = "Tools ready. Initializing services...";
+
+            // 2. Now we can initialize all the services that depend on settings or tools
             _metadataService = new MetadataService(
                 _settingsService.Settings.TmdbApiKey,
-                _settingsService.Settings.TvdbApiKey // <-- V1.9 NEW: Passing TVDB key
+                _settingsService.Settings.TvdbApiKey
             );
 
             _searchService = new SearchService(_settingsService.Settings.GeminiApiKey);
 
-            // --- 2. Set Up Default Download Path ---
-            // Use the path loaded from settings for the text box
-            OutputFolderTextBox.Text = _settingsService.Settings.DefaultOutputFolder;
-            Directory.CreateDirectory(_settingsService.Settings.DefaultOutputFolder);
+            // 3. Inject the tool paths into YtDlpService
+            _ytDlpService = new YtDlpService(ytDlpPath, ariaPath);
 
-
-            // --- 3. Set Up Event Handlers (This fixes the delegate errors) ---
-
-            // Subscribe to the download complete event
+            // 4. Set Up Event Handlers
             _ytDlpService.OnDownloadComplete += (exitCode) =>
             {
-                // This event can come from a background thread, so we must use
-                // the Dispatcher to safely update the UI (the "main" thread).
                 Dispatcher.Invoke(() =>
                 {
-                    SetUiLock(false); // Re-enable the UI
+                    SetUiLock(false);
                     StatusTextBlock.Text = exitCode == 0 ? "Download complete" : "Download failed or stopped";
                 });
             };
 
-            // Subscribe to the log output event
             _ytDlpService.OnOutputReceived += (logLine) =>
             {
-                // This fires thousands of times. Instead of updating the UI
-                // directly, we add the log to a queue.
-                lock (_logLock)
-                {
-                    _logQueue.Add(logLine);
-                }
+                lock (_logLock) { _logQueue.Add(logLine); }
             };
 
-            // Subscribe to the ToolManager's log event
+            // Also forward logs from the ToolManager
             _toolManagerService.OnToolLogReceived += (logLine) =>
             {
-                // Also add tool logs to the same queue
-                lock (_logLock)
-                {
-                    _logQueue.Add(logLine);
-                }
+                lock (_logLock) { _logQueue.Add(logLine); }
             };
 
-            // --- 4. Set Up Log Batching Timer ---
-            _logUpdateTimer = new DispatcherTimer();
-            _logUpdateTimer.Interval = TimeSpan.FromMilliseconds(100); // Update 10x per second
-            _logUpdateTimer.Tick += LogUpdateTimer_Tick;
-            _logUpdateTimer.Start();
-
-            // V1.8 Launch Validation
+            // 5. Run validation and unlock UI
             ValidateApiKeysOnLaunch();
+<<<<<<< HEAD
+            StatusTextBlock.Text = "Ready.";
+            SetUiLock(false); // Unlock UI
+=======
 
 
+>>>>>>> 4e35c7b3c3590746212c02f744cf00e2e2635a3b
         }
 
         /// <summary>
@@ -322,9 +337,45 @@ namespace AutoDownloader.UI
 
             var metadataResult = await metadataTask;
 
+<<<<<<< HEAD
             // Step 4: Process Metadata and Save XML (V1.9.5 Feature)
             if (metadataResult != null)
             {
+=======
+            if (!nameDialog.IsConfirmed)
+            {
+                AppendLog("--- User cancelled metadata search. Download aborted. ---", Brushes.Red);
+                return;
+            }
+
+            string confirmedName = nameDialog.ShowName;
+            AppendLog($"--- User confirmed name: '{confirmedName}' ---", Brushes.Aqua);
+
+                AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
+                AppendLog($"Metadata Source: {(seriesId > 1000000 ? "TMDB" : "TVDB")}", Brushes.Yellow); // Simple guess based on ID format
+                AppendLog($"Target Season {targetSeasonNumber} Expected Episode Count: {expectedCount}", Brushes.Yellow);
+
+            // Step 3: Call the correct metadata service based on selection
+            Task<(string, int, int, int)?>? metadataTask;
+            if (dbDialog.SelectedSource == DatabaseSource.TVDB)
+            {
+                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
+                StatusTextBlock.Text = "Searching TMDB...";
+                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
+            }
+            else
+            {
+                AppendLog("--- Searching The Movie Database (TMDB)... ---", Brushes.Yellow);
+                StatusTextBlock.Text = "Searching TMDB...";
+                metadataTask = _metadataService.GetTmdbMetadataAsync(confirmedName);
+            }
+
+            var metadataResult = await metadataTask;
+
+            // Step 4: Process Metadata and Save XML (V1.9.5 Feature)
+            if (metadataResult != null)
+            {
+>>>>>>> 4e35c7b3c3590746212c02f744cf00e2e2635a3b
                 // ... (Existing metadata assignment code) ...
 
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);

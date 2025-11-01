@@ -1,9 +1,10 @@
-﻿using System;
+﻿using AutoDownloader.Core;
+using System;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace AutoDownloader.Core
+namespace AutoDownloader.Services
 {
     /// <summary>
     /// Handles loading and saving application settings to a JSON file.

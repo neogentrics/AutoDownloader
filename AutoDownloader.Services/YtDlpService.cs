@@ -1,10 +1,11 @@
-﻿using System;
+﻿using AutoDownloader.Core;
+using System;
 using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AutoDownloader.Core
+namespace AutoDownloader.Services
 {
     /// <summary>
     /// Main service for handling the yt-dlp download process.
@@ -17,22 +18,18 @@ namespace AutoDownloader.Core
         public event Action<int>? OnDownloadComplete;
 
         // --- Private Fields ---
-        private readonly ToolManagerService _toolManagerService;
+        private readonly string _ytDlpPath;
+        private readonly string _ariaPath;
         private Process? _process;
         private CancellationTokenSource? _cancellationTokenSource;
 
         /// <summary>
-        /// Constructor now "injects" the ToolManagerService.
+        /// Constructor now "injects" the tool paths.
         /// </summary>
-        public YtDlpService(ToolManagerService toolManager)
+        public YtDlpService(string ytDlpPath, string ariaPath)
         {
-            _toolManagerService = toolManager;
-
-            // Forward logs from the tool manager to our own log event
-            _toolManagerService.OnToolLogReceived += (logLine) =>
-            {
-                OnOutputReceived?.Invoke(logLine);
-            };
+            _ytDlpPath = ytDlpPath;
+            _ariaPath = ariaPath;
         }
 
         /// <summary>
@@ -48,10 +45,10 @@ namespace AutoDownloader.Core
             try
             {
                 // --- 1. Get Tool Paths ---
-                // Ask the ToolManager to ensure tools are ready and get their paths
-                OnOutputReceived?.Invoke("Checking for required tools...");
-                var (ytDlpPath, ariaPath) = await _toolManagerService.EnsureToolsAvailableAsync();
+                // Paths are now provided by the constructor.
                 OnOutputReceived?.Invoke("Tools are ready.");
+                string ytDlpPath = _ytDlpPath;
+                string ariaPath = _ariaPath;
 
                 // --- 2. Build Arguments ---
 
@@ -68,7 +65,7 @@ namespace AutoDownloader.Core
                 // We use '|' for fallback inside the tag for better compatibility.
 
                 // File Name: We will only use %(title)s, which usually contains the episode name.
-                string outputTemplate = System.IO.Path.Combine(outputFolder,
+                string outputTemplate = Path.Combine(outputFolder,
                     // Season Folder: Use the correct two-digit padding tag.
                     $"Season {seasonYtDlp}",
                     // File Name: Uses the official title and the correct two-digit tags, 

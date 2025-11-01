@@ -51,11 +51,12 @@ While `yt-dlp` supports over 1,000 sites, the "Smart Search" and "Metadata Looku
 
 The next major release, **v2.0**, will be a complete overhaul focusing on reliability and user experience.
 
-1.  **UI Overhaul:** Implement dynamic download progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.
-2.  **Scraper Engine Refactor:**
+1.  **Major Architectural Refactor:** Restructure the solution into a clean 3-project architecture (`.Core`, `.Services`, `.UI`) to improve separation of concerns and make the `.Core` library publishable.
+2.  **UI Overhaul:** Implement dynamic download progress bars (Percentage, Speed, ETA) and move the verbose output to an optional, toggleable **Developer Log**.
+3.  **Scraper Engine Refactor:**
     * Fix all URL and playlist title parsing bugs.
     * Implement smarter page scraping (scan page text if URL parsing fails).
-3.  **Multi-Scraper Integration:**
-    * Implement **TVDB** as a user-selectable pop-up option (v1.9).
+4.  **Multi-Scraper Integration:**
+    * Implement **TVDB** (using the new forked library) as a user-selectable pop-up option.
     * Integrate external subtitle database support.
-4.  **Branding:** Design a new application icon and official name.
+5.  **Branding:** Design a new application icon and official name.
