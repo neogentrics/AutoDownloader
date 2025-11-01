@@ -37,7 +37,7 @@ namespace AutoDownloader.UI
         private readonly XmlService _xmlService;
 
         // NEW: Define the authoritative version number here
-        private const string CurrentVersion = "v1.9.5-Beta"; // <-- Updated to v1.9.5-Beta
+        private const string CurrentVersion = "v1.9.0-alpha"; // <-- Updated to v1.9.0-alpha
 
         public MainWindow()
         {
@@ -210,6 +210,8 @@ namespace AutoDownloader.UI
             }
         }
 
+        // --- CODE in MainWindow.xaml.cs (REPLACE this entire method) ---
+
         /// <summary>
         /// Contains the core logic to process a single URL or search term.
         /// V1.9.0-alpha: Reworked for pop-up confirmation strategy.
@@ -224,7 +226,7 @@ namespace AutoDownloader.UI
             string baseOutputFolder = OutputFolderTextBox.Text;
             string finalUrl = searchTerm;
             string finalOutputFolder = baseOutputFolder;
-            string searchTarget = searchTerm;
+            string searchTarget = searchTerm; // The name we will search for
 
             DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
 
@@ -266,24 +268,51 @@ namespace AutoDownloader.UI
                 finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows");
                 Directory.CreateDirectory(finalOutputFolder);
 
-                // V1.9.5 FIX: Extract show name and season number from URL
-                var (parsedName, parsedSeason) = ParseMetadataFromUrl(searchTerm);
-
-                searchTarget = parsedName;
-                if (parsedSeason.HasValue)
-                {
-                    // If season is found in the URL, prioritize it.
-                    metadataToPass.NextSeasonNumber = parsedSeason.Value;
-                    AppendLog($"Detected Season: {parsedSeason.Value} from URL.", Brushes.Yellow);
-                }
+                // V1.8.1 FIX: Extract show name from URL
+                searchTarget = ExtractShowNameFromUrl(searchTerm);
             }
 
             // --- PHASE 2: V1.9.0-alpha POP-UP STRATEGY ---
 
-            // Step 1: Confirm the name with the user (15s timeout)
-            AppendLog($"--- Parsing complete. Confirming show name for: '{searchTarget}' ---", Brushes.Aqua);
-            ConfirmNameWindow nameDialog = new ConfirmNameWindow(searchTarget) { Owner = this };
-            nameDialog.ShowDialog(); // Pauses execution
+            // Step 1: Confirm the name with the user
+            AppendLog($"--- Confirming show name for: '{searchTarget}' ---", Brushes.Aqua);
+            ConfirmNameWindow nameDialog = new ConfirmNameWindow(searchTarget);
+            nameDialog.Owner = this; // Set the owner for correct modal behavior
+            nameDialog.ShowDialog(); // This pauses execution until the window is closed
+
+            if (!nameDialog.IsConfirmed)
+            {
+                AppendLog("--- User cancelled metadata search. Download aborted. ---", Brushes.Red);
+                return;
+            }
+
+            string confirmedName = nameDialog.ShowName;
+            AppendLog($"--- User confirmed name: '{confirmedName}' ---", Brushes.Aqua);
+            StatusTextBlock.Text = $"Looking up official metadata for: {confirmedName}";
+
+            // Step 2: Define the TVDB Pop-up "function"
+            // This is the function we pass to the metadata service.
+            Func<string, Task<bool>> confirmTvdbSearch = async (show) =>
+            {
+                AppendLog($"--- TMDB failed. Asking user to search TVDB for: '{show}' ---", Brushes.Orange);
+
+                // We must use the dispatcher to show a MessageBox from this background task
+                bool result = await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBoxResult res = MessageBox.Show(
+                        this,
+                        $"Could not find '{show}' on TMDB.\n\nWould you like to search The TV Database (TVDB) instead? (Recommended for Anime)",
+                        "Metadata Search Failed",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+                    return res == MessageBoxResult.Yes;
+                });
+                return result;
+            };
+
+            // Step 3: Call the new metadata service
+            // This call fixes CS1061 and CS8130
+            var metadataResult = await _metadataService.GetMetadataAsync(confirmedName, confirmTvdbSearch);
 
             if (!nameDialog.IsConfirmed)
             {
@@ -294,16 +323,9 @@ namespace AutoDownloader.UI
             string confirmedName = nameDialog.ShowName;
             AppendLog($"--- User confirmed name: '{confirmedName}' ---", Brushes.Aqua);
 
-            // Step 2: Select the Database (30s timeout)
-            StatusTextBlock.Text = "Waiting for database selection...";
-            SelectDatabaseWindow dbDialog = new SelectDatabaseWindow() { Owner = this };
-            dbDialog.ShowDialog(); // Pauses execution
-
-            if (dbDialog.SelectedSource == DatabaseSource.Canceled)
-            {
-                AppendLog("--- User cancelled database selection. Download aborted. ---", Brushes.Red);
-                return;
-            }
+                AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
+                AppendLog($"Metadata Source: {(seriesId > 1000000 ? "TMDB" : "TVDB")}", Brushes.Yellow); // Simple guess based on ID format
+                AppendLog($"Target Season {targetSeasonNumber} Expected Episode Count: {expectedCount}", Brushes.Yellow);
 
             // Step 3: Call the correct metadata service based on selection
             Task<(string, int, int, int)?>? metadataTask;
@@ -338,13 +360,12 @@ namespace AutoDownloader.UI
             }
             else
             {
-                // This is the CRASH fix: if metadata fails, we stop gracefully.
+                // This is the CRASH fix: if metadata fails or user says no, we stop gracefully.
                 AppendLog($"Could not find official metadata for '{confirmedName}'. Download aborted.", Brushes.Red);
                 return;
             }
 
-            // --- PHASE 3: Download and Verification Logic ---
-
+            // --- PHASE 3: Download and Verification Logic (V1.8 Content Verification) ---
             string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
 
             int filesBefore = 0;
@@ -640,55 +661,17 @@ Thank you for using AutoDownloader!
         /// <summary>
         /// Helper to parse show name from a simple URL format like Tubi for metadata search.
         /// </summary>
-        /// <summary>
-        /// Helper to parse show name and season number from a given URL.
-        /// V1.9.5 FIX: Parses season number directly from URL path.
-        /// </summary>
-        private (string ShowName, int? SeasonNumber) ParseMetadataFromUrl(string url)
+        private string ExtractShowNameFromUrl(string url)
         {
-            try
-            {
-                var uri = new Uri(url);
-                var segments = uri.Segments.Select(s => s.TrimEnd('/')).Where(s => !string.IsNullOrEmpty(s)).ToList();
+            // Find the last segment after the last '/'
+            string lastSegment = url.TrimEnd('/').Split('/').LastOrDefault() ?? string.Empty;
 
-                // Example URL: /series/300014568/love-thy-neighbor/season-2
+            // Replace hyphens with spaces
+            string cleanName = lastSegment.Replace('-', ' ');
 
-                int? seasonNum = null;
-                string showName = "";
-
-                for (int i = 0; i < segments.Count; i++)
-                {
-                    // Check if the current segment is 'season-X'
-                    if (segments[i].StartsWith("season-", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var parts = segments[i].Split('-');
-                        if (parts.Length > 1 && int.TryParse(parts[1], out int sNum))
-                        {
-                            seasonNum = sNum;
-                        }
-                    }
-                }
-
-                // CRITICAL FIX: Find the segment *before* the season segment, or the last non-numeric segment
-                string showSegment = segments
-                    .Where(s => !s.All(char.IsDigit) && !s.Contains("season") && !s.Contains("series"))
-                    .LastOrDefault() ?? "";
-
-                if (string.IsNullOrWhiteSpace(showSegment))
-                {
-                    // Fallback to the last segment if all else fails
-                    showSegment = segments.LastOrDefault() ?? "Unknown Show";
-                }
-
-                string cleanName = showSegment.Replace('-', ' ');
-                System.Globalization.TextInfo ti = new System.Globalization.CultureInfo("en-US", false).TextInfo;
-
-                return (ti.ToTitleCase(cleanName), seasonNum);
-            }
-            catch
-            {
-                return ("Unknown Show", null);
-            }
+            // Use crude Title Casing for a better search result in TMDB
+            System.Globalization.TextInfo ti = new System.Globalization.CultureInfo("en-US", false).TextInfo;
+            return ti.ToTitleCase(cleanName);
         }
 
     }
