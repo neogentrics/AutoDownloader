@@ -3,55 +3,18 @@
 An intelligent, high-speed, and automated WPF application for downloading Movies and TV Shows. AutoDownloader is designed for personal media organization and archival,
 utilizing the power of `yt-dlp`, `aria2c`, and multiple metadata APIs for seamless content management.
 
-**Developer: Neo Gentrics | [cite_start]AI Development Partner: Gemini (Google)** [cite:110]
+**Developer: Neo Gentrics | AI Development Partner: Gemini (Google)**
 
-[cite_start]**Current Stable Release: v1.8.1** 
-[cite_start]**Current Experimental Branch: v1.10.0-beta** [cite:111]
-
----
-
-## 🚀 Experimental v1.10.0-beta Branch
-
-Development is active on the `v1.10.0-beta` branch, which focuses on metadata and scraper improvements.
-
-* **TVDB Micro-Client:** The broken and outdated `TvDbSharper` dependency has been **removed**. It is replaced by a lightweight, custom `HttpClient` micro-client that communicates directly with the modern TVDB v4 API.
-* **Playwright Fallback:** Added Playwright-based page rendering as a fallback for JS/Cloudflare-protected sites. The application can attempt to automatically install required Playwright browsers (toggleable in Preferences).
-* **Developer Log Window:** Added an in-app Developer Log panel (View → Log) which captures verbose installer and scraper logs. Use the Developer Log to export or clear logs and retry Playwright installation.
-* **New Pop-up Strategy:** This branch introduces a new user-driven UI flow. When a download starts, the app presents pop-up windows (with timeouts) to:
-1. Confirm the auto-detected show name.
-2. [cite_start]Allow the user to manually select the metadata source (TMDB or TVDB).
-
----
-
-## 🔧 Playwright Automatic Install Notes
-
-The app attempts the following in order to ensure Playwright browsers are available:
-
-1. Reflection call to `Playwright.InstallAsync()` if exposed by the Playwright package.
-2. Create + Launch to detect already-present browsers.
-3. Run a packaged `playwright.ps1` installer script via `pwsh` or `powershell` if present in the build output.
-4. As a last fallback, invoke the `playwright` CLI: `playwright install chromium`.
-
-If automatic install fails, open View → Log to inspect detailed output and use the "Retry Playwright Install" button in the Developer Log.
-
----
-
-## 🚀 Key Features of v1.8.1 (Stable)
-
-* [cite_start]**Content Verification (v1.8):** Compares the number of files in the download folder against the official episode count from TMDB, logging missing episodes.
-* **Settings System (v1.8):** Dedicated Preferences window (Edit -> Preferences...) to manage API keys and set the default output folder.
-* [cite_start]**Intelligent Naming (v1.7):** Uses **The Movie Database (TMDB)** to retrieve official show titles, guaranteeing correct folder names for Plex.
-* [cite_start]**Dynamic URL Parsing (v1.8.1):** Dynamically parses show names from direct URLs (like Tubi) to fix metadata lookups and resolve the critical "hardcoded search" bug.
-* **Multi-Batch Support (v1.6):** Added support for pasting multiple links and fixed UI freezing by implementing batched logging.
+**Current Release: v1.10.0-beta**
 
 ---
 
 ## 🔮 Project Development Roadmap (v1.0 to v3.0)
 
-This project is developed in phases. The current `v1.10.0-beta` work completes Phase1, and Phase2 will begin with v2.0.
+This project is developed in phases. The current `v1.10.0-beta` work focuses on metadata and scraper improvements and important stability fixes.
 
 ### Phase1: Stability and Metadata Integration (v1.0 - v1.9)
-**Focus:** Establishing a stable base, eliminating critical bugs, and integrating essential naming services[cite:114].
+**Focus:** Establishing a stable base, eliminating critical bugs, and integrating essential naming services.
 
 | Version | Key Accomplishment | Architectural / Code Changes |
 | :--- | :--- | :--- |
@@ -60,10 +23,21 @@ This project is developed in phases. The current `v1.10.0-beta` work completes P
 | v1.7 | Integrated TMDB for intelligent naming and stabilized template syntax. | Metadata: Integrated `TMDbLib`. Template Fixes: Resolved yt-dlp format syntax errors. |
 | v1.8.0 | Introduced Content Verification structure and User Settings. | Settings: Implemented `SettingsModel.cs` and `SettingsService.cs`. Validation: Added `PreferencesWindow.xaml`. |
 | v1.8.1 | **CRITICAL FIX:** Fixed the hardcoded metadata search bug. | **CRITICAL FIX:** Implemented `ExtractShowNameFromUrl` helper to dynamically parse titles. |
-| v1.10.0-beta | **Integration Rework:** Implemented Pop-up Strategy, TVDB episode extraction, Playwright fallback and Developer Log. | **Architecture Rework:** Added scrapers and Playwright fallback; TVDB reflection-based extraction; improved XML metadata persistence; added developer logging and retryable installers. |
+
+### v1.10.0-beta (Completed)
+Status: Completed (branch: `fix/url-parser-sanitization-playwright-ci`, commit: `6c1d75b`)
+
+- Implemented native URL parsing (v2) that is context-aware and detects season segments (e.g., `season-2`, `s2`, `/season/2`) and uses the preceding segment as the show title. This resolves the critical URL parsing bugs that caused incorrect metadata lookups.
+- Added safe filesystem name sanitization for show titles to avoid invalid-directory IO exceptions on Windows (removes/replaces illegal characters and trailing dots/spaces).
+- Added Developer Log: timestamped, exportable developer log that captures verbose installer and scraper output for debugging.
+- Implemented a robust Playwright installer flow with automated retry (reflection, create+launch check, `playwright.ps1` script execution using `pwsh`/`powershell`, and CLI fallback). Added a CI workflow to install Playwright browsers during Windows builds so distributed artifacts are ready-to-run.
+- Wired tool and yt-dlp output into the Developer Log for post-mortem analysis.
+- Made YtDlpService accept preferred video quality (via Settings) and use it as the `-f` argument when provided.
+
+This work addresses and closes several tracked issues (see PR: `fix/url-parser-sanitization-playwright-ci`, commit `6c1d75b`).
 
 ### Phase2: User Experience & Scraper Reliability (v2.0 - v2.9)
-**Focus:** Overhauling the UI, making the download process transparent, and fixing all known parsing and extraction bugs[cite:117].
+**Focus:** Overhauling the UI, making the download process transparent, and fixing all known parsing and extraction bugs.
 
 | Version | Feature / Enhancement | Impact |
 | :--- | :--- | :--- |
@@ -74,11 +48,24 @@ This project is developed in phases. The current `v1.10.0-beta` work completes P
 | v2.5 | **Branding & Polish** | Designs and implements a final application icon and logo. Integrates a proper name (replacing "AutoDownloader"). |
 
 ### Phase3: Advanced Automation & Expansion (v3.0+)
-**Focus:** Adding high-value, complex features like multi-source content syncing, external file processing, and advanced configuration[cite:120].
+**Focus:** Adding high-value, complex features like multi-source content syncing, external file processing, and advanced configuration.
 
 | Version | Feature / Enhancement | Scope |
 | :--- | :--- | :--- |
-| v3.0 | **External Subtitle Integration** | Adds option to search external subtitle databases (e.g., OpenSubtitles) and download/rename subtitles when none are provided by the streaming source. [cite:121] |
-| v3.1 | **Advanced Download Manager API** | Integrates API calls to popular external download managers (like IDM) for specific URLs. [cite:121] |
-| v3.2 | **Metadata XML Save/Load** | **CRITICAL FIX:** Fully implements saving/loading metadata into a local `series.xml` file. This solves the **"already downloaded season"** bug by tracking local state. [cite:121] |
-| v3.5 | **Profile Management** | Allows users to save and load different configurations (e.g., "Standard Quality Profile," "4K Max Profile") in the Preferences window. [cite:121] |
+| v3.0 | **External Subtitle Integration** | Adds option to search external subtitle databases (e.g., OpenSubtitles) and download/rename subtitles when none are provided by the streaming source. |
+| v3.1 | **Advanced Download Manager API** | Integrates API calls to popular external download managers (like IDM) for specific URLs. |
+| v3.2 | **Metadata XML Save/Load** | Fully implements saving/loading metadata into a local `series_metadata.xml` file. This solves the **"already downloaded season"** bug by tracking local state. |
+
+---
+
+## How to open a PR
+- Create a branch, commit changes, push to origin and open a PR referencing the related issue numbers. Example branch used: `fix/url-parser-sanitization-playwright-ci` (commit `6c1d75b`).
+
+---
+
+## How we closed critical issues in v1.10.0-beta
+See the PR `fix/url-parser-sanitization-playwright-ci` for the precise commits and unit-test suggestions. The PR contains the implementation details and developer notes useful for maintainers and reviewers.
+
+---
+
+For additional developer guidance, see the Developer Log via View → Log in the app to export or inspect debug runs. If you want me to open the PR and post issue comments automatically I can do that if you provide a GitHub token or authenticate the `gh` CLI locally.
