@@ -1,10 +1,13 @@
-<Project>
+﻿<Project>
 
   <!-- One place to set the version. Previously the title bar, the welcome text and the CLI
        each carried their own hardcoded string and disagreed with each other. -->
   <PropertyGroup>
-    <VersionPrefix>1.11.0</VersionPrefix>
-    <VersionSuffix>beta</VersionSuffix>
+    <!-- 2.0.0: the version the project had already earmarked for this work in AD-049.
+         Not a feature count - 1.x could not reliably download a season at all, and the
+         CLI is a new public interface, so the jump is about what the thing now is. -->
+    <VersionPrefix>2.0.0</VersionPrefix>
+    <VersionSuffix></VersionSuffix>
     <Product>AutoDownloader</Product>
     <Company>Neo Gentrics</Company>
   </PropertyGroup>
