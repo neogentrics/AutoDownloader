@@ -248,19 +248,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
                 // Cookies are opt-in. yt-dlp treats an unreadable cookie source as FATAL, so
                 // hardcoding a browser here broke every machine without that browser installed.
-                if (!string.IsNullOrWhiteSpace(_cookieSource))
-                {
-                    if (File.Exists(_cookieSource))
-                    {
-                        startInfo.ArgumentList.Add("--cookies");
-                        startInfo.ArgumentList.Add(_cookieSource);
-                    }
-                    else
-                    {
-                        startInfo.ArgumentList.Add("--cookies-from-browser");
-                        startInfo.ArgumentList.Add(_cookieSource);
-                    }
-                }
+                AddCookieArguments(startInfo);
 
                 // Output template
                 startInfo.ArgumentList.Add("-o");
@@ -641,10 +629,18 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// </summary>
         private void AddCookieArguments(ProcessStartInfo startInfo)
         {
-            if (string.IsNullOrWhiteSpace(_cookieSource)) return;
+            if (CookieSourceSpec.IsNone(_cookieSource)) return;
 
-            if (File.Exists(_cookieSource))
+            if (CookieSourceSpec.IsFilePath(_cookieSource))
             {
+                // Classified by shape, not existence. A mistyped path used to fall through to
+                // --cookies-from-browser, where yt-dlp reported an unknown browser instead of
+                // a missing file.
+                if (!File.Exists(_cookieSource))
+                {
+                    OnOutputReceived?.Invoke($"[WARN] Cookies file not found: {_cookieSource}");
+                }
+
                 startInfo.ArgumentList.Add("--cookies");
                 startInfo.ArgumentList.Add(_cookieSource);
             }
