@@ -110,7 +110,20 @@ jobs:
         with:
           tag_name: ${{ steps.tag_analysis.outputs.TAG_NAME }}
           name: ${{ steps.tag_analysis.outputs.RELEASE_NAME }}
-          body: "Release ${{ github.ref_name }}. See the project page for the full changelog."
+          # The old body pointed at "the project page", which was the GitHub Pages site
+          # that has since been retired. Notes are generated from the commits instead,
+          # so a release describes itself rather than linking somewhere that is gone.
+          body: |
+            Windows build of AutoDownloader ${{ github.ref_name }}.
+
+            Download `AutoDownloader_${{ github.ref_name }}.zip` below and run
+            `AutoDownloader.exe`. The headless CLI, `autodl.exe`, ships in the same
+            folder. Both are self-contained, so no .NET install is needed.
+
+            See the [README](https://github.com/neogentrics/AutoDownloader#readme) for
+            setup and the [issue register](https://github.com/neogentrics/AutoDownloader/blob/master/docs/ISSUE-REGISTER.md)
+            for what is fixed and what is still open.
+          generate_release_notes: true
           prerelease: ${{ steps.tag_analysis.outputs.IS_PRERELEASE }}
           files: |
             AutoDownloader_${{ github.ref_name }}.zip
