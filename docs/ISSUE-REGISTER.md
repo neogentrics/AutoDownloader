@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-050`**
+**Next free ID: `AD-062`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -39,6 +39,22 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-027 | [#50](https://github.com/neogentrics/AutoDownloader/issues/50) | No progress bar, percentage, speed or ETA during downloads | feature | high |
 | AD-030 | [#52](https://github.com/neogentrics/AutoDownloader/issues/52) | No headless CLI entry point for unattended runs | feature | high |
 | AD-023 | [#46](https://github.com/neogentrics/AutoDownloader/issues/46) | TVDB access is ~200 lines of reflection that swallows every failure | task | high |
+| AD-050 | - | Indexer collects other series' episodes from the sidebar and footer | bug | high |
+| AD-051 | - | Cookie source is not checked before a run, and the version string is duplicated in four places | bug | medium |
+| AD-052 | - | A show name matching more than one series is resolved silently, often to the wrong one | feature | high |
+| AD-053 | - | A name yt-dlp cannot write aborts the download instead of being retried | bug | high |
+| AD-054 | - | DRM-protected content is reported as a download failure | feature | medium |
+| AD-055 | - | No way to get files into a format the target device can play | feature | high |
+| AD-056 | - | An unsupported site fails with no indication that the site is the problem | feature | high |
+| AD-057 | - | Verification counts an incomplete source as a failed download | bug | medium |
+| AD-058 | - | No watch list, so a returning series has to be started by hand every time | feature | high |
+| AD-059 | - | Episode links are found by keyword, so listings that do not use those words are missed | bug | high |
+| AD-060 | - | A listing spanning several pages yields only the first page of episodes | bug | high |
+| AD-061 | - | An episode already on disk is skipped silently, with no way to replace it | feature | high |
+
+Rows with `-` in the `#` column were found and fixed in the same session, so they were
+recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
+the thing that travels.
 
 ## Open
 

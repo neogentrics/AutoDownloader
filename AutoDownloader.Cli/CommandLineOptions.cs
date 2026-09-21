@@ -40,6 +40,9 @@ namespace AutoDownloader.Cli
         /// <summary>Suppress progress and per-line logging; only report the outcome.</summary>
         public bool Quiet { get; set; }
 
+        /// <summary>Replace files already on disk instead of keeping them.</summary>
+        public bool Overwrite { get; set; }
+
         /// <summary>Add this URL to the watch list instead of downloading now.</summary>
         public string? WatchAdd { get; set; }
 
@@ -188,6 +191,10 @@ namespace AutoDownloader.Cli
                         options.ReplaceOriginals = true;
                         break;
 
+                    case "--overwrite":
+                        options.Overwrite = true;
+                        break;
+
                     case "--no-archive":
                         options.NoArchive = true;
                         break;
@@ -257,6 +264,8 @@ OPTIONS
   -q, --quality <format>       yt-dlp format string, e.g. ""bestvideo+bestaudio/best"".
       --cookies <value>        Browser name (firefox, chrome, ...) or a cookies.txt
                                path. Defaults to the saved setting, normally none.
+      --overwrite              Replace episodes already on disk. Without this they are
+                               kept, since an unattended run should not destroy files.
       --no-archive             Do not skip episodes recorded as already downloaded.
       --no-ffmpeg              Do not download ffmpeg if it is missing.
       --json                   Print a JSON summary on stdout instead of prose.

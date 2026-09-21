@@ -1,0 +1,78 @@
+﻿<Window x:Class="AutoDownloader.UI.ConfirmOverwriteWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="This episode is already downloaded" Height="300" Width="600"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        FontFamily="Segoe UI"
+        Background="#FF1E1E1E"
+        Loaded="Window_Loaded">
+
+    <Window.Resources>
+        <Style x:Key="ChoiceButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,7"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" CornerRadius="5" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.85"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="18">
+
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock x:Name="HeadingTextBlock" Foreground="White" FontSize="15" FontWeight="SemiBold"
+                       TextWrapping="Wrap"/>
+
+            <Border Background="#FF2D2D2D" CornerRadius="5" Padding="12" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock x:Name="FileNameTextBlock" Foreground="#FFDDDDDD" FontFamily="Consolas"
+                               FontSize="12" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="FileDetailTextBlock" Foreground="#FF9A9A9A" FontSize="12"
+                               Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Foreground="#FFB0B0B0" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0"
+                       Text="Keeping it is the safe choice. Replace it if the existing file is incomplete, or if you are re-downloading at a different quality."/>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="KeepButton" Content="Keep" Width="90"
+                        Style="{StaticResource ChoiceButtonStyle}" Background="#FF28A745"
+                        Click="Keep_Click"/>
+                <Button Content="Keep All" Width="100"
+                        Style="{StaticResource ChoiceButtonStyle}" Background="#FF4A7A4A"
+                        Click="KeepAll_Click"/>
+                <Button Content="Replace" Width="100"
+                        Style="{StaticResource ChoiceButtonStyle}" Background="#FFB06A20"
+                        Click="Replace_Click"/>
+                <Button Content="Replace All" Width="110"
+                        Style="{StaticResource ChoiceButtonStyle}" Background="#FFA02020"
+                        Click="ReplaceAll_Click"/>
+                <Button Content="Cancel" Width="80"
+                        Style="{StaticResource ChoiceButtonStyle}" Background="#FF6C757D"
+                        Click="Cancel_Click"/>
+            </StackPanel>
+        </StackPanel>
+
+        <Grid/>
+    </DockPanel>
+</Window>

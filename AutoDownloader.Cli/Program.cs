@@ -161,7 +161,8 @@ namespace AutoDownloader.Cli
                 ytDlpService,
                 new AutoConfirmPrompt())
             {
-                CookieSource = cookieSource
+                CookieSource = cookieSource,
+                AlwaysOverwrite = options.Overwrite
             };
 
             // ---------------------------------------------------------------- output
@@ -208,6 +209,7 @@ namespace AutoDownloader.Cli
                     season = result.SeasonNumber,
                     episodesSucceeded = result.EpisodesSucceeded,
                     episodesFailed = result.EpisodesFailed,
+                    episodesAlreadyPresent = result.EpisodesAlreadyPresent,
                     episodesDrmProtected = result.EpisodesProtected,
                     expectedEpisodeCount = result.ExpectedEpisodeCount,
                     episodesOfferedBySource = result.EpisodesOffered,
@@ -225,7 +227,14 @@ namespace AutoDownloader.Cli
             // ---------------------------------------------------------------- exit code
             if (result.Cancelled) return ExitCancelled;
             if (!result.Completed) return ExitFailed;
-            if (result.FilesAdded == 0 && result.EpisodesSucceeded == 0) return ExitNothingDownloaded;
+            // A run that found everything already on disk did its job: nothing was missing.
+            // Reporting that as "nothing downloaded" would make a nightly watch-list run look
+            // like a failure to a scheduler on every night that had no new episode.
+            if (result.FilesAdded == 0 && result.EpisodesSucceeded == 0
+                && result.EpisodesAlreadyPresent == 0)
+            {
+                return ExitNothingDownloaded;
+            }
 
             return ExitCompleted;
         }

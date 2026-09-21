@@ -50,6 +50,18 @@ namespace AutoDownloader.Services.Orchestration
         /// </summary>
         private bool _sourceUnsupported;
 
+        /// <summary>
+        /// Set once the user answers "all" to an overwrite question, so a season does not ask
+        /// the same thing twelve times. Reset at the start of every job.
+        /// </summary>
+        private bool _overwriteAll;
+        private bool _skipAll;
+
+        /// <summary>
+        /// When true, existing files are replaced without asking. Set by --overwrite.
+        /// </summary>
+        public bool AlwaysOverwrite { get; set; }
+
         /// <summary>Tracks which episode progress readings belong to.</summary>
         private int _currentEpisodeIndex;
         private int _currentEpisodeCount;
@@ -123,6 +135,9 @@ namespace AutoDownloader.Services.Orchestration
             // The Anime/TV Shows/Playlists choice used to be computed and then discarded,
             // because the metadata phase unconditionally rebuilt the path under "TV Shows".
             string categoryFolder = "TV Shows";
+
+            _overwriteAll = AlwaysOverwrite;
+            _skipAll = false;
 
             var metadata = new DownloadMetadata { SourceUrl = finalUrl };
 
@@ -331,12 +346,13 @@ namespace AutoDownloader.Services.Orchestration
             {
                 if (episodeLinks.Count > 0)
                 {
-                    var (succeeded, failed, protectedCount) = await DownloadEpisodesAsync(
+                    var (succeeded, failed, protectedCount, alreadyPresent) = await DownloadEpisodesAsync(
                         episodeLinks, metadata, finalOutputFolder, cancellationToken).ConfigureAwait(false);
 
                     result.EpisodesSucceeded = succeeded;
                     result.EpisodesFailed = failed;
                     result.EpisodesProtected = protectedCount;
+                    result.EpisodesAlreadyPresent = alreadyPresent;
                 }
                 else if (_sourceUnsupported)
                 {
@@ -801,7 +817,7 @@ namespace AutoDownloader.Services.Orchestration
         /// Downloads each episode individually, naming it from the merged metadata rather than
         /// from whatever the site happens to expose.
         /// </summary>
-        private async Task<(int Succeeded, int Failed, int Protected)> DownloadEpisodesAsync(
+        private async Task<(int Succeeded, int Failed, int Protected, int AlreadyPresent)> DownloadEpisodesAsync(
             List<EpisodeLink> links,
             DownloadMetadata metadata,
             string outputFolder,
@@ -816,6 +832,7 @@ namespace AutoDownloader.Services.Orchestration
             int succeeded = 0;
             int failed = 0;
             int protectedCount = 0;
+            int alreadyPresent = 0;
 
             for (int i = 0; i < links.Count; i++)
             {
@@ -833,6 +850,61 @@ namespace AutoDownloader.Services.Orchestration
                 _currentEpisodeCount = links.Count;
                 _currentEpisodeLabel = $"S{metadata.NextSeasonNumber:00}E{episodeNumber:00}";
 
+                // Ask before replacing anything already on disk. Previously an existing file
+                // was skipped silently, which is a sensible default and a poor answer when the
+                // existing file is precisely the one you wanted to replace.
+                bool forceOverwrite = false;
+
+                var existing = YtDlpService.FindExistingEpisode(
+                    showTitle, metadata.NextSeasonNumber, episodeNumber, episodeTitle, outputFolder);
+
+                if (existing != null)
+                {
+                    if (_skipAll)
+                    {
+                        alreadyPresent++;
+                        Log($"--- {_currentEpisodeLabel}: already present, keeping it. ---", JobLogLevel.Notice);
+                        continue;
+                    }
+
+                    if (_overwriteAll)
+                    {
+                        forceOverwrite = true;
+                    }
+                    else
+                    {
+                        var decision = await _prompt
+                            .ConfirmOverwriteAsync(existing, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        switch (decision)
+                        {
+                            case OverwriteDecision.Cancel:
+                                Log("--- Stopped by the user. ---", JobLogLevel.Error);
+                                return (succeeded, failed, protectedCount, alreadyPresent);
+
+                            case OverwriteDecision.SkipAll:
+                                _skipAll = true;
+                                goto case OverwriteDecision.Skip;
+
+                            case OverwriteDecision.Skip:
+                                alreadyPresent++;
+                                Log($"--- {_currentEpisodeLabel}: already present, keeping it. ---", JobLogLevel.Notice);
+                                continue;
+
+                            case OverwriteDecision.OverwriteAll:
+                                _overwriteAll = true;
+                                goto case OverwriteDecision.Overwrite;
+
+                            case OverwriteDecision.Overwrite:
+                                forceOverwrite = true;
+                                Log($"--- {_currentEpisodeLabel}: replacing the existing file "
+                                    + $"({existing.SizeDisplay}). ---", JobLogLevel.Notice);
+                                break;
+                        }
+                    }
+                }
+
                 Status($"Downloading {showTitle} {_currentEpisodeLabel} ({i + 1} of {links.Count})");
 
                 var outcome = await _ytDlpService.DownloadEpisodeAsync(
@@ -841,7 +913,9 @@ namespace AutoDownloader.Services.Orchestration
                     metadata.NextSeasonNumber,
                     episodeNumber,
                     episodeTitle,
-                    outputFolder).ConfigureAwait(false);
+                    outputFolder,
+                    referer: null,
+                    forceOverwrite: forceOverwrite).ConfigureAwait(false);
 
                 // Protected content is encrypted at source. Watching the page's network
                 // traffic cannot recover it, so skip the fallback rather than spending
@@ -902,6 +976,7 @@ namespace AutoDownloader.Services.Orchestration
             }
 
             string summary = $"{succeeded} succeeded, {failed} failed";
+            if (alreadyPresent > 0) summary += $", {alreadyPresent} already present";
             if (protectedCount > 0) summary += $", {protectedCount} DRM protected";
 
             Log($"--- Finished: {summary}, out of {links.Count}. ---",
@@ -913,7 +988,7 @@ namespace AutoDownloader.Services.Orchestration
                     + "downloaded by any tool; it is not a fault in the app. ---", JobLogLevel.Error);
             }
 
-            return (succeeded, failed, protectedCount);
+            return (succeeded, failed, protectedCount, alreadyPresent);
         }
 
         /// <summary>

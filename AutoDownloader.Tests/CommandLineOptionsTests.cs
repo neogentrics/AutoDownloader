@@ -1,4 +1,4 @@
-using AutoDownloader.Cli;
+﻿using AutoDownloader.Cli;
 
 namespace AutoDownloader.Tests
 {
@@ -141,6 +141,25 @@ namespace AutoDownloader.Tests
             var o = CommandLineOptions.Parse(new[] { flag });
 
             Assert.IsTrue(o.Version);
+            Assert.IsFalse(o.HasError);
+        }
+
+        [TestMethod]
+        public void Parse_OverwriteIsOffUnlessAskedFor()
+        {
+            // The CLI is what scheduled runs use, so the flag has to be opt-in: an unattended
+            // job must never replace a library because a default said it could.
+            var o = CommandLineOptions.Parse(new[] { "https://example.com/show" });
+
+            Assert.IsFalse(o.Overwrite);
+        }
+
+        [TestMethod]
+        public void Parse_OverwriteFlagIsPickedUp()
+        {
+            var o = CommandLineOptions.Parse(new[] { "https://example.com/show", "--overwrite" });
+
+            Assert.IsTrue(o.Overwrite);
             Assert.IsFalse(o.HasError);
         }
 

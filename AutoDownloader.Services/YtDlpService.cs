@@ -552,6 +552,54 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// metadata at all: the show title, season and episode number come from TMDB/TVDB and
         /// the page ordering, never from the site, so nothing is left to guess.
         /// </summary>
+        /// <summary>
+        /// Returns the episode's existing file, if one is already on disk.
+        ///
+        /// Matched on the show/season/episode part of the name rather than the whole thing, so
+        /// a file written under an older episode title is recognised as the same episode
+        /// instead of being downloaded again alongside it.
+        /// </summary>
+        public static ExistingEpisode? FindExistingEpisode(
+            string showTitle, int seasonNumber, int episodeNumber, string? episodeTitle, string outputFolder)
+        {
+            try
+            {
+                string seasonFolder = Path.Combine(outputFolder, $"Season {seasonNumber:00}");
+                if (!Directory.Exists(seasonFolder)) return null;
+
+                string prefix = $"{EscapeTemplateLiteral(showTitle)} - S{seasonNumber:00}E{episodeNumber:00}";
+
+                string[] videoExtensions = { ".mp4", ".mkv", ".webm", ".avi", ".m4v", ".mov" };
+
+                var match = Directory
+                    .EnumerateFiles(seasonFolder, "*.*", SearchOption.TopDirectoryOnly)
+                    .Where(f => videoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                    .FirstOrDefault(f => Path.GetFileName(f).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
+                if (match == null) return null;
+
+                var info = new FileInfo(match);
+
+                return new ExistingEpisode
+                {
+                    Path = match,
+                    SizeBytes = info.Length,
+                    LastModified = info.LastWriteTime,
+                    EpisodeLabel = $"S{seasonNumber:00}E{episodeNumber:00}",
+                    EpisodeTitle = episodeTitle
+                };
+            }
+            catch
+            {
+                // Never let a permissions problem here stop a download being attempted.
+                return null;
+            }
+        }
+
+        /// <param name="forceOverwrite">
+        /// Replace an existing file. This also bypasses the download archive, since an episode
+        /// already recorded there would be skipped before the file was even examined.
+        /// </param>
         public async Task<EpisodeDownloadOutcome> DownloadEpisodeAsync(
             string url,
             string showTitle,
@@ -559,7 +607,8 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             int episodeNumber,
             string? episodeTitle,
             string outputFolder,
-            string? referer = null)
+            string? referer = null,
+            bool forceOverwrite = false)
         {
             if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath))
             {
@@ -582,7 +631,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
             try { Directory.CreateDirectory(Path.Combine(outputFolder, seasonFolder)); } catch { }
 
-            var startInfo = BuildCommonStartInfo(outputFolder);
+            var startInfo = BuildCommonStartInfo(outputFolder, forceOverwrite);
 
             // A stream URL captured from a player is usually only served to requests carrying
             // the originating page as referer.
@@ -688,7 +737,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// <summary>
         /// The flags shared by every yt-dlp invocation that actually downloads something.
         /// </summary>
-        private ProcessStartInfo BuildCommonStartInfo(string outputFolder)
+        private ProcessStartInfo BuildCommonStartInfo(string outputFolder, bool forceOverwrite = false)
         {
             var startInfo = new ProcessStartInfo
             {
@@ -704,7 +753,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             startInfo.ArgumentList.Add("--windows-filenames");
             startInfo.ArgumentList.Add("--embed-metadata");
             startInfo.ArgumentList.Add("--ignore-errors");
-            startInfo.ArgumentList.Add("--no-overwrites");
+            startInfo.ArgumentList.Add(forceOverwrite ? "--force-overwrites" : "--no-overwrites");
             AddProgressArguments(startInfo);
 
             if (!string.IsNullOrWhiteSpace(_ffmpegPath) && File.Exists(_ffmpegPath))
@@ -713,7 +762,9 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 startInfo.ArgumentList.Add(_ffmpegPath);
             }
 
-            if (_useDownloadArchive)
+            // Skipped when overwriting deliberately: an episode already recorded in the
+            // archive would be passed over before the file was even looked at.
+            if (_useDownloadArchive && !forceOverwrite)
             {
                 startInfo.ArgumentList.Add("--download-archive");
                 startInfo.ArgumentList.Add(Path.Combine(outputFolder, "downloaded.txt"));

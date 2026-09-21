@@ -51,6 +51,13 @@ namespace AutoDownloader.Services.Orchestration
         public int EpisodesFailed { get; set; }
 
         /// <summary>
+        /// Episodes left alone because a copy was already on disk and the answer was to keep
+        /// it. Counted apart from failures: nothing went wrong, the work was simply not
+        /// needed.
+        /// </summary>
+        public int EpisodesAlreadyPresent { get; set; }
+
+        /// <summary>
         /// Episodes skipped because the content is DRM protected. Counted separately from
         /// failures: these cannot be downloaded by any means, so they are not worth retrying
         /// and should not read as a fault in the app.

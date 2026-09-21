@@ -53,5 +53,20 @@ namespace AutoDownloader.UI
                 return chosen == true ? dialog.SelectedSeries : null;
             }).Task;
         }
+
+        public Task<OverwriteDecision> ConfirmOverwriteAsync(
+            ExistingEpisode existing, CancellationToken cancellationToken = default)
+        {
+            return _owner.Dispatcher.InvokeAsync(() =>
+            {
+                var dialog = new ConfirmOverwriteWindow(existing) { Owner = _owner };
+
+                // Auto-answers "Keep" after 30 seconds, so an unattended run never destroys a
+                // file because nobody was there to say otherwise.
+                dialog.ShowDialog();
+
+                return dialog.Decision;
+            }).Task;
+        }
     }
 }

@@ -38,6 +38,17 @@ namespace AutoDownloader.Services.Orchestration
             IReadOnlyList<SeriesCandidate> candidates,
             SeriesCandidate? suggested,
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Asks what to do about an episode already present on disk.
+        ///
+        /// Previously these were skipped silently, which is a reasonable default and a poor
+        /// answer when the existing file is the one you wanted to replace - a truncated
+        /// download, or a better source found since.
+        /// </summary>
+        Task<OverwriteDecision> ConfirmOverwriteAsync(
+            ExistingEpisode existing,
+            CancellationToken cancellationToken = default);
     }
 
     /// <summary>
@@ -60,5 +71,13 @@ namespace AutoDownloader.Services.Orchestration
             SeriesCandidate? suggested,
             CancellationToken cancellationToken = default)
             => Task.FromResult(suggested ?? (candidates.Count > 0 ? candidates[0] : null));
+
+        /// <summary>
+        /// Keeps what is already there. An unattended run must not silently re-download a
+        /// library, and must never destroy a file nobody asked it to replace.
+        /// </summary>
+        public Task<OverwriteDecision> ConfirmOverwriteAsync(
+            ExistingEpisode existing, CancellationToken cancellationToken = default)
+            => Task.FromResult(OverwriteDecision.SkipAll);
     }
 }
