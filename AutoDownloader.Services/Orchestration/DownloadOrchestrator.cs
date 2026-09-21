@@ -219,68 +219,60 @@ namespace AutoDownloader.Services.Orchestration
                 return result;
             }
 
-            Log($"--- Searching TMDB and TVDB for: '{confirmedTarget}' (season {metadata.NextSeasonNumber}) ---");
-
-            // Work out whether the name identifies one show before looking anything up. A
-            // name can be exactly right and still match both a series and its reboot, and
-            // taking the first result produced plausible names from the wrong show entirely.
+            // Resolve the show, then fall back to simpler forms of the name, and finally ask
+            // for a different one.
+            //
+            // Names taken from a page title carry qualifiers the databases do not have:
+            // "Megaman Star Force Anime" returns nothing at all while "Megaman Star Force"
+            // returns the show. Aborting the whole download over a trailing word - after a
+            // dialog that auto-confirmed - was a poor way to spend the user's time.
+            MergedSeriesMetadata? merged = null;
+            string attemptName = confirmedTarget!;
             int? preferredYear = null;
 
-            try
+            for (int attempt = 0; attempt < 3 && merged == null; attempt++)
             {
-                var candidates = await _metadataService
-                    .SearchCandidatesAsync(confirmedTarget!)
-                    .ConfigureAwait(false);
+                if (cancellationToken.IsCancellationRequested) return Cancelled(result);
 
-                var selection = SeriesSelector.Choose(confirmedTarget!, candidates);
-
-                if (selection.Kind == SeriesSelectionKind.Ambiguous && selection.Candidates.Count > 1)
+                if (attempt > 0)
                 {
-                    Log($"--- {selection.Reason}. Asking which one. ---", JobLogLevel.Notice);
+                    Log($"--- Nothing matched '{attemptName}'. Asking for a different name. ---",
+                        JobLogLevel.Warning);
 
-                    var chosen = await _prompt
-                        .ChooseSeriesAsync(confirmedTarget!, selection.Candidates, selection.Selected, cancellationToken)
+                    string? retry = await _prompt
+                        .ConfirmShowNameAsync(attemptName, cancellationToken)
                         .ConfigureAwait(false);
 
-                    if (chosen == null)
+                    if (string.IsNullOrWhiteSpace(retry))
                     {
-                        Log("--- No show chosen. Aborting. ---", JobLogLevel.Error);
+                        Log("--- Cancelled. ---", JobLogLevel.Error);
                         return Cancelled(result);
                     }
 
-                    preferredYear = chosen.Year;
-                    confirmedTarget = chosen.Title;
-                    Log($"Using: {chosen.Display} (via {chosen.Source})", JobLogLevel.Notice);
-                }
-                else if (selection.Selected != null)
-                {
-                    preferredYear = selection.Selected.Year;
-                    Log($"Matched: {selection.Selected.Display} ({selection.Reason})", JobLogLevel.Notice);
-                }
-            }
-            catch (Exception ex)
-            {
-                // Non-fatal: fall back to the plain lookup below.
-                Log($"Could not list candidate shows: {ex.Message}", JobLogLevel.Warning);
-            }
+                    // Unchanged means there is nothing new to try - and it is also how a
+                    // non-interactive prompt answers, so this is what stops the loop.
+                    if (string.Equals(retry.Trim(), attemptName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
 
-            MergedSeriesMetadata? merged;
-            try
-            {
-                merged = await _metadataService
-                    .GetMergedMetadataAsync(confirmedTarget!, metadata.NextSeasonNumber, preferredYear)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Log($"--- Metadata lookup failed: {ex.Message} ---", JobLogLevel.Error);
-                result.FailureReason = ex.Message;
-                return result;
+                    attemptName = retry.Trim();
+                }
+
+                var resolved = await TryResolveSeriesAsync(
+                    attemptName, metadata.NextSeasonNumber, cancellationToken).ConfigureAwait(false);
+
+                if (resolved.Cancelled) return Cancelled(result);
+
+                merged = resolved.Merged;
+                preferredYear = resolved.Year;
+
+                if (merged != null) confirmedTarget = resolved.MatchedName ?? attemptName;
             }
 
             if (merged == null)
             {
-                Log($"Could not find official metadata for '{confirmedTarget}'. Download aborted.", JobLogLevel.Error);
+                Log($"Could not find official metadata for '{attemptName}'. Download aborted.", JobLogLevel.Error);
                 result.FailureReason = "No metadata found.";
                 return result;
             }
@@ -387,6 +379,90 @@ namespace AutoDownloader.Services.Orchestration
         {
             result.Cancelled = true;
             return result;
+        }
+
+        /// <summary>
+        /// Looks a show up, trying progressively simpler forms of the name.
+        ///
+        /// Returns as soon as one form resolves. Cancelled is set when the user declined to
+        /// choose between candidates, which is a deliberate stop rather than a failure.
+        /// </summary>
+        private async Task<(MergedSeriesMetadata? Merged, int? Year, string? MatchedName, bool Cancelled)>
+            TryResolveSeriesAsync(string searchTerm, int seasonNumber, CancellationToken cancellationToken)
+        {
+            foreach (var variant in SearchTermVariants.Generate(searchTerm))
+            {
+                if (cancellationToken.IsCancellationRequested) return (null, null, null, true);
+
+                if (!string.Equals(variant, searchTerm, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log($"--- Retrying without qualifiers: '{variant}' ---", JobLogLevel.Notice);
+                }
+                else
+                {
+                    Log($"--- Searching TMDB and TVDB for: '{variant}' (season {seasonNumber}) ---");
+                }
+
+                string resolvedName = variant;
+                int? preferredYear = null;
+
+                try
+                {
+                    var candidates = await _metadataService
+                        .SearchCandidatesAsync(variant)
+                        .ConfigureAwait(false);
+
+                    if (candidates.Count == 0) continue;
+
+                    // A name can be exactly right and still match both a show and its reboot.
+                    var selection = SeriesSelector.Choose(variant, candidates);
+
+                    if (selection.Kind == SeriesSelectionKind.Ambiguous && selection.Candidates.Count > 1)
+                    {
+                        Log($"--- {selection.Reason}. Asking which one. ---", JobLogLevel.Notice);
+
+                        var chosen = await _prompt
+                            .ChooseSeriesAsync(variant, selection.Candidates, selection.Selected, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        if (chosen == null)
+                        {
+                            Log("--- No show chosen. Aborting. ---", JobLogLevel.Error);
+                            return (null, null, null, true);
+                        }
+
+                        preferredYear = chosen.Year;
+                        resolvedName = chosen.Title;
+                        Log($"Using: {chosen.Display} (via {chosen.Source})", JobLogLevel.Notice);
+                    }
+                    else if (selection.Selected != null)
+                    {
+                        preferredYear = selection.Selected.Year;
+                        resolvedName = selection.Selected.Title;
+                        Log($"Matched: {selection.Selected.Display} ({selection.Reason})", JobLogLevel.Notice);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Non-fatal: the direct lookup below may still succeed.
+                    Log($"Could not list candidate shows: {ex.Message}", JobLogLevel.Warning);
+                }
+
+                try
+                {
+                    var merged = await _metadataService
+                        .GetMergedMetadataAsync(resolvedName, seasonNumber, preferredYear)
+                        .ConfigureAwait(false);
+
+                    if (merged != null) return (merged, preferredYear, resolvedName, false);
+                }
+                catch (Exception ex)
+                {
+                    Log($"--- Metadata lookup failed: {ex.Message} ---", JobLogLevel.Warning);
+                }
+            }
+
+            return (null, null, null, false);
         }
 
         /// <summary>
