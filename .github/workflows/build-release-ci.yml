@@ -1,4 +1,4 @@
-name: Build and Publish Release
+﻿name: Build and Publish Release
 
 on:
   # Tag filters belong on the push event. The previous config used the "create" event
@@ -63,6 +63,15 @@ jobs:
       - name: Publish AutoDownloader.UI
         run: >
           dotnet publish ${{ env.Publish_Project_Path }}
+          -c Release -r win-x64 --self-contained true
+          -o ${{ github.workspace }}/publish_output
+
+      # The CLI ships alongside the app, into the same folder, so it can reuse the
+      # tools the app provisions (yt-dlp, aria2c, ffmpeg) instead of downloading a
+      # second copy of each.
+      - name: Publish AutoDownloader.Cli
+        run: >
+          dotnet publish AutoDownloader.Cli/AutoDownloader.Cli.csproj
           -c Release -r win-x64 --self-contained true
           -o ${{ github.workspace }}/publish_output
 

@@ -1,4 +1,4 @@
-# Roadmap
+﻿# Roadmap
 
 Tracked items use `AD-###` identifiers. See [ISSUE-REGISTER.md](ISSUE-REGISTER.md) for the full
 allocation table and current status.
@@ -64,8 +64,8 @@ download to a single badly-named file.
 
 | ID | Item |
 | :--- | :--- |
-| **AD-026** | Surface the new download settings (cookies, ffmpeg, archive) in Preferences. They exist in `settings.json` but cannot be set from the UI. |
-| **AD-027** | Replace the raw log with a progress bar showing percentage, speed and ETA. |
+| ~~AD-026~~ | ~~Surface the new download settings in Preferences.~~ **Shipped.** |
+| ~~AD-027~~ | ~~Progress bar showing percentage, speed and ETA.~~ **Shipped.** |
 | **AD-023** | Replace the reflection-based TVDB access with the typed `TvDbSharper` API. Every failure is currently swallowed, so "no such show" and "the reflection guessed wrong" are indistinguishable. |
 | **AD-022** | Bound the developer log queue. |
 
@@ -73,7 +73,7 @@ download to a single badly-named file.
 
 | ID | Item |
 | :--- | :--- |
-| **AD-030** | A headless CLI entry point. Most of the work is already done: the orchestrator takes an `IUserPrompt`, and `AutoConfirmPrompt` needs no human. |
+| ~~AD-030~~ | ~~A headless CLI entry point.~~ **Shipped** as `autodl`. |
 | — | A watch list: check a series periodically and fetch new episodes. `series_metadata.xml` and the `yt-dlp` archive already provide the state needed. |
 | **AD-024** | Honour `MaxConcurrentDownloads`, which is currently never read. |
 

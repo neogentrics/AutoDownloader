@@ -1,4 +1,4 @@
-# AutoDownloader
+﻿# AutoDownloader
 
 A Windows desktop application for building a clean, Plex-ready personal media library from
 sources you are entitled to download. It wraps `yt-dlp` and `aria2c`, identifies the series
@@ -93,6 +93,29 @@ Keys are stored in `%APPDATA%\AutoDownloader\settings.json` and are never commit
 
 ---
 
+## Unattended use
+
+The same pipeline is available as a command-line tool, `autodl`, published alongside the
+desktop app. It shares `settings.json`, so API keys configured in Preferences apply here too,
+and it never waits for input.
+
+```bash
+autodl "https://example.com/series/some-show/season-2"
+autodl "https://example.com/series/some-show" --season 3 --out "D:\Media"
+autodl "The Mandalorian" --json --quiet
+```
+
+| Exit code | Meaning |
+| :--- | :--- |
+| 0 | Completed |
+| 1 | Failed |
+| 2 | Bad arguments |
+| 3 | Nothing was downloaded |
+| 130 | Cancelled (Ctrl+C) |
+
+`--json` prints a machine-readable summary on stdout with logs kept on stderr, which is what
+makes it usable from a scheduler or a webhook. Run `autodl --help` for the full option list.
+
 ## Architecture
 
 ```
@@ -101,6 +124,7 @@ AutoDownloader.Services   All logic. References no UI framework.
   Orchestration/          DownloadOrchestrator, IUserPrompt, UrlMetadataParser
   Scrapers/               SeriesIndexer, MediaUrlExtractor, per-site scrapers
 AutoDownloader.UI         WPF. Wiring and presentation only.
+AutoDownloader.Cli        Headless entry point (autodl). No UI dependency.
 AutoDownloader.Tests      Pure-logic unit tests (no network, no browser)
 ```
 
