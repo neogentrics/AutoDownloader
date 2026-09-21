@@ -1,6 +1,5 @@
 ﻿using AutoDownloader.Core; // For the data models (SettingsModel, DownloadMetadata)
 using AutoDownloader.Services; // For all the logic (YtDlpService, SettingsService, etc.)
-using Microsoft.WindowsAPICodePack.Dialogs;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -514,15 +513,14 @@ namespace AutoDownloader.UI
         /// </summary>
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new CommonOpenFileDialog
+            var dialog = new Microsoft.Win32.OpenFolderDialog
             {
-                IsFolderPicker = true,
                 InitialDirectory = OutputFolderTextBox.Text
             };
 
-            if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
+            if (dialog.ShowDialog(this) == true)
             {
-                OutputFolderTextBox.Text = dialog.FileName;
+                OutputFolderTextBox.Text = dialog.FolderName;
             }
         }
 
