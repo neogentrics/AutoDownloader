@@ -366,6 +366,108 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  }
  }
 
+ /// <summary>
+ /// Looks the show up in BOTH TMDB and TVDB and merges the results.
+ ///
+ /// Neither database is complete on its own - TVDB tends to be better for anime and for
+ /// shows with irregular season splits, TMDB for mainstream western TV - so picking one
+ /// or the other (as the old "choose a database" dialog forced you to) loses episode
+ /// titles for no good reason. Querying both and merging by episode number fills gaps
+ /// that either source has on its own.
+ ///
+ /// Both lookups are best-effort: if one fails or has no key, the other still counts.
+ /// </summary>
+ /// <returns>
+ /// The merged result, or null when NEITHER database could identify the show.
+ /// </returns>
+ public async Task<MergedSeriesMetadata?> GetMergedMetadataAsync(string showName, int seasonNumber = 1)
+ {
+ // Run both lookups concurrently; neither depends on the other.
+ var tmdbTask = IsTmdbKeyValid
+ ? GetTmdbMetadataAsync(showName, seasonNumber)
+ : Task.FromResult<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>(null);
+
+ var tvdbTask = IsTvdbKeyValid
+ ? GetTvdbMetadataAsync(showName, seasonNumber)
+ : Task.FromResult<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>(null);
+
+ await Task.WhenAll(tmdbTask, tvdbTask).ConfigureAwait(false);
+
+ var tmdb = tmdbTask.Result;
+ var tvdb = tvdbTask.Result;
+
+ if (tmdb == null && tvdb == null) return null;
+
+ var result = new MergedSeriesMetadata
+ {
+ // Prefer the TMDB title purely for consistency of naming; fall back to TVDB.
+ OfficialTitle = tmdb?.OfficialTitle ?? tvdb?.OfficialTitle ?? showName,
+ TmdbSeriesId = tmdb?.SeriesId,
+ TvdbSeriesId = tvdb?.SeriesId,
+ SeasonNumber = tmdb?.TargetSeasonNumber ?? tvdb?.TargetSeasonNumber ?? seasonNumber,
+ UsedTmdb = tmdb != null,
+ UsedTvdb = tvdb != null,
+ };
+
+ // Gather episode lists from whichever sources identified the show.
+ List<DownloadEpisode> tmdbEpisodes = new List<DownloadEpisode>();
+ List<DownloadEpisode> tvdbEpisodes = new List<DownloadEpisode>();
+
+ if (tmdb != null)
+ {
+ tmdbEpisodes = GetCachedEpisodes(tmdb.Value.SeriesId, result.SeasonNumber)
+ ?? await GetEpisodesForSeasonAsync(tmdb.Value.SeriesId, result.SeasonNumber).ConfigureAwait(false)
+ ?? new List<DownloadEpisode>();
+ }
+
+ if (tvdb != null)
+ {
+ tvdbEpisodes = GetCachedEpisodes(tvdb.Value.SeriesId, result.SeasonNumber) ?? new List<DownloadEpisode>();
+ }
+
+ // Merge by episode number. TMDB titles win where both have one; TVDB fills the gaps
+ // and contributes any episodes TMDB does not list at all.
+ var byNumber = new SortedDictionary<int, DownloadEpisode>();
+
+ foreach (var episode in tvdbEpisodes.Where(e => e.EpisodeNumber > 0))
+ {
+ byNumber[episode.EpisodeNumber] = new DownloadEpisode
+ {
+ EpisodeNumber = episode.EpisodeNumber,
+ EpisodeTitle = episode.EpisodeTitle
+ };
+ }
+
+ foreach (var episode in tmdbEpisodes.Where(e => e.EpisodeNumber > 0))
+ {
+ if (byNumber.TryGetValue(episode.EpisodeNumber, out var existing))
+ {
+ // Keep whichever actually has a title.
+ existing.EpisodeTitle = !string.IsNullOrWhiteSpace(episode.EpisodeTitle)
+ ? episode.EpisodeTitle
+ : existing.EpisodeTitle;
+ }
+ else
+ {
+ byNumber[episode.EpisodeNumber] = new DownloadEpisode
+ {
+ EpisodeNumber = episode.EpisodeNumber,
+ EpisodeTitle = episode.EpisodeTitle
+ };
+ }
+ }
+
+ result.Episodes = byNumber.Values.ToList();
+
+ // Expected count: trust the merged list when we have one, else the higher of the two
+ // reported counts (a database that lists fewer episodes is usually the stale one).
+ result.ExpectedEpisodeCount = result.Episodes.Count > 0
+ ? result.Episodes.Count
+ : Math.Max(tmdb?.ExpectedEpisodeCount ?? 0, tvdb?.ExpectedEpisodeCount ?? 0);
+
+ return result;
+ }
+
  // --- Reflection / helper methods ---
 
  private static async Task<object?> InvokeClientAsyncMethodIfExists(object target, string[] candidateMethodNames, object[] args)
@@ -534,6 +636,31 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  {
  return EpisodeCache.GetEpisodes(seriesId, seasonNumber);
  }
+ }
+
+ /// <summary>
+ /// The combined view of a series as described by TMDB and TVDB together.
+ /// </summary>
+ public class MergedSeriesMetadata
+ {
+ public string OfficialTitle { get; set; } = string.Empty;
+ public int? TmdbSeriesId { get; set; }
+ public int? TvdbSeriesId { get; set; }
+ public int SeasonNumber { get; set; } = 1;
+ public int ExpectedEpisodeCount { get; set; }
+ public List<DownloadEpisode> Episodes { get; set; } = new List<DownloadEpisode>();
+
+ /// <summary>True when TMDB identified the show.</summary>
+ public bool UsedTmdb { get; set; }
+
+ /// <summary>True when TVDB identified the show.</summary>
+ public bool UsedTvdb { get; set; }
+
+ /// <summary>Human-readable summary of which databases contributed, for the log.</summary>
+ public string SourceSummary =>
+ UsedTmdb && UsedTvdb ? "TMDB + TVDB" :
+ UsedTmdb ? "TMDB" :
+ UsedTvdb ? "TVDB" : "none";
  }
 
  // Simple in-memory cache to attach episodes discovered during metadata lookup to the series ID + season

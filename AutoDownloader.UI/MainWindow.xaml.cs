@@ -1,5 +1,6 @@
 ﻿using AutoDownloader.Core; // For the data models (SettingsModel, DownloadMetadata)
-using AutoDownloader.Services; // For all the logic (YtDlpService, SettingsService, etc.)
+using AutoDownloader.Services;
+using AutoDownloader.Services.Scrapers; // For all the logic (YtDlpService, SettingsService, etc.)
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -329,11 +330,11 @@ namespace AutoDownloader.UI
                 }
             }
 
-            // --- PHASE2: Official Metadata Lookup (v1.9.2 Pop-up Strategy) ---
+            // --- PHASE 2: Official metadata, from BOTH databases ---
             AppendLog($"--- Starting metadata lookup for: '{searchTarget}' ---", Brushes.Aqua);
             StatusTextBlock.Text = $"Looking up official metadata for: {searchTarget}";
 
-            // Step1: Confirm the show name (v1.9.2 Pop-up)
+            // Confirm the show name (auto-confirms after 15s so unattended runs still proceed).
             ConfirmNameWindow confirmDialog = new ConfirmNameWindow(searchTarget) { Owner = this };
             bool? confirmResult = confirmDialog.ShowDialog();
 
@@ -345,165 +346,288 @@ namespace AutoDownloader.UI
 
             string confirmedSearchTarget = confirmDialog.ShowName;
 
-            // Step2: Select the database (v1.9.2 Pop-up)
-            SelectDatabaseWindow selectDbDialog = new SelectDatabaseWindow(
-                _metadataService.IsTmdbKeyValid,
-                _metadataService.IsTvdbKeyValid
-            )
-            { Owner = this };
-
-            // Only show the dialog when there is actually a choice to make. Calling ShowDialog
-            // on a window that closed itself in its constructor threw InvalidOperationException.
-            if (!selectDbDialog.HasUsableSource)
+            if (!_metadataService.IsTmdbKeyValid && !_metadataService.IsTvdbKeyValid)
             {
                 AppendLog("--- No metadata API key configured. Set one in Edit -> Preferences. ---", Brushes.Red);
                 return;
             }
 
-            selectDbDialog.ShowDialog();
-            DatabaseSource dbChoice = selectDbDialog.SelectedSource;
+            // Query TMDB and TVDB together and merge. Neither is complete on its own: TVDB is
+            // generally better for anime and irregular season splits, TMDB for mainstream TV.
+            // The old "pick a database" dialog forced an either/or and lost episode titles.
+            AppendLog($"--- Searching TMDB and TVDB for: '{confirmedSearchTarget}' (season {metadataToPass.NextSeasonNumber}) ---", Brushes.Aqua);
 
-            // Step3: Run the selected metadata search
-            (string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)? metadataResult = null;
-
-            if (dbChoice == DatabaseSource.TMDB)
+            MergedSeriesMetadata? merged;
+            try
             {
-                AppendLog($"--- Searching TMDB for: '{confirmedSearchTarget}' (season {metadataToPass.NextSeasonNumber}) ---", Brushes.Aqua);
-                metadataResult = await _metadataService.GetTmdbMetadataAsync(confirmedSearchTarget, metadataToPass.NextSeasonNumber);
+                merged = await _metadataService.GetMergedMetadataAsync(
+                    confirmedSearchTarget, metadataToPass.NextSeasonNumber);
             }
-            else if (dbChoice == DatabaseSource.TVDB)
+            catch (Exception ex)
             {
-                AppendLog($"--- Searching TVDB for: '{confirmedSearchTarget}' (season {metadataToPass.NextSeasonNumber}) ---", Brushes.Aqua);
-                metadataResult = await _metadataService.GetTvdbMetadataAsync(confirmedSearchTarget, metadataToPass.NextSeasonNumber);
-            }
-            else
-            {
-                AppendLog("--- No database selected or canceled. Aborting. ---", Brushes.Red);
+                AppendLog($"--- Metadata lookup failed: {ex.Message} ---", Brushes.Red);
                 return;
             }
 
-            // Step4: Process Metadata and Save XML
-            if (metadataResult != null)
+            if (merged == null)
             {
-                var (officialTitle, seriesId, targetSeasonNumber, expectedCount) = metadataResult.Value;
-
-                AppendLog($"Official Title Found: {officialTitle}", Brushes.Yellow);
-                AppendLog($"Metadata Source: {dbChoice}", Brushes.Yellow);
-
-                // If the URL parser found a season (Case B), override the default season1.
-                if (metadataToPass.NextSeasonNumber !=1)
-                {
-                    AppendLog($"Using Season {metadataToPass.NextSeasonNumber} (Detected from URL)", Brushes.Yellow);
-                }
-                else
-                {
-                    metadataToPass.NextSeasonNumber = targetSeasonNumber; // Use the one from metadata (usually1)
-                }
-
-                AppendLog($"Expected Episode Count: {expectedCount}", Brushes.Yellow);
-
-                metadataToPass.OfficialTitle = officialTitle;
-                metadataToPass.SeriesId = seriesId;
-                metadataToPass.ExpectedEpisodeCount = expectedCount;
-
-                // Create final output folder (e.g., ".../TV Shows/The Mandalorian").
-                // SanitizeFileName exists and was documented as shipped, but its only call site
-                // was commented out - so a title like "Star Wars: The Clone Wars" threw straight
-                // out of Directory.CreateDirectory.
-                var safeTitle = SanitizeFileName(metadataToPass.OfficialTitle ?? "Unknown Show");
-                finalOutputFolder = Path.Combine(baseOutputFolder, categoryFolder, safeTitle);
-                Directory.CreateDirectory(finalOutputFolder);
-
-                // Attempt to fetch episode list for this season and attach to metadata
-                try
-                {
-                    var eps = await _metadataService.GetEpisodesForSeasonAsync(seriesId, metadataToPass.NextSeasonNumber);
-                    if (eps != null && eps.Any())
-                    {
-                        metadataToPass.Episodes = eps;
-                        AppendLog($"--- Found {eps.Count} episode(s) for Season {metadataToPass.NextSeasonNumber}. ---", Brushes.Yellow);
-                    }
-                    else
-                    {
-                        AppendLog("--- Episode list not found via metadata service; XML will contain only season summary. ---", Brushes.Orange);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"--- Failed to retrieve episode list: {ex.Message} ---", Brushes.Orange);
-                }
-
-                // V1.9.2 FIX: Save the metadata XML to the show's root folder (including episodes if available)
-                AppendLog("--- Saving metadata to local series.xml... ---", Brushes.Yellow);
-                await _xmlService.SaveMetadataAsync(finalOutputFolder, metadataToPass);
-                AppendLog("--- Metadata saved successfully. ---", Brushes.Green);
-            }
-            else
-            {
-                // CRITICAL FIX (Closes Issue #13)
                 AppendLog($"Could not find official metadata for '{confirmedSearchTarget}'. Download aborted.", Brushes.Red);
                 return;
             }
 
-            // --- PHASE3: Download and Verification Logic ---
+            AppendLog($"Official Title Found: {merged.OfficialTitle}", Brushes.Yellow);
+            AppendLog($"Metadata Source: {merged.SourceSummary}", Brushes.Yellow);
+            AppendLog($"Season {merged.SeasonNumber}: {merged.ExpectedEpisodeCount} expected episode(s), {merged.Episodes.Count} title(s) known.", Brushes.Yellow);
 
-            // Must use exactly the same expression YtDlpService writes into its output
-            // template, or this counts files in a folder that was never created.
+            metadataToPass.OfficialTitle = merged.OfficialTitle;
+            metadataToPass.SeriesId = merged.TmdbSeriesId ?? merged.TvdbSeriesId;
+            metadataToPass.NextSeasonNumber = merged.SeasonNumber;
+            metadataToPass.ExpectedEpisodeCount = merged.ExpectedEpisodeCount;
+            metadataToPass.Episodes = merged.Episodes;
+
+            // SanitizeFileName is essential here: a title such as "Star Wars: The Clone Wars"
+            // throws straight out of Directory.CreateDirectory otherwise.
+            var safeTitle = SanitizeFileName(merged.OfficialTitle);
+            finalOutputFolder = Path.Combine(baseOutputFolder, categoryFolder, safeTitle);
+            Directory.CreateDirectory(finalOutputFolder);
+
+            // Persist what we know before downloading anything, so an interrupted run still
+            // leaves a usable record of the season.
+            AppendLog("--- Saving metadata to series_metadata.xml... ---", Brushes.Yellow);
+            await _xmlService.SaveMetadataAsync(finalOutputFolder, metadataToPass);
+            AppendLog("--- Metadata saved. ---", Brushes.Green);
+
+            // --- PHASE 3: Work out what to download ---
+
+            List<EpisodeLink> episodeLinks = await BuildEpisodePlanAsync(finalUrl, metadataToPass);
+
             string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
 
-            // Count files *before* download
-            int filesBefore =0;
-            if (Directory.Exists(finalSeasonFolder))
-            {
-                filesBefore = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
-                    .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase));
-            }
+            int filesBefore = CountVideoFiles(finalSeasonFolder);
 
-            // Execute Download
-            StatusTextBlock.Text = $"Downloading: {metadataToPass.SourceUrl}";
+            // --- PHASE 4: Download ---
             try
             {
-                await _ytDlpService.DownloadVideoAsync(metadataToPass, finalOutputFolder);
+                if (episodeLinks.Count > 0)
+                {
+                    await DownloadEpisodesAsync(episodeLinks, metadataToPass, finalOutputFolder);
+                }
+                else
+                {
+                    // Nothing could be enumerated. Hand the original URL to yt-dlp whole and
+                    // let it do whatever it can with it.
+                    AppendLog("--- No episode list could be built; passing the URL to yt-dlp directly. ---", Brushes.Orange);
+                    StatusTextBlock.Text = $"Downloading: {metadataToPass.SourceUrl}";
+                    await _ytDlpService.DownloadVideoAsync(metadataToPass, finalOutputFolder);
+                }
             }
             catch (Exception ex)
             {
                 AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
             }
 
-            // Run Content Verification
-            int filesAfter =0;
-            int filesDownloaded =0;
+            // --- PHASE 5: Verify ---
+            int filesAfter = CountVideoFiles(finalSeasonFolder);
+            int filesDownloaded = filesAfter - filesBefore;
 
-            if (Directory.Exists(finalSeasonFolder))
-            {
-                filesAfter = Directory.GetFiles(finalSeasonFolder, "*.*", SearchOption.TopDirectoryOnly)
-                    .Count(file => file.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                                   file.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase));
-                filesDownloaded = filesAfter - filesBefore;
-            }
-
-            if (metadataToPass.ExpectedEpisodeCount >0)
+            if (metadataToPass.ExpectedEpisodeCount > 0)
             {
                 int missingCount = metadataToPass.ExpectedEpisodeCount - filesAfter;
 
-                if (missingCount ==0)
+                if (missingCount <= 0)
                 {
-                    AppendLog("CONTENT VERIFICATION: SUCCESS! All expected episodes are present.", Brushes.Green);
-                }
-                else if (missingCount >0)
-                {
-                    AppendLog($"CONTENT VERIFICATION: WARNING! {missingCount} episode(s) are MISSING from the Season folder (Found {filesAfter} of {metadataToPass.ExpectedEpisodeCount} expected).", Brushes.OrangeRed);
+                    AppendLog($"CONTENT VERIFICATION: SUCCESS! All {metadataToPass.ExpectedEpisodeCount} expected episode(s) are present ({filesDownloaded} new this run).", Brushes.Green);
                 }
                 else
                 {
-                    AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session. (Found {filesAfter} files, {metadataToPass.ExpectedEpisodeCount} expected)", Brushes.Cyan);
+                    AppendLog($"CONTENT VERIFICATION: WARNING! {missingCount} episode(s) missing (found {filesAfter} of {metadataToPass.ExpectedEpisodeCount} expected, {filesDownloaded} new this run).", Brushes.OrangeRed);
                 }
             }
             else
             {
-                AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) in this session. (No metadata count available)", Brushes.Cyan);
+                AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) this run. (No metadata count available)", Brushes.Cyan);
             }
+        }
+
+        /// <summary>
+        /// Counts finished video files in a season folder.
+        /// </summary>
+        private static int CountVideoFiles(string folder)
+        {
+            if (!Directory.Exists(folder)) return 0;
+
+            string[] videoExtensions = { ".mp4", ".mkv", ".webm", ".avi", ".m4v", ".mov" };
+
+            return Directory.GetFiles(folder, "*.*", SearchOption.TopDirectoryOnly)
+                .Count(file => videoExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()));
+        }
+
+        /// <summary>
+        /// Works out the ordered list of episode pages to download.
+        ///
+        /// Order of preference:
+        ///   1. Ask yt-dlp. It has purpose-built extractors for well over a thousand sites plus
+        ///      a generic one, and it expands their playlists natively. If it understands the
+        ///      page, nothing else is needed.
+        ///   2. Index the page ourselves, static HTML first.
+        ///   3. Re-index with a headless browser, for listings built by JavaScript.
+        ///
+        /// Returns an empty list when nothing could be enumerated, in which case the caller
+        /// falls back to handing the whole URL to yt-dlp.
+        /// </summary>
+        private async Task<List<EpisodeLink>> BuildEpisodePlanAsync(string seriesUrl, DownloadMetadata metadata)
+        {
+            var plan = new List<EpisodeLink>();
+
+            if (string.IsNullOrWhiteSpace(seriesUrl) || !seriesUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                return plan;
+            }
+
+            // 1. Let yt-dlp try first.
+            StatusTextBlock.Text = "Asking yt-dlp what this page contains...";
+            AppendLog("--- Probing the URL with yt-dlp... ---", Brushes.Aqua);
+
+            List<string> probed;
+            try
+            {
+                probed = await _ytDlpService.ProbeEntriesAsync(seriesUrl);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Probe failed: {ex.Message}", Brushes.Orange);
+                probed = new List<string>();
+            }
+
+            if (probed.Count > 1)
+            {
+                AppendLog($"yt-dlp recognised the page as a playlist of {probed.Count} item(s).", Brushes.Green);
+                for (int i = 0; i < probed.Count; i++)
+                {
+                    plan.Add(new EpisodeLink { Url = probed[i], Ordinal = i });
+                }
+                return AssignEpisodeNumbers(plan, metadata);
+            }
+
+            // 2. Index the page ourselves.
+            AppendLog("--- yt-dlp saw no playlist; indexing the page for episode links... ---", Brushes.Aqua);
+            StatusTextBlock.Text = "Indexing episode links...";
+
+            var indexer = new SeriesIndexer();
+            indexer.OnLog += line => DeveloperLogger.Append(line);
+
+            List<EpisodeLink> found;
+            try
+            {
+                found = await indexer.IndexAsync(seriesUrl, renderJavaScript: false);
+
+                // 3. Too little to be a real episode listing - the page is probably built by JS.
+                if (found.Count < 2)
+                {
+                    AppendLog("--- Few links in the static HTML; retrying with a headless browser... ---", Brushes.Orange);
+                    var rendered = await indexer.IndexAsync(seriesUrl, renderJavaScript: true);
+                    if (rendered.Count > found.Count) found = rendered;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Indexing failed: {ex.Message}", Brushes.Orange);
+                found = new List<EpisodeLink>();
+            }
+
+            if (found.Count == 0)
+            {
+                AppendLog("--- No episode links found on the page. ---", Brushes.Orange);
+                return plan;
+            }
+
+            AppendLog($"Indexed {found.Count} episode link(s).", Brushes.Green);
+            return AssignEpisodeNumbers(found, metadata);
+        }
+
+        /// <summary>
+        /// Gives every link an episode number: the one parsed from the page when there is one,
+        /// otherwise its position in the list. This is what lets a site that publishes no
+        /// metadata at all still produce correctly numbered, Plex-ready filenames.
+        /// </summary>
+        private List<EpisodeLink> AssignEpisodeNumbers(List<EpisodeLink> links, DownloadMetadata metadata)
+        {
+            bool anyDetected = links.Any(l => l.DetectedEpisodeNumber.HasValue);
+
+            if (!anyDetected)
+            {
+                AppendLog("--- No episode numbers on the page; using page order instead. ---", Brushes.Yellow);
+                for (int i = 0; i < links.Count; i++)
+                {
+                    links[i].DetectedEpisodeNumber = i + 1;
+                }
+            }
+
+            // Warn when the site and the databases disagree - usually means the page covers
+            // every season at once, or the season number was parsed wrong.
+            if (metadata.ExpectedEpisodeCount > 0 && links.Count != metadata.ExpectedEpisodeCount)
+            {
+                AppendLog(
+                    $"--- NOTE: the page lists {links.Count} episode(s) but the databases expect " +
+                    $"{metadata.ExpectedEpisodeCount} for season {metadata.NextSeasonNumber}. ---",
+                    Brushes.Orange);
+            }
+
+            return links;
+        }
+
+        /// <summary>
+        /// Downloads each episode individually, naming it from the merged metadata rather than
+        /// from whatever the site happens to expose.
+        /// </summary>
+        private async Task DownloadEpisodesAsync(
+            List<EpisodeLink> links,
+            DownloadMetadata metadata,
+            string outputFolder)
+        {
+            // Episode number -> official title, for naming.
+            var titlesByNumber = metadata.Episodes
+                .Where(e => e.EpisodeNumber > 0)
+                .GroupBy(e => e.EpisodeNumber)
+                .ToDictionary(g => g.Key, g => g.First().EpisodeTitle);
+
+            string showTitle = metadata.OfficialTitle ?? "Unknown Show";
+            int succeeded = 0;
+            int failed = 0;
+
+            for (int i = 0; i < links.Count; i++)
+            {
+                if (_cancellationRequested)
+                {
+                    AppendLog("--- Stopped by the user. ---", Brushes.Red);
+                    return;
+                }
+
+                var link = links[i];
+                int episodeNumber = link.DetectedEpisodeNumber ?? (i + 1);
+                titlesByNumber.TryGetValue(episodeNumber, out string? episodeTitle);
+
+                StatusTextBlock.Text =
+                    $"Downloading {showTitle} S{metadata.NextSeasonNumber:00}E{episodeNumber:00} ({i + 1} of {links.Count})";
+
+                int exitCode = await _ytDlpService.DownloadEpisodeAsync(
+                    link.Url,
+                    showTitle,
+                    metadata.NextSeasonNumber,
+                    episodeNumber,
+                    episodeTitle,
+                    outputFolder);
+
+                if (exitCode == 0) succeeded++;
+                else
+                {
+                    failed++;
+                    AppendLog($"--- Episode {episodeNumber} failed (exit {exitCode}). Continuing. ---", Brushes.OrangeRed);
+                }
+            }
+
+            AppendLog($"--- Finished: {succeeded} succeeded, {failed} failed, out of {links.Count}. ---",
+                failed == 0 ? Brushes.Green : Brushes.OrangeRed);
         }
 
         // --- UI Event Handlers & Helpers ---

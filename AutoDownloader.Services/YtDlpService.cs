@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services project
 {
@@ -396,6 +397,251 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                     try { _cancellationTokenSource?.Dispose(); } catch { }
                     _cancellationTokenSource = null;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Asks yt-dlp what it thinks this URL contains, without downloading anything.
+        ///
+        /// This is the first thing the orchestrator should try, because yt-dlp already has
+        /// site-specific extractors for well over a thousand sites plus a generic one, and it
+        /// expands their playlists natively. Only when this comes back with nothing (or a
+        /// single item for a page that is clearly a season listing) is it worth indexing the
+        /// page ourselves.
+        /// </summary>
+        /// <returns>The entry URLs yt-dlp found, in order. Empty when it understood nothing.</returns>
+        public async Task<List<string>> ProbeEntriesAsync(string url)
+        {
+            var entries = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath)) return entries;
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _ytDlpPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+
+            // --flat-playlist stops it recursing into every entry, which keeps this fast.
+            startInfo.ArgumentList.Add("--flat-playlist");
+            startInfo.ArgumentList.Add("--dump-single-json");
+            startInfo.ArgumentList.Add("--no-warnings");
+            startInfo.ArgumentList.Add("--ignore-errors");
+            startInfo.ArgumentList.Add("--user-agent");
+            startInfo.ArgumentList.Add(_userAgent);
+            AddCookieArguments(startInfo);
+            startInfo.ArgumentList.Add(url);
+
+            try
+            {
+                using var process = new Process { StartInfo = startInfo };
+                process.Start();
+
+                string json = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                string stderr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync().ConfigureAwait(false);
+
+                if (!string.IsNullOrWhiteSpace(stderr))
+                {
+                    OnOutputReceived?.Invoke($"[probe] {stderr.Trim()}");
+                }
+
+                if (string.IsNullOrWhiteSpace(json)) return entries;
+
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
+
+                if (root.TryGetProperty("entries", out var entriesElement)
+                    && entriesElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var entry in entriesElement.EnumerateArray())
+                    {
+                        if (entry.ValueKind != JsonValueKind.Object) continue;
+
+                        string? entryUrl = null;
+                        if (entry.TryGetProperty("url", out var u)) entryUrl = u.GetString();
+                        if (string.IsNullOrWhiteSpace(entryUrl)
+                            && entry.TryGetProperty("webpage_url", out var w)) entryUrl = w.GetString();
+
+                        if (!string.IsNullOrWhiteSpace(entryUrl)) entries.Add(entryUrl!);
+                    }
+                }
+                else if (root.TryGetProperty("webpage_url", out var single))
+                {
+                    // A single playable video rather than a playlist.
+                    var only = single.GetString();
+                    if (!string.IsNullOrWhiteSpace(only)) entries.Add(only!);
+                }
+            }
+            catch (Exception ex)
+            {
+                OnOutputReceived?.Invoke($"[probe] Could not inspect {url}: {ex.Message}");
+            }
+
+            return entries;
+        }
+
+        /// <summary>
+        /// Downloads exactly one episode to a filename we choose outright.
+        ///
+        /// This is the path that makes correct naming possible on sites that expose no
+        /// metadata at all: the show title, season and episode number come from TMDB/TVDB and
+        /// the page ordering, never from the site, so nothing is left to guess.
+        /// </summary>
+        public async Task<int> DownloadEpisodeAsync(
+            string url,
+            string showTitle,
+            int seasonNumber,
+            int episodeNumber,
+            string? episodeTitle,
+            string outputFolder)
+        {
+            if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath))
+            {
+                OnOutputReceived?.Invoke($"[FATAL] yt-dlp executable not found at '{_ytDlpPath}'.");
+                return -1;
+            }
+
+            string seasonFolder = $"Season {seasonNumber:00}";
+            string safeShow = EscapeTemplateLiteral(showTitle);
+
+            // Every component is a literal except the extension, so the filename is fully
+            // determined before yt-dlp runs.
+            string stem = $"{safeShow} - S{seasonNumber:00}E{episodeNumber:00}";
+            if (!string.IsNullOrWhiteSpace(episodeTitle))
+            {
+                stem += $" - {EscapeTemplateLiteral(episodeTitle!)}";
+            }
+
+            string outputTemplate = Path.Combine(outputFolder, seasonFolder, stem + ".%(ext)s");
+
+            try { Directory.CreateDirectory(Path.Combine(outputFolder, seasonFolder)); } catch { }
+
+            var startInfo = BuildCommonStartInfo(outputFolder);
+            startInfo.ArgumentList.Add("-o");
+            startInfo.ArgumentList.Add(outputTemplate);
+            startInfo.ArgumentList.Add(url);
+
+            OnOutputReceived?.Invoke($"--- S{seasonNumber:00}E{episodeNumber:00}: {url} ---");
+
+            _cancellationTokenSource ??= new CancellationTokenSource();
+
+            Process? process = null;
+            try
+            {
+                process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+                process.OutputDataReceived += (_, args) => { if (args.Data != null) OnOutputReceived?.Invoke(args.Data); };
+                process.ErrorDataReceived += (_, args) => { if (args.Data != null) OnOutputReceived?.Invoke($"[ERR] {args.Data}"); };
+
+                process.Start();
+                _process = process;
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                await process.WaitForExitAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
+                return process.ExitCode;
+            }
+            catch (OperationCanceledException)
+            {
+                OnOutputReceived?.Invoke("--- Stopped by the user. ---");
+                return -1;
+            }
+            catch (Exception ex)
+            {
+                OnOutputReceived?.Invoke($"--- [ERROR] Episode download failed: {ex.Message} ---");
+                return -1;
+            }
+            finally
+            {
+                if (process != null)
+                {
+                    try { if (!process.HasExited) process.Kill(true); } catch { }
+                    try { process.Dispose(); } catch { }
+                }
+                _process = null;
+            }
+        }
+
+        /// <summary>
+        /// The flags shared by every yt-dlp invocation that actually downloads something.
+        /// </summary>
+        private ProcessStartInfo BuildCommonStartInfo(string outputFolder)
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _ytDlpPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+
+            startInfo.ArgumentList.Add("--windows-filenames");
+            startInfo.ArgumentList.Add("--embed-metadata");
+            startInfo.ArgumentList.Add("--ignore-errors");
+            startInfo.ArgumentList.Add("--no-overwrites");
+
+            if (!string.IsNullOrWhiteSpace(_ffmpegPath) && File.Exists(_ffmpegPath))
+            {
+                startInfo.ArgumentList.Add("--ffmpeg-location");
+                startInfo.ArgumentList.Add(_ffmpegPath);
+            }
+
+            if (_useDownloadArchive)
+            {
+                startInfo.ArgumentList.Add("--download-archive");
+                startInfo.ArgumentList.Add(Path.Combine(outputFolder, "downloaded.txt"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_videoQualityFormat))
+            {
+                startInfo.ArgumentList.Add("-f");
+                startInfo.ArgumentList.Add(_videoQualityFormat);
+            }
+
+            startInfo.ArgumentList.Add("--write-subs");
+            startInfo.ArgumentList.Add("--sub-langs");
+            startInfo.ArgumentList.Add("all");
+            startInfo.ArgumentList.Add("--convert-subs");
+            startInfo.ArgumentList.Add("srt");
+
+            startInfo.ArgumentList.Add("--downloader");
+            startInfo.ArgumentList.Add("aria2c");
+            startInfo.ArgumentList.Add("--downloader-args");
+            startInfo.ArgumentList.Add("aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M");
+
+            startInfo.ArgumentList.Add("--user-agent");
+            startInfo.ArgumentList.Add(_userAgent);
+
+            AddCookieArguments(startInfo);
+
+            return startInfo;
+        }
+
+        /// <summary>
+        /// Adds cookie flags only when a source is configured. yt-dlp treats an unreadable
+        /// cookie source as fatal, so this must stay opt-in.
+        /// </summary>
+        private void AddCookieArguments(ProcessStartInfo startInfo)
+        {
+            if (string.IsNullOrWhiteSpace(_cookieSource)) return;
+
+            if (File.Exists(_cookieSource))
+            {
+                startInfo.ArgumentList.Add("--cookies");
+                startInfo.ArgumentList.Add(_cookieSource);
+            }
+            else
+            {
+                startInfo.ArgumentList.Add("--cookies-from-browser");
+                startInfo.ArgumentList.Add(_cookieSource);
             }
         }
 

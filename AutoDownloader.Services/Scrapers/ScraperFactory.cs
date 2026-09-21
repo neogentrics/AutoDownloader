@@ -23,7 +23,9 @@ namespace AutoDownloader.Services
  var uri = new Uri(url);
  var host = uri.Host.ToLowerInvariant();
  if (host.Contains("hianime")) return new HianimeScraper();
- if (host.Contains("wcoanimesub") || host.Contains("watchcartoononline")) return new WcoAnimeScraper();
+ // Matched only "wcoanimesub", so the "wcoanimedub" variant of the same site never
+ // matched its own scraper and silently fell through to the generic path.
+ if (host.Contains("wcoanime") || host.Contains("watchcartoononline")) return new WcoAnimeScraper();
  return null;
  }
  catch { return null; }
