@@ -66,6 +66,17 @@ namespace AutoDownloader.Services.Orchestration
         /// <summary>Episode count the metadata databases expected for this season.</summary>
         public int ExpectedEpisodeCount { get; set; }
 
+        /// <summary>
+        /// How many episodes this source actually listed.
+        ///
+        /// Tracked separately from ExpectedEpisodeCount because the two legitimately
+        /// disagree: a source may carry a partial upload, a single cour of a longer run, or
+        /// a season the databases count differently. Without this, downloading everything a
+        /// source has still reported episodes "missing", which reads as a failure of the app
+        /// rather than a limit of the source.
+        /// </summary>
+        public int EpisodesOffered { get; set; }
+
         /// <summary>The folder the series was written to.</summary>
         public string? OutputFolder { get; set; }
     }

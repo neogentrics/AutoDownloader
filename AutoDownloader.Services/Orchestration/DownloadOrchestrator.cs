@@ -365,30 +365,9 @@ namespace AutoDownloader.Services.Orchestration
             int filesAfter = CountVideoFiles(seasonFolder);
             result.FilesPresentAfter = filesAfter;
             result.FilesAdded = filesAfter - filesBefore;
+            result.EpisodesOffered = episodeLinks.Count;
 
-            if (metadata.ExpectedEpisodeCount > 0)
-            {
-                int missing = metadata.ExpectedEpisodeCount - filesAfter;
-
-                if (missing <= 0)
-                {
-                    Log($"CONTENT VERIFICATION: SUCCESS! All {metadata.ExpectedEpisodeCount} expected episode(s) are present ({result.FilesAdded} new this run).", JobLogLevel.Success);
-                }
-                else if (result.EpisodesProtected > 0 && result.EpisodesSucceeded == 0)
-                {
-                    // Distinguish "we could not get it" from "nobody can get it".
-                    Log($"CONTENT VERIFICATION: {result.EpisodesProtected} episode(s) are DRM protected "
-                        + "and cannot be downloaded from this source.", JobLogLevel.Warning);
-                }
-                else
-                {
-                    Log($"CONTENT VERIFICATION: WARNING! {missing} episode(s) missing (found {filesAfter} of {metadata.ExpectedEpisodeCount} expected, {result.FilesAdded} new this run).", JobLogLevel.Warning);
-                }
-            }
-            else
-            {
-                Log($"CONTENT VERIFICATION: Completed. Downloaded {result.FilesAdded} file(s) this run. (No metadata count available)");
-            }
+            ReportVerification(result, metadata.NextSeasonNumber);
 
             result.Completed = true;
             result.Cancelled = cancellationToken.IsCancellationRequested;
@@ -483,6 +462,87 @@ namespace AutoDownloader.Services.Orchestration
             }
 
             return (null, null, null, false);
+        }
+
+        /// <summary>
+        /// Reports what was obtained, separating what this source could give from what the
+        /// databases say the season contains.
+        ///
+        /// These legitimately disagree. A source may hold a partial upload, one cour of a
+        /// longer run, or a season the databases count differently - one real case listed 9
+        /// episodes where TMDB expected 26. Measuring only against the database made a
+        /// complete download of everything available report seventeen episodes "missing",
+        /// which reads as the app failing rather than the source being incomplete.
+        /// </summary>
+        private void ReportVerification(DownloadJobResult result, int seasonNumber)
+        {
+            int offered = result.EpisodesOffered;
+            int expected = result.ExpectedEpisodeCount;
+            int present = result.FilesPresentAfter;
+
+            // Nothing at all arrived, and every episode was protected: that is the reason.
+            if (result.EpisodesProtected > 0 && result.EpisodesSucceeded == 0)
+            {
+                Log($"CONTENT VERIFICATION: {result.EpisodesProtected} episode(s) are DRM protected "
+                    + "and cannot be downloaded from this source.", JobLogLevel.Warning);
+                return;
+            }
+
+            if (offered > 0)
+            {
+                int missingFromSource = offered - present;
+
+                if (missingFromSource <= 0)
+                {
+                    Log($"CONTENT VERIFICATION: SUCCESS! All {offered} episode(s) this source offers "
+                        + $"are present ({result.FilesAdded} new this run).", JobLogLevel.Success);
+                }
+                else
+                {
+                    Log($"CONTENT VERIFICATION: {present} of the {offered} episode(s) this source offers "
+                        + $"are present; {missingFromSource} did not download ({result.FilesAdded} new this run).",
+                        JobLogLevel.Warning);
+                }
+
+                // Say separately whether the source itself is short of the full season, so a
+                // gap in the source is not mistaken for a gap in the download.
+                if (expected > offered)
+                {
+                    Log($"--- NOTE: the databases list {expected} episode(s) for season {seasonNumber}, "
+                        + $"so this source carries {expected - offered} fewer. That is a limit of the "
+                        + "source, not a failed download. ---", JobLogLevel.Notice);
+                }
+                else if (expected > 0 && offered > expected)
+                {
+                    Log($"--- NOTE: this source lists {offered} episode(s) but the databases expect "
+                        + $"{expected} for season {seasonNumber}; it may include specials or "
+                        + "another season. ---", JobLogLevel.Notice);
+                }
+
+                return;
+            }
+
+            // No episode list was built, so the database count is all there is to go on.
+            if (expected > 0)
+            {
+                int missing = expected - present;
+
+                if (missing <= 0)
+                {
+                    Log($"CONTENT VERIFICATION: SUCCESS! All {expected} expected episode(s) are present "
+                        + $"({result.FilesAdded} new this run).", JobLogLevel.Success);
+                }
+                else
+                {
+                    Log($"CONTENT VERIFICATION: WARNING! {missing} episode(s) missing (found {present} of "
+                        + $"{expected} expected, {result.FilesAdded} new this run).", JobLogLevel.Warning);
+                }
+
+                return;
+            }
+
+            Log($"CONTENT VERIFICATION: Completed. Downloaded {result.FilesAdded} file(s) this run. "
+                + "(No episode count available)");
         }
 
         /// <summary>

@@ -196,6 +196,7 @@ namespace AutoDownloader.Cli
                     episodesFailed = result.EpisodesFailed,
                     episodesDrmProtected = result.EpisodesProtected,
                     expectedEpisodeCount = result.ExpectedEpisodeCount,
+                    episodesOfferedBySource = result.EpisodesOffered,
                     filesAdded = result.FilesAdded,
                     filesPresent = result.FilesPresentAfter,
                     outputFolder = result.OutputFolder,
@@ -291,9 +292,25 @@ namespace AutoDownloader.Cli
             if (result.EpisodesFailed > 0) counts += $", {result.EpisodesFailed} failed";
             if (result.EpisodesProtected > 0) counts += $", {result.EpisodesProtected} DRM protected";
 
-            string verification = result.ExpectedEpisodeCount > 0
-                ? $"{result.FilesPresentAfter} of {result.ExpectedEpisodeCount} expected episode(s) present"
-                : $"{result.FilesPresentAfter} file(s) present";
+            string verification;
+
+            if (result.EpisodesOffered > 0)
+            {
+                verification = $"{result.FilesPresentAfter} of the {result.EpisodesOffered} episode(s) this source offers";
+
+                if (result.ExpectedEpisodeCount > result.EpisodesOffered)
+                {
+                    verification += $" (the databases list {result.ExpectedEpisodeCount} for the season)";
+                }
+            }
+            else if (result.ExpectedEpisodeCount > 0)
+            {
+                verification = $"{result.FilesPresentAfter} of {result.ExpectedEpisodeCount} expected episode(s) present";
+            }
+            else
+            {
+                verification = $"{result.FilesPresentAfter} file(s) present";
+            }
 
             return $"{title} season {result.SeasonNumber}: {counts}. "
                  + $"{result.FilesAdded} new this run; {verification}.\n{where}";
