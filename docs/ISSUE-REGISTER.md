@@ -35,13 +35,13 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-020 | [#42](https://github.com/neogentrics/AutoDownloader/issues/42) | Dependency advisory and .NET Framework packages shimmed into net9 | task | medium |
 | AD-021 | [#43](https://github.com/neogentrics/AutoDownloader/issues/43) | Download pipeline is trapped in the window code-behind | task | high |
 | AD-029 | [#44](https://github.com/neogentrics/AutoDownloader/issues/44) | README and project page describe features that do not match the code | task | medium |
+| AD-026 | [#49](https://github.com/neogentrics/AutoDownloader/issues/49) | Preferences window exposes none of the new download settings | feature | high |
 
 ## Open
 
 | ID | # | Title | Type | Priority |
 | :--- | :--- | :--- | :--- | :--- |
 | AD-023 | [#46](https://github.com/neogentrics/AutoDownloader/issues/46) | TVDB access is ~200 lines of reflection that swallows every failure | task | high |
-| AD-026 | [#49](https://github.com/neogentrics/AutoDownloader/issues/49) | Preferences window exposes none of the new download settings | feature | high |
 | AD-027 | [#50](https://github.com/neogentrics/AutoDownloader/issues/50) | No progress bar, percentage, speed or ETA during downloads | feature | high |
 | AD-030 | [#52](https://github.com/neogentrics/AutoDownloader/issues/52) | No headless CLI entry point for unattended runs | feature | high |
 | AD-022 | [#45](https://github.com/neogentrics/AutoDownloader/issues/45) | `DeveloperLogger` queue grows without bound | bug | medium |
