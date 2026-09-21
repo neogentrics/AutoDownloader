@@ -84,10 +84,15 @@ namespace AutoDownloader.Services.Orchestration
         /// <summary>
         /// Runs one job for a single URL or search term.
         /// </summary>
+        /// <param name="seasonOverride">
+        /// Forces a season number instead of parsing one out of the URL. Useful when a site's
+        /// URL carries no season, or carries the wrong one.
+        /// </param>
         public async Task<DownloadJobResult> RunAsync(
             string searchTerm,
             string baseOutputFolder,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            int? seasonOverride = null)
         {
             var result = new DownloadJobResult();
 
@@ -175,6 +180,13 @@ namespace AutoDownloader.Services.Orchestration
                 {
                     Log($"Scraper error: {ex.Message}. Letting yt-dlp handle the original URL.", JobLogLevel.Warning);
                 }
+            }
+
+            // An explicit season always wins over whatever the URL implied.
+            if (seasonOverride.HasValue && seasonOverride.Value > 0)
+            {
+                metadata.NextSeasonNumber = seasonOverride.Value;
+                Log($"Using season {seasonOverride.Value} (given explicitly).", JobLogLevel.Notice);
             }
 
             if (cancellationToken.IsCancellationRequested) return Cancelled(result);
