@@ -4,6 +4,16 @@
              xmlns:local="clr-namespace:AutoDownloader.UI"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Merged here rather than per window so every window gets it, including
+                     ones added later. Styling each window separately is what left the
+                     dropdowns unreadable in the first place. -->
+                <!-- The palette must come first: the styles below resolve their colours
+                     out of it. ThemeService swaps this one entry at runtime. -->
+                <ResourceDictionary Source="Theme/Palette.Dark.xaml"/>
+                <ResourceDictionary Source="Theme/Controls.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

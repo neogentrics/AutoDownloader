@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using AutoDownloader.Services.Orchestration;
 
 namespace AutoDownloader.Tests
@@ -43,6 +43,27 @@ namespace AutoDownloader.Tests
             {
                 OverwriteAsks++;
                 return Task.FromResult(OverwriteAnswer);
+            }
+
+            public int SeasonAsks;
+            public IReadOnlyList<int>? SeasonAnswer;
+
+            /// <summary>
+            /// Separate from a null answer, because null already means "nothing set" here.
+            /// Conflating the two is what made an earlier version of these tests never
+            /// exercise the cancel path at all.
+            /// </summary>
+            public bool SeasonCancels;
+
+            public Task<IReadOnlyList<int>?> ChooseSeasonsAsync(
+                string showTitle, IReadOnlyList<int> available, int showing,
+                CancellationToken ct = default)
+            {
+                SeasonAsks++;
+
+                if (SeasonCancels) return Task.FromResult<IReadOnlyList<int>?>(null);
+
+                return Task.FromResult(SeasonAnswer ?? (IReadOnlyList<int>?)new[] { showing });
             }
         }
 
@@ -154,6 +175,38 @@ namespace AutoDownloader.Tests
             await prompt.ConfirmOverwriteAsync(new ExistingEpisode { Path = "b.mp4" });
 
             Assert.AreEqual(2, inner.OverwriteAsks);
+        }
+
+        [TestMethod]
+        public async Task TheSeasonChoiceIsOnlyAskedOnce()
+        {
+            // The identify pass asks; the download pass must not ask again.
+            var (inner, prompt) = Build();
+            inner.SeasonAnswer = new[] { 1, 2, 3 };
+
+            var first = await prompt.ChooseSeasonsAsync("Barefoot Contessa", new[] { 1, 2, 3, 4 }, 1);
+            var second = await prompt.ChooseSeasonsAsync("Barefoot Contessa", new[] { 1, 2, 3, 4 }, 1);
+
+            Assert.AreEqual(1, inner.SeasonAsks);
+            CollectionAssert.AreEqual(first!.ToArray(), second!.ToArray());
+        }
+
+        [TestMethod]
+        public async Task CancellingTheSeasonChoiceIsNotRemembered()
+        {
+            var (inner, prompt) = Build();
+            inner.SeasonCancels = true;
+
+            // A cancel must not be cached, or giving up on one show silently skips the rest.
+            var cancelled = await prompt.ChooseSeasonsAsync("A Show", new[] { 1, 2 }, 1);
+            Assert.IsNull(cancelled);
+
+            inner.SeasonCancels = false;
+            inner.SeasonAnswer = new[] { 2 };
+            var again = await prompt.ChooseSeasonsAsync("A Show", new[] { 1, 2 }, 1);
+
+            Assert.AreEqual(2, inner.SeasonAsks);
+            CollectionAssert.AreEqual(new[] { 2 }, again!.ToArray());
         }
 
         [TestMethod]

@@ -1,0 +1,46 @@
+﻿<!--
+    High contrast - maximum legibility.
+
+    Palette only. The control styles live in Controls.xaml and reach these by
+    DynamicResource, so swapping this one file changes the whole application at runtime.
+    Every palette must define the same keys or the swap leaves holes.
+
+    The system brush overrides are the important half: popups, menus and tooltips are drawn
+    by Windows' default templates using those keys, so without them a dropdown opens as a
+    sheet of the system colour regardless of what the styles say.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <SolidColorBrush x:Key="Surface"        Color="#FF000000"/>
+    <SolidColorBrush x:Key="SurfaceRaised"  Color="#FF000000"/>
+    <SolidColorBrush x:Key="SurfaceInput"   Color="#FF1A1A1A"/>
+    <SolidColorBrush x:Key="SurfaceSunken"  Color="#FF000000"/>
+    <SolidColorBrush x:Key="TextPrimary"    Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="TextMuted"      Color="#FFE0E0E0"/>
+    <SolidColorBrush x:Key="TextDisabled"   Color="#FFA0A0A0"/>
+    <SolidColorBrush x:Key="Accent"         Color="#FFFFD700"/>
+    <SolidColorBrush x:Key="AccentText"     Color="#FF000000"/>
+    <SolidColorBrush x:Key="BorderSubtle"   Color="#FFFFFFFF"/>
+
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}"        Color="#FF000000"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}"    Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}"       Color="#FF000000"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}"   Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}"  Color="#FF1A1A1A"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}"   Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}"          Color="#FF000000"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}"      Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBarBrushKey}"       Color="#FF000000"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InfoBrushKey}"          Color="#FF000000"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InfoTextBrushKey}"      Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.GrayTextBrushKey}"      Color="#FFA0A0A0"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"     Color="#FFFFD700"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FF000000"/>
+
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
+                     Color="#FF1A1A1A"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
+                     Color="#FFFFFFFF"/>
+
+</ResourceDictionary>

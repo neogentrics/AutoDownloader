@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -54,6 +54,22 @@ namespace AutoDownloader.Services.Orchestration
                 .ConfigureAwait(false);
 
             _cache.RememberSeries(searchTerm, chosen);
+            return chosen;
+        }
+
+        public async Task<IReadOnlyList<int>?> ChooseSeasonsAsync(
+            string showTitle,
+            IReadOnlyList<int> available,
+            int showing,
+            CancellationToken cancellationToken = default)
+        {
+            if (_cache.TryGetSeasons(showTitle, out var remembered)) return remembered;
+
+            var chosen = await _inner
+                .ChooseSeasonsAsync(showTitle, available, showing, cancellationToken)
+                .ConfigureAwait(false);
+
+            _cache.RememberSeasons(showTitle, chosen);
             return chosen;
         }
 

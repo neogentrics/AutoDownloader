@@ -5,12 +5,12 @@
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         FontFamily="Segoe UI"
-        Background="#FF1E1E1E"
+        Background="{DynamicResource Surface}"
         Loaded="Window_Loaded">
 
     <Window.Resources>
         <Style x:Key="ActionButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#FF007ACC"/>
+            <Setter Property="Background" Value="{DynamicResource Accent}"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="15,8"/>
@@ -37,9 +37,9 @@
     <DockPanel Margin="15">
 
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-            <TextBlock x:Name="HeadingTextBlock" Foreground="White" FontSize="15" FontWeight="SemiBold"
+            <TextBlock x:Name="HeadingTextBlock" Foreground="{DynamicResource TextPrimary}" FontSize="15" FontWeight="SemiBold"
                        TextWrapping="Wrap"/>
-            <TextBlock Foreground="#FFB0B0B0" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+            <TextBlock Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
                        Text="More than one show goes by this name, usually an original and a later reboot. The year tells them apart. Episode names come from whichever you pick, so choosing the wrong one produces plausible but incorrect filenames."/>
         </StackPanel>
 
@@ -55,9 +55,9 @@
         </StackPanel>
 
         <ListBox x:Name="CandidatesListBox"
-                 Background="#FF2D2D2D"
+                 Background="{DynamicResource SurfaceRaised}"
                  Foreground="White"
-                 BorderBrush="#FF555555"
+                 BorderBrush="{DynamicResource BorderSubtle}"
                  BorderThickness="1"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  MouseDoubleClick="CandidatesListBox_MouseDoubleClick">

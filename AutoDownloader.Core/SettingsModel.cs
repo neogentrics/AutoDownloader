@@ -61,6 +61,12 @@ namespace AutoDownloader.Core // <-- CORRECT: This is a data model, it belongs i
         public string FormatPreference { get; set; } = "compatible";
 
         /// <summary>
+        /// The theme by name, matching one offered by the application. An unrecognised value
+        /// falls back to the first rather than failing, since this file gets hand-edited.
+        /// </summary>
+        public string Theme { get; set; } = "Dark";
+
+        /// <summary>
         /// Where yt-dlp should read cookies from, for sites that gate content behind a login.
         /// Empty (the default) means send no cookies at all.
         /// Accepts either a browser name ("firefox", "chrome", "edge", "brave", ...) or the

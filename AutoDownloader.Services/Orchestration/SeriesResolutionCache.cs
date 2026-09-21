@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using System;
 using System.Collections.Concurrent;
 
@@ -60,6 +60,26 @@ namespace AutoDownloader.Services.Orchestration
         {
             if (value == null) return;
             _series[Normalise(key)] = value;
+        }
+
+        private readonly ConcurrentDictionary<string, IReadOnlyList<int>> _seasons =
+            new ConcurrentDictionary<string, IReadOnlyList<int>>(StringComparer.OrdinalIgnoreCase);
+
+        public bool TryGetSeasons(string key, out IReadOnlyList<int>? value)
+        {
+            bool found = _seasons.TryGetValue(Normalise(key), out var stored);
+            value = stored;
+            return found;
+        }
+
+        /// <summary>
+        /// A cancel is not remembered, for the same reason a cancelled show choice is not:
+        /// giving up on one item must not silently skip the rest.
+        /// </summary>
+        public void RememberSeasons(string key, IReadOnlyList<int>? value)
+        {
+            if (value == null) return;
+            _seasons[Normalise(key)] = value;
         }
 
         private static string Normalise(string key) => (key ?? string.Empty).Trim();

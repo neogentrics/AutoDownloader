@@ -845,7 +845,46 @@ namespace AutoDownloader.Services.Orchestration
                 if (found.Count < 2 && !cancellationToken.IsCancellationRequested)
                 {
                     Log("--- Few links in the static HTML; retrying with a headless browser... ---", JobLogLevel.Warning);
-                    var rendered = await indexer.IndexAsync(seriesUrl, renderJavaScript: true).ConfigureAwait(false);
+
+                    // A show page displays one season at a time. Ask before reading it, so a
+                    // nineteen-season show is not silently reduced to whichever season the
+                    // page happened to open on - and so nobody discovers hours later that
+                    // only one was wanted.
+                    var seasonsOffered = await indexer.DiscoverSeasonsAsync(seriesUrl).ConfigureAwait(false);
+
+                    List<EpisodeLink> rendered;
+
+                    if (seasonsOffered.Count > 1)
+                    {
+                        int showing = seasonsOffered.Contains(metadata.NextSeasonNumber)
+                            ? metadata.NextSeasonNumber
+                            : seasonsOffered[0];
+
+                        Log($"--- This page offers {seasonsOffered.Count} seasons. ---", JobLogLevel.Notice);
+
+                        var wanted = await _prompt.ChooseSeasonsAsync(
+                            metadata.OfficialTitle ?? seriesUrl, seasonsOffered, showing, cancellationToken)
+                            .ConfigureAwait(false);
+
+                        if (wanted == null)
+                        {
+                            Log("--- No seasons chosen. Stopping. ---", JobLogLevel.Error);
+                            return plan;
+                        }
+
+                        Log($"--- Reading season(s) {string.Join(", ", wanted)}. ---", JobLogLevel.Notice);
+
+                        rendered = await indexer.IndexSeasonsAsync(seriesUrl, wanted.ToList())
+                            .ConfigureAwait(false);
+
+                        // A season came from the chooser, so it is known rather than guessed.
+                        if (rendered.Count > 0) metadata.SeasonWasSpecified = true;
+                    }
+                    else
+                    {
+                        rendered = await indexer.IndexAsync(seriesUrl, renderJavaScript: true).ConfigureAwait(false);
+                    }
+
                     if (rendered.Count > found.Count) found = rendered;
                 }
             }

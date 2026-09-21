@@ -49,6 +49,21 @@ namespace AutoDownloader.Services.Orchestration
         Task<OverwriteDecision> ConfirmOverwriteAsync(
             ExistingEpisode existing,
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Asks which seasons to fetch, when the page offers a choice.
+        ///
+        /// Asked before anything downloads, because the alternative is finding out after
+        /// nineteen seasons that only one was wanted.
+        /// </summary>
+        /// <param name="available">Every season the page offers, ascending.</param>
+        /// <param name="showing">The season the page is currently displaying.</param>
+        /// <returns>The seasons to fetch, or null if the user cancelled.</returns>
+        Task<IReadOnlyList<int>?> ChooseSeasonsAsync(
+            string showTitle,
+            IReadOnlyList<int> available,
+            int showing,
+            CancellationToken cancellationToken = default);
     }
 
     /// <summary>
@@ -79,5 +94,18 @@ namespace AutoDownloader.Services.Orchestration
         public Task<OverwriteDecision> ConfirmOverwriteAsync(
             ExistingEpisode existing, CancellationToken cancellationToken = default)
             => Task.FromResult(OverwriteDecision.SkipAll);
+
+        /// <summary>
+        /// Takes only the season already on screen.
+        ///
+        /// An unattended run must not decide by itself to fetch nineteen seasons because a
+        /// page happened to offer them; that is a surprise measured in hundreds of gigabytes.
+        /// </summary>
+        public Task<IReadOnlyList<int>?> ChooseSeasonsAsync(
+            string showTitle,
+            IReadOnlyList<int> available,
+            int showing,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<int>?>(new[] { showing });
     }
 }

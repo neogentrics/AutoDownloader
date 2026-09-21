@@ -4,23 +4,23 @@
         Title="Supported Sites" Height="560" Width="560"
         WindowStartupLocation="CenterOwner"
         FontFamily="Segoe UI"
-        Background="#FF1E1E1E"
+        Background="{DynamicResource Surface}"
         Loaded="Window_Loaded">
 
     <DockPanel Margin="15">
 
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
-            <TextBlock x:Name="HeadingTextBlock" Foreground="White" FontSize="15" FontWeight="SemiBold"
+            <TextBlock x:Name="HeadingTextBlock" Foreground="{DynamicResource TextPrimary}" FontSize="15" FontWeight="SemiBold"
                        Text="Loading the list from yt-dlp..."/>
-            <TextBlock Foreground="#FFB0B0B0" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+            <TextBlock Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
                        Text="These are read from the installed yt-dlp, so the list is always what it actually supports rather than something written down here. A page that embeds a player from one of these also works, even when the page itself is not listed."/>
         </StackPanel>
 
         <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
             <TextBox x:Name="SearchTextBox"
                      Height="30" Padding="8,5"
-                     Background="#FF3A3A3A" Foreground="White"
-                     BorderBrush="#FF555555" BorderThickness="1"
+                     Background="{DynamicResource SurfaceInput}" Foreground="White"
+                     BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1"
                      VerticalContentAlignment="Center"
                      TextChanged="SearchTextBox_TextChanged"/>
             <TextBlock x:Name="SearchHintTextBlock" Text="Search, e.g. bbc, vimeo, archive..."
@@ -45,8 +45,8 @@
         </StackPanel>
 
         <ListBox x:Name="SitesListBox"
-                 Background="#FF2D2D2D" Foreground="White"
-                 BorderBrush="#FF555555" BorderThickness="1"
+                 Background="{DynamicResource SurfaceRaised}" Foreground="White"
+                 BorderBrush="{DynamicResource BorderSubtle}" BorderThickness="1"
                  FontFamily="Consolas" FontSize="12"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
 

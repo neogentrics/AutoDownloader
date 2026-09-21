@@ -54,6 +54,20 @@ namespace AutoDownloader.UI
             }).Task;
         }
 
+        public Task<IReadOnlyList<int>?> ChooseSeasonsAsync(
+            string showTitle,
+            IReadOnlyList<int> available,
+            int showing,
+            CancellationToken cancellationToken = default)
+        {
+            return _owner.Dispatcher.InvokeAsync(() =>
+            {
+                var dialog = new SelectSeasonsWindow(showTitle, available, showing) { Owner = _owner };
+                dialog.ShowDialog();
+                return dialog.SelectedSeasons;
+            }).Task;
+        }
+
         public Task<OverwriteDecision> ConfirmOverwriteAsync(
             ExistingEpisode existing, CancellationToken cancellationToken = default)
         {

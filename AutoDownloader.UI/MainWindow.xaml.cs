@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -208,6 +209,10 @@ namespace AutoDownloader.UI
             WireUpDlpEvents();
 
             //5. Run final checks and unlock the UI.
+            // Before anything is shown, so the window does not flash the wrong colours.
+            ThemeService.Apply(_settingsService.Settings.Theme);
+            SetUpThemeMenu();
+
             ValidateApiKeysOnLaunch();
             StatusTextBlock.Text = "Ready.";
             SetUiLock(false); // Unlock the UI
@@ -745,6 +750,64 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
             AppendLog("--- All items identified. No further questions about which show is which. ---",
                 Brushes.Aqua);
             return true;
+        }
+
+        /// <summary>
+        /// Fills the Theme menu and applies whichever theme was last chosen.
+        ///
+        /// Built from ThemeService rather than listed in XAML, so a new palette file shows up
+        /// here on its own instead of needing the menu edited to match.
+        /// </summary>
+        private void SetUpThemeMenu()
+        {
+            ThemeMenu.Items.Clear();
+
+            foreach (var theme in ThemeService.Available)
+            {
+                var item = new MenuItem
+                {
+                    Header = theme.Name,
+                    ToolTip = theme.Description,
+                    IsCheckable = true,
+                    IsChecked = string.Equals(theme.Name, ThemeService.Current,
+                        StringComparison.OrdinalIgnoreCase),
+                    Tag = theme.Name,
+                };
+
+                item.Click += Theme_Click;
+                ThemeMenu.Items.Add(item);
+            }
+
+            // Keep the ticks honest even when something else changes the theme.
+            ThemeService.ThemeChanged += applied =>
+            {
+                foreach (var entry in ThemeMenu.Items.OfType<MenuItem>())
+                {
+                    entry.IsChecked = string.Equals(entry.Tag as string, applied,
+                        StringComparison.OrdinalIgnoreCase);
+                }
+            };
+        }
+
+        private void Theme_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem item || item.Tag is not string name) return;
+
+            ThemeService.Apply(name);
+
+            // A checkable item toggles itself; the tick should follow what was applied, not
+            // the click, or an unknown theme leaves the wrong entry ticked.
+            item.IsChecked = string.Equals(ThemeService.Current, name, StringComparison.OrdinalIgnoreCase);
+
+            try
+            {
+                _settingsService.Settings.Theme = ThemeService.Current;
+                _settingsService.SaveSettings();
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"--- Could not save the theme choice: {ex.Message} ---", Brushes.Orange);
+            }
         }
 
         /// <summary>

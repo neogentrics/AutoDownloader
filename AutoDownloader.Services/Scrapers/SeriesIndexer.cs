@@ -125,6 +125,160 @@ namespace AutoDownloader.Services.Scrapers
         }
 
         /// <summary>
+        /// The seasons a show page offers, or an empty list when it offers no choice.
+        /// </summary>
+        public async Task<List<int>> DiscoverSeasonsAsync(string seriesUrl)
+        {
+            try
+            {
+                using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
+                await using var browser = await playwright.Chromium.LaunchAsync(
+                    new Microsoft.Playwright.BrowserTypeLaunchOptions { Headless = true });
+
+                var context = await NewContextAsync(browser);
+                var page = await context.NewPageAsync();
+
+                await page.GotoAsync(seriesUrl, new Microsoft.Playwright.PageGotoOptions
+                {
+                    WaitUntil = Microsoft.Playwright.WaitUntilState.NetworkIdle,
+                    Timeout = 45000
+                });
+
+                await page.WaitForTimeoutAsync(3000);
+
+                return await SeasonNavigator.DiscoverSeasonsAsync(page);
+            }
+            catch (Exception ex)
+            {
+                OnLog?.Invoke($"SeriesIndexer: could not read the season list: {ex.Message}");
+                return new List<int>();
+            }
+        }
+
+        /// <summary>
+        /// Indexes several seasons by working the page's own season chooser.
+        ///
+        /// Each season is read while the page is actually showing it, so the season number is
+        /// recorded rather than guessed - which is the difference between filing nineteen
+        /// seasons correctly and flattening them all into season one.
+        /// </summary>
+        public async Task<List<EpisodeLink>> IndexSeasonsAsync(
+            string seriesUrl, IReadOnlyCollection<int> seasons)
+        {
+            var everything = new List<EpisodeLink>();
+
+            if (seasons == null || seasons.Count == 0) return everything;
+
+            Uri baseUri;
+            try { baseUri = new Uri(seriesUrl); }
+            catch
+            {
+                OnLog?.Invoke($"SeriesIndexer: not a usable URL: {seriesUrl}");
+                return everything;
+            }
+
+            try
+            {
+                using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
+                await using var browser = await playwright.Chromium.LaunchAsync(
+                    new Microsoft.Playwright.BrowserTypeLaunchOptions { Headless = true });
+
+                var context = await NewContextAsync(browser);
+                var page = await context.NewPageAsync();
+
+                var json = new List<string>();
+                page.Response += async (_, response) =>
+                {
+                    try
+                    {
+                        if (!response.Headers.TryGetValue("content-type", out var type)) return;
+                        if (type.IndexOf("json", StringComparison.OrdinalIgnoreCase) < 0) return;
+
+                        string body = await response.TextAsync().ConfigureAwait(false);
+                        lock (json) { json.Add(body); }
+                    }
+                    catch { }
+                };
+
+                await page.GotoAsync(seriesUrl, new Microsoft.Playwright.PageGotoOptions
+                {
+                    WaitUntil = Microsoft.Playwright.WaitUntilState.NetworkIdle,
+                    Timeout = 45000
+                });
+
+                await page.WaitForTimeoutAsync(3000);
+
+                foreach (var season in seasons.Distinct().OrderBy(n => n))
+                {
+                    if (!await SeasonNavigator.SelectSeasonAsync(page, season).ConfigureAwait(false))
+                    {
+                        OnLog?.Invoke($"SeriesIndexer: could not switch to season {season}; skipping it.");
+                        continue;
+                    }
+
+                    // Only what arrived since the switch belongs to this season.
+                    List<string> seasonJson;
+                    lock (json) { seasonJson = new List<string>(json); json.Clear(); }
+
+                    await ScrollToLoadEverythingAsync(page);
+
+                    lock (json) { seasonJson.AddRange(json); json.Clear(); }
+
+                    string html = await page.ContentAsync();
+
+                    var candidates = new List<EpisodeLink>();
+                    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    CollectCandidates(html, page.Url, baseUri, seriesUrl, seen, candidates);
+
+                    _lastRenderJson = seasonJson;
+
+                    CollectFromJsonEpisodes(seasonJson, page.Url, baseUri, seriesUrl, seen, candidates);
+
+                    string fromJson = BuildHtmlFromJsonPaths(seasonJson);
+                    if (fromJson.Length > 0)
+                    {
+                        CollectCandidates(fromJson, page.Url, baseUri, seriesUrl, seen, candidates,
+                            fromDocument: false);
+                    }
+
+                    var chosen = SelectLargestLinkGroup(candidates, baseUri.AbsolutePath, out _);
+
+                    // The page was showing this season, so say so rather than letting the
+                    // numbering be inferred from whatever the links happen to look like.
+                    foreach (var link in chosen) link.DetectedSeasonNumber = season;
+
+                    OnLog?.Invoke($"SeriesIndexer: season {season} -> {chosen.Count} episode link(s).");
+                    everything.AddRange(chosen);
+                }
+            }
+            catch (Exception ex)
+            {
+                OnLog?.Invoke($"SeriesIndexer: season indexing failed: {ex.Message}");
+            }
+
+            return everything;
+        }
+
+        /// <summary>The browser context used for every render, carrying the user's session.</summary>
+        private async Task<Microsoft.Playwright.IBrowserContext> NewContextAsync(
+            Microsoft.Playwright.IBrowser browser)
+        {
+            var context = await browser.NewContextAsync(new Microsoft.Playwright.BrowserNewContextOptions
+            {
+                UserAgent = ToolManagerService.FIREFOX_USER_AGENT,
+                ViewportSize = new Microsoft.Playwright.ViewportSize { Width = 1920, Height = 1080 }
+            });
+
+            if (Cookies.Count > 0)
+            {
+                await context.AddCookiesAsync(Cookies).ConfigureAwait(false);
+            }
+
+            return context;
+        }
+
+        /// <summary>
         /// Indexes a series/season page and returns its episode links in document order.
         /// </summary>
         /// <param name="seriesUrl">The series or season page to index.</param>

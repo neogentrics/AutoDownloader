@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-078`**
+**Next free ID: `AD-081`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -67,6 +67,9 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-075 | - | Episode numbers read out of UUIDs in the URL | bug | critical |
 | AD-076 | - | Mined API paths outvote the page's own links, so nav wins over episodes | bug | high |
 | AD-077 | - | A numbered listing is numbered by position instead of by its own numbers | bug | medium |
+| AD-078 | - | One season is read and the rest are invisible; no way to choose | feature | high |
+| AD-079 | - | Dropdown and menu text is unreadable: light popups inherit a white foreground | bug | high |
+| AD-080 | - | No way to change theme, and colours are hardcoded in every window | feature | medium |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
