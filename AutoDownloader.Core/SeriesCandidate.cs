@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace AutoDownloader.Core
 {
@@ -24,6 +24,12 @@ namespace AutoDownloader.Core
 
         /// <summary>A short description, to tell near-identical titles apart.</summary>
         public string? Overview { get; set; }
+
+        /// <summary>
+        /// Episodes the source reports for the whole show, where it says. Zero means it did
+        /// not, not that there are none.
+        /// </summary>
+        public int EpisodeCount { get; set; }
 
         /// <summary>Which database produced this candidate.</summary>
         public string Source { get; set; } = string.Empty;

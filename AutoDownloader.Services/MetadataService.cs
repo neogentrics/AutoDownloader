@@ -23,6 +23,12 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  private readonly TMDbClient _tmdbClient;
  private readonly TvdbMetadataClient _tvdbClient;
 
+ /// <summary>
+ /// The third database. Needs no key, so unlike the other two it is never unavailable
+ /// because nothing was configured.
+ /// </summary>
+ private readonly KitsuMetadataClient _kitsuClient;
+
  // --- Constructor ---
 
  /// <summary>
@@ -54,6 +60,12 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  {
  _tvdbClient = null!;
  }
+
+ // Outside both branches on purpose. Kitsu takes no key, so it is the one source that
+ // is available even when nothing has been configured at all - which is exactly when
+ // it is most useful.
+ _kitsuClient = new KitsuMetadataClient();
+ _kitsuClient.OnDiagnostic += message => OnDiagnostic?.Invoke(message);
  }
 
  /// <summary>
@@ -264,7 +276,7 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  public async Task<MergedSeriesMetadata?> GetMergedMetadataAsync(
  string showName, int seasonNumber = 1, int? preferredYear = null)
  {
- // Run both lookups concurrently; neither depends on the other.
+ // Run every lookup concurrently; none depends on another.
  var tmdbTask = IsTmdbKeyValid
  ? GetTmdbMetadataAsync(showName, seasonNumber, preferredYear)
  : Task.FromResult<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>(null);
@@ -273,22 +285,29 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  ? GetTvdbMetadataAsync(showName, seasonNumber, preferredYear)
  : Task.FromResult<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>(null);
 
- await Task.WhenAll(tmdbTask, tvdbTask).ConfigureAwait(false);
+ // Kitsu needs no key, so it is always available - which is the point of having it:
+ // when the other two come back empty there is still something to try.
+ var kitsuTask = _kitsuClient.GetSeriesAsync(showName, preferredYear);
+
+ await Task.WhenAll(tmdbTask, tvdbTask, kitsuTask).ConfigureAwait(false);
 
  var tmdb = tmdbTask.Result;
  var tvdb = tvdbTask.Result;
+ var kitsu = kitsuTask.Result;
 
- if (tmdb == null && tvdb == null) return null;
+ if (tmdb == null && tvdb == null && kitsu == null) return null;
 
  var result = new MergedSeriesMetadata
  {
  // Prefer the TMDB title purely for consistency of naming; fall back to TVDB.
- OfficialTitle = tmdb?.OfficialTitle ?? tvdb?.OfficialTitle ?? showName,
+ OfficialTitle = tmdb?.OfficialTitle ?? tvdb?.OfficialTitle ?? kitsu?.OfficialTitle ?? showName,
  TmdbSeriesId = tmdb?.SeriesId,
  TvdbSeriesId = tvdb?.SeriesId,
+ KitsuSeriesId = kitsu?.SeriesId,
  SeasonNumber = tmdb?.TargetSeasonNumber ?? tvdb?.TargetSeasonNumber ?? seasonNumber,
  UsedTmdb = tmdb != null,
  UsedTvdb = tvdb != null,
+ UsedKitsu = kitsu != null,
  };
 
  // Gather episode lists from whichever sources identified the show.
@@ -307,12 +326,39 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  tvdbEpisodes = GetCachedEpisodes(tvdb.Value.SeriesId, result.SeasonNumber) ?? new List<DownloadEpisode>();
  }
 
+ List<DownloadEpisode> kitsuEpisodes = new List<DownloadEpisode>();
+
+ if (kitsu != null)
+ {
+ kitsuEpisodes = await _kitsuClient
+ .GetEpisodesAsync(kitsu.Value.SeriesId, result.SeasonNumber)
+ .ConfigureAwait(false);
+ }
+
  // Merge by episode number. TMDB titles win where both have one; TVDB fills the gaps
  // and contributes any episodes TMDB does not list at all.
  var byNumber = new SortedDictionary<int, DownloadEpisode>();
 
+ // Kitsu first, so TVDB and then TMDB overwrite its titles where they have one. It is
+ // there to cover what they miss, not to outrank them on shows they both know.
+ foreach (var episode in kitsuEpisodes.Where(e => e.EpisodeNumber > 0))
+ {
+ byNumber[episode.EpisodeNumber] = new DownloadEpisode
+ {
+ EpisodeNumber = episode.EpisodeNumber,
+ EpisodeTitle = episode.EpisodeTitle
+ };
+ }
+
  foreach (var episode in tvdbEpisodes.Where(e => e.EpisodeNumber > 0))
  {
+ if (byNumber.TryGetValue(episode.EpisodeNumber, out var fromKitsu)
+ && string.IsNullOrWhiteSpace(episode.EpisodeTitle))
+ {
+ // TVDB knows the episode but not its title: keep Kitsu's rather than blanking it.
+ continue;
+ }
+
  byNumber[episode.EpisodeNumber] = new DownloadEpisode
  {
  EpisodeNumber = episode.EpisodeNumber,
@@ -345,7 +391,8 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  // reported counts (a database that lists fewer episodes is usually the stale one).
  result.ExpectedEpisodeCount = result.Episodes.Count > 0
  ? result.Episodes.Count
- : Math.Max(tmdb?.ExpectedEpisodeCount ?? 0, tvdb?.ExpectedEpisodeCount ?? 0);
+ : Math.Max(Math.Max(tmdb?.ExpectedEpisodeCount ?? 0, tvdb?.ExpectedEpisodeCount ?? 0),
+ kitsu?.EpisodeCount ?? 0);
 
  return result;
  }
@@ -420,6 +467,7 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  public string OfficialTitle { get; set; } = string.Empty;
  public int? TmdbSeriesId { get; set; }
  public int? TvdbSeriesId { get; set; }
+ public int? KitsuSeriesId { get; set; }
  public int SeasonNumber { get; set; } = 1;
  public int ExpectedEpisodeCount { get; set; }
  public List<DownloadEpisode> Episodes { get; set; } = new List<DownloadEpisode>();
@@ -430,11 +478,21 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  /// <summary>True when TVDB identified the show.</summary>
  public bool UsedTvdb { get; set; }
 
+ /// <summary>True when Kitsu identified the show.</summary>
+ public bool UsedKitsu { get; set; }
+
  /// <summary>Human-readable summary of which databases contributed, for the log.</summary>
- public string SourceSummary =>
- UsedTmdb && UsedTvdb ? "TMDB + TVDB" :
- UsedTmdb ? "TMDB" :
- UsedTvdb ? "TVDB" : "none";
+ public string SourceSummary
+ {
+ get
+ {
+ var used = new List<string>();
+ if (UsedTmdb) used.Add("TMDB");
+ if (UsedTvdb) used.Add("TVDB");
+ if (UsedKitsu) used.Add("Kitsu");
+ return used.Count == 0 ? "none" : string.Join(" + ", used);
+ }
+ }
  }
 
  // Simple in-memory cache to attach episodes discovered during metadata lookup to the series ID + season
