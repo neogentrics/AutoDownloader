@@ -1,4 +1,4 @@
-using AngleSharp.Html.Parser;
+﻿using AngleSharp.Html.Parser;
 using AutoDownloader.Core;
 using System;
 using System.Collections.Generic;
@@ -144,8 +144,9 @@ namespace AutoDownloader.Services.Scrapers
 
         /// <summary>
         /// Pulls an episode number out of link text first (more reliable) then the URL.
+        /// Public so the parsing rules can be unit tested without a network round trip.
         /// </summary>
-        private static int? DetectEpisodeNumber(string? linkText, string url)
+        public static int? DetectEpisodeNumber(string? linkText, string url)
         {
             foreach (var source in new[] { linkText, Uri.UnescapeDataString(url) })
             {

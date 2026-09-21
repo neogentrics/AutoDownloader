@@ -1,0 +1,48 @@
+name: Feature or task
+description: A new capability, a refactor, or a chore
+title: "AD-XXX: "
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Replace `AD-XXX` in the title with the next free ID from
+        [docs/ISSUE-REGISTER.md](../blob/master/docs/ISSUE-REGISTER.md), and add a row for it there.
+        Swap the `type:feature` label for `type:task` if this is a chore or refactor.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation today, before describing the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: How will we know it works?
+      description: The check that proves it, not a restatement of the proposal.
+      placeholder: A season page with no episode metadata produces correctly numbered files.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Download (yt-dlp / aria2c / ffmpeg)
+        - Metadata (TMDB / TVDB / naming)
+        - Scraping (indexing / extraction)
+        - UI
+        - Build / CI / packaging
+        - Docs

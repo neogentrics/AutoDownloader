@@ -1,0 +1,66 @@
+name: Bug report
+description: Something behaves incorrectly
+title: "AD-XXX: "
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Replace `AD-XXX` in the title with the next free ID from
+        [docs/ISSUE-REGISTER.md](../blob/master/docs/ISSUE-REGISTER.md), and add a row for it there.
+
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: What happens
+      description: The observed behaviour, not the suspected cause.
+      placeholder: Every episode in the season is written to the same filename, so only one file survives.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the URL or search term used, if it is not sensitive.
+      placeholder: |
+        1. Paste a season URL into the box
+        2. Confirm the show name
+        3. Watch the Season folder
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Developer log
+      description: >
+        View -> Log, then Export. Paste the relevant portion. This is usually the fastest route
+        to a diagnosis, because it captures the exact yt-dlp invocation and its output.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: v1.10.0-beta
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      multiple: true
+      options:
+        - Download (yt-dlp / aria2c / ffmpeg)
+        - Metadata (TMDB / TVDB / naming)
+        - Scraping (indexing / extraction)
+        - UI
+        - Build / CI / packaging
+        - Not sure

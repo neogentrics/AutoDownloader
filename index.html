@@ -67,26 +67,29 @@
 
  <section id="overview" class="tab-pane active">
  <h2>Project Overview</h2>
- <p class="small">AutoDownloader is a personal-use tool focused on reliable downloads and Plex-friendly naming. This development hub surfaces the latest progress for <strong>v1.10.0-beta</strong>.</p>
+ <p class="small">AutoDownloader builds a clean, Plex-ready library from sources you are entitled to download. It wraps <code>yt-dlp</code> and <code>aria2c</code>, identifies the series against TMDB and TVDB, and files every episode under a correct, consistent name.</p>
 
- <h3 style="color:var(--accent);margin-top:16px">v1.10.0-beta Highlights</h3>
- <ul>
- <li>TVDB reflection-based episode extraction and caching.</li>
- <li>Multi-scraper engine with AngleSharp and Playwright fallback for JS/Cloudflare-protected sites.</li>
- <li>Automatic Playwright browser install (optional, toggle in Preferences).</li>
- <li>Improved metadata XML persistence and content verification.</li>
- <li>UI improvements and interactive development hub (this page).</li>
- </ul>
+ <h3 style="color:var(--accent);margin-top:16px">How a job runs</h3>
+ <ol>
+ <li><strong>Resolve</strong> &mdash; a show name becomes a source page via Gemini search; a URL is parsed for show and season.</li>
+ <li><strong>Identify</strong> &mdash; looked up in <strong>both</strong> TMDB and TVDB, and the episode lists are merged.</li>
+ <li><strong>Enumerate</strong> &mdash; ask <code>yt-dlp</code> first; if it sees no playlist, index the page, falling back to a headless browser for JS-built listings.</li>
+ <li><strong>Download</strong> &mdash; each episode fetched individually, to a filename decided <em>before</em> the download starts.</li>
+ <li><strong>Verify</strong> &mdash; the season folder is counted against the expected episode count.</li>
+ </ol>
+
+ <h3 style="color:var(--accent);margin-top:12px">Why the naming holds up</h3>
+ <p class="small">The title and season come from the metadata databases; the episode number comes from the page &mdash; parsed from the link text, or from its position in the listing. Nothing depends on the source site publishing usable metadata, which most do not.</p>
 
  <h3 style="color:var(--accent);margin-top:12px">Quick Start</h3>
  <ol>
- <li>Open Preferences (Edit → Preferences or Ctrl+P) and add your TMDB API key.</li>
- <li>Enable automatic Playwright install if you want scraper fallback to work automatically.</li>
- <li>Paste a show URL or search term and click Download.</li>
+ <li>Open Preferences (Edit &rarr; Preferences or Ctrl+P) and add a TMDB or TVDB API key.</li>
+ <li>Paste a series URL or a show name and click Download.</li>
+ <li><code>yt-dlp</code>, <code>aria2c</code> and <code>ffmpeg</code> are fetched automatically on first run.</li>
  </ol>
 
  <h3 style="color:var(--accent);margin-top:12px">Developer Notes</h3>
- <p class="small">This page is generated from static files in the repo and updated as features land. Use the links panel to jump to GitHub, issues, and releases.</p>
+ <p class="small">Issues use <code>AD-###</code> identifiers &mdash; see the conventions and register in <code>docs/</code>. The download pipeline lives in <code>DownloadOrchestrator</code> and references no UI framework, so it can also be driven headlessly.</p>
  </section>
 
  <section id="changelog" class="tab-pane">
@@ -107,9 +110,11 @@
  <table class="roadmap-table">
  <thead><tr><th>Version</th><th>Planned</th><th>Status</th></tr></thead>
  <tbody>
- <tr><td>v1.10.0-beta</td><td>Scraper stability, TVDB caching, Playwright fallback</td><td style="color:var(--accent)">In Progress</td></tr>
- <tr><td>v2.0</td><td>UI overhaul, dynamic progress bars, developer log window</td><td style="color:var(--muted)">Planned</td></tr>
- <tr><td>v3.0+</td><td>External subtitle integration, advanced sync features</td><td style="color:var(--muted)">Future</td></tr>
+ <tr><td>v1.10.0-beta</td><td>Season-aware URL parsing, developer log, Playwright installer, scraper layer</td><td style="color:#4ade80">Shipped</td></tr>
+ <tr><td>Phase 2</td><td>Download correctness (AD-001 &ndash; AD-008), orchestrator extraction (AD-021), restorable build (AD-015), working CI (AD-016), test suite (AD-017)</td><td style="color:#4ade80">Shipped</td></tr>
+ <tr><td>Next</td><td>Preferences for the new download settings (AD-026), progress bar with speed and ETA (AD-027), typed TVDB client (AD-023)</td><td style="color:var(--accent)">In Progress</td></tr>
+ <tr><td>Automation</td><td>Headless CLI entry point (AD-030), series watch list, concurrent downloads (AD-024)</td><td style="color:var(--muted)">Planned</td></tr>
+ <tr><td>Later</td><td>External subtitle sources, download-manager integration, branding pass</td><td style="color:var(--muted)">Future</td></tr>
  </tbody>
  </table>
  </section>
@@ -127,7 +132,9 @@
  <a href="https://github.com/neogentrics/AutoDownloader" target="_blank">GitHub Repository</a>
  <a href="https://github.com/neogentrics/AutoDownloader/issues" target="_blank">Issue Tracker</a>
  <a href="README.md" target="_blank">Project README</a>
- <a href="AutoDownloader.UI/PreferencesWindow.xaml" target="_blank">Preferences (XAML)</a>
+ <a href="docs/ROADMAP.md" target="_blank">Roadmap</a>
+ <a href="docs/ISSUE-CONVENTIONS.md" target="_blank">Issue Conventions (AD-###)</a>
+ <a href="docs/ISSUE-REGISTER.md" target="_blank">Issue Register</a>
  </div>
  </section>
 
