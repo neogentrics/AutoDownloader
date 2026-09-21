@@ -66,7 +66,7 @@ download to a single badly-named file.
 | :--- | :--- |
 | ~~AD-026~~ | ~~Surface the new download settings in Preferences.~~ **Shipped.** |
 | ~~AD-027~~ | ~~Progress bar showing percentage, speed and ETA.~~ **Shipped.** |
-| **AD-023** | Replace the reflection-based TVDB access with the typed `TvDbSharper` API. Every failure is currently swallowed, so "no such show" and "the reflection guessed wrong" are indistinguishable. |
+| ~~AD-023~~ | ~~Replace the reflection-based TVDB access with the typed API.~~ **Shipped.** TVDB had been contributing nothing because search results carry a prefixed string id (`series-78874`) that the reflection fed into `Convert.ToInt64`. |
 | **AD-022** | Bound the developer log queue. |
 
 ### Then — automation
