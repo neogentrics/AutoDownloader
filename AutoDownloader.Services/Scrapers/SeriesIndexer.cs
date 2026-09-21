@@ -179,6 +179,20 @@ namespace AutoDownloader.Services.Scrapers
                 // raw pre-grouping list and includes every nav and footer link on the page.
                 if (renderJavaScript && _lastRenderJson.Count > 0)
                 {
+                    // Best case: the JSON says which episode each item is. A page has to know
+                    // that to print "S5 E2" beside a tile, and taking it directly beats
+                    // inferring it back from page order - which is wrong whenever the page is
+                    // showing a season other than the one that was asked for.
+                    int numberedFromApi = CollectFromJsonEpisodes(
+                        _lastRenderJson, currentPage, baseUri, seriesUrl, seen, candidates);
+
+                    if (numberedFromApi > 0)
+                    {
+                        OnLog?.Invoke($"SeriesIndexer: the page listed {added} link(s); its API responses "
+                            + $"carried {numberedFromApi} more, with season and episode numbers.");
+                        added += numberedFromApi;
+                    }
+
                     string fromJson = BuildHtmlFromJsonPaths(_lastRenderJson);
 
                     if (fromJson.Length > 0)
@@ -532,6 +546,54 @@ namespace AutoDownloader.Services.Scrapers
         /// grouping and by the decision to go looking in the page's API responses.
         /// </summary>
         private const int MinimumGroupSize = 3;
+
+        /// <summary>
+        /// Adds episodes the page's own API responses described, keeping the season and
+        /// episode numbers they came with.
+        /// </summary>
+        /// <returns>How many were added.</returns>
+        private static int CollectFromJsonEpisodes(
+            List<string> jsonBodies,
+            string pageUrl,
+            Uri baseUri,
+            string seriesUrl,
+            HashSet<string> seen,
+            List<EpisodeLink> candidates)
+        {
+            Uri pageUri;
+            try { pageUri = new Uri(pageUrl); }
+            catch { pageUri = baseUri; }
+
+            int added = 0;
+
+            foreach (var episode in JsonEpisodeExtractor.Extract(jsonBodies))
+            {
+                if (!episode.IsNumbered) continue;
+
+                Uri absolute;
+                try { absolute = new Uri(pageUri, episode.Path); }
+                catch { continue; }
+
+                if (absolute.Scheme != Uri.UriSchemeHttp && absolute.Scheme != Uri.UriSchemeHttps) continue;
+                if (!string.Equals(absolute.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)) continue;
+
+                string url = absolute.ToString();
+                if (url.TrimEnd('/').Equals(seriesUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) continue;
+                if (!seen.Add(url)) continue;
+
+                candidates.Add(new EpisodeLink
+                {
+                    Url = url,
+                    LinkText = episode.Name,
+                    DetectedSeasonNumber = episode.SeasonNumber,
+                    DetectedEpisodeNumber = episode.EpisodeNumber,
+                });
+
+                added++;
+            }
+
+            return added;
+        }
 
         /// <summary>
         /// JSON bodies seen during the most recent headless render.

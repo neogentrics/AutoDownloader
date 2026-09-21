@@ -26,6 +26,16 @@
         public int NextSeasonNumber { get; set; } = 1;
 
         /// <summary>
+        /// True when the season was actually asked for - given on the command line, or read
+        /// out of the URL - rather than left at the default.
+        ///
+        /// It is the difference between "season 1" meaning a choice and meaning "nobody
+        /// said". A show page that opens on its newest season should be allowed to correct
+        /// the latter and never the former.
+        /// </summary>
+        public bool SeasonWasSpecified { get; set; }
+
+        /// <summary>
         /// The official number of episodes for the 'NextSeasonNumber'.
         /// This is used by the Content Verification step in MainWindow.
         /// </summary>

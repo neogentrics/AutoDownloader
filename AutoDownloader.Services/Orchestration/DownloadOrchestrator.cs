@@ -188,6 +188,7 @@ namespace AutoDownloader.Services.Orchestration
                 if (parsedSeason.HasValue)
                 {
                     metadata.NextSeasonNumber = parsedSeason.Value;
+                    metadata.SeasonWasSpecified = true;
                     Log($"Detected Season: {parsedSeason.Value} from URL.", JobLogLevel.Notice);
                 }
 
@@ -222,6 +223,7 @@ namespace AutoDownloader.Services.Orchestration
             if (seasonOverride.HasValue && seasonOverride.Value > 0)
             {
                 metadata.NextSeasonNumber = seasonOverride.Value;
+                metadata.SeasonWasSpecified = true;
                 Log($"Using season {seasonOverride.Value} (given explicitly).", JobLogLevel.Notice);
             }
 
@@ -333,8 +335,51 @@ namespace AutoDownloader.Services.Orchestration
             if (cancellationToken.IsCancellationRequested) return Cancelled(result);
 
             // ---------------------------------------------------------------- 3. Plan
+            int seasonTitlesWereFetchedFor = metadata.NextSeasonNumber;
+
             List<EpisodeLink> episodeLinks =
                 await BuildEpisodePlanAsync(finalUrl, metadata, cancellationToken).ConfigureAwait(false);
+
+            // The plan may have discovered the page is showing a different season. The episode
+            // titles in hand belong to the old one, so they would be written onto the wrong
+            // episodes - exactly the failure the title matching was added to stop.
+            if (metadata.NextSeasonNumber != seasonTitlesWereFetchedFor)
+            {
+                Log($"--- Re-reading episode titles for season {metadata.NextSeasonNumber}. ---",
+                    JobLogLevel.Notice);
+
+                try
+                {
+                    var reread = await _metadataService
+                        .GetMergedMetadataAsync(attemptName, metadata.NextSeasonNumber, preferredYear)
+                        .ConfigureAwait(false);
+
+                    if (reread != null && reread.Episodes.Count > 0)
+                    {
+                        metadata.Episodes = reread.Episodes;
+                        metadata.ExpectedEpisodeCount = reread.ExpectedEpisodeCount;
+                        result.ExpectedEpisodeCount = reread.ExpectedEpisodeCount;
+
+                        Log($"Season {metadata.NextSeasonNumber}: {reread.ExpectedEpisodeCount} "
+                            + $"expected episode(s), {reread.Episodes.Count} title(s) known.",
+                            JobLogLevel.Notice);
+                    }
+                    else
+                    {
+                        // Better no titles than the previous season's titles.
+                        metadata.Episodes = new List<DownloadEpisode>();
+                        Log("--- No titles found for that season; episodes will be numbered only. ---",
+                            JobLogLevel.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    metadata.Episodes = new List<DownloadEpisode>();
+                    Log($"--- Could not re-read titles: {ex.Message} ---", JobLogLevel.Warning);
+                }
+
+                await _xmlService.SaveMetadataAsync(finalOutputFolder, metadata).ConfigureAwait(false);
+            }
 
             // Check the cookie source once, here, rather than discovering the problem one
             // episode at a time after the downloads have already started.
@@ -889,6 +934,25 @@ namespace AutoDownloader.Services.Orchestration
 
                     links = thisSeason;
                 }
+                else if (!metadata.SeasonWasSpecified)
+                {
+                    // Nobody asked for season 1 - it is just the default. A show page that
+                    // opens on its newest season would otherwise have that season's episodes
+                    // filed as season 1, which is wrong in the most confusing way: the
+                    // filenames look right.
+                    int pageSeason = withSeason
+                        .GroupBy(l => l.DetectedSeasonNumber!.Value)
+                        .OrderByDescending(g => g.Count())
+                        .First().Key;
+
+                    Log($"--- The page is showing season {pageSeason}, and no season was asked "
+                        + $"for. Using season {pageSeason} instead of the default. ---",
+                        JobLogLevel.Notice);
+
+                    metadata.NextSeasonNumber = pageSeason;
+                    targetSeason = pageSeason;
+                    links = withSeason.Where(l => l.DetectedSeasonNumber == pageSeason).ToList();
+                }
                 else
                 {
                     Log($"--- WARNING: no link on the page belongs to season {targetSeason}. "
@@ -985,6 +1049,16 @@ namespace AutoDownloader.Services.Orchestration
                 var link = links[i];
                 int episodeNumber = link.DetectedEpisodeNumber ?? (i + 1);
                 titlesByNumber.TryGetValue(episodeNumber, out string? episodeTitle);
+
+                // The databases cover a season's episodes but rarely its extras, so a page
+                // listing specials alongside them would file those as bare numbers. The link
+                // usually carries the real name, and a named file beats "S05E102.mp4".
+                if (string.IsNullOrWhiteSpace(episodeTitle)
+                    && !string.IsNullOrWhiteSpace(link.LinkText)
+                    && link.LinkText!.Length <= 120)
+                {
+                    episodeTitle = link.LinkText;
+                }
 
                 _currentEpisodeIndex = i + 1;
                 _currentEpisodeCount = links.Count;
