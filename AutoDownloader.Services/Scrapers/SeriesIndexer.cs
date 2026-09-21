@@ -713,10 +713,41 @@ namespace AutoDownloader.Services.Scrapers
                 }
 
                 chosenSegment = group.Segment;
-                return group.Links;
+                return RemoveRouteStubs(group.Links);
             }
 
             return new List<EpisodeLink>();
+        }
+
+        /// <summary>
+        /// Drops links that other links sit underneath.
+        ///
+        /// Mining a page's API responses for path-shaped strings also finds the routes those
+        /// paths are built from: alongside twenty-eight /video/watch/{id} episodes came a bare
+        /// "/video/watch", which is not an episode and fails as one.
+        ///
+        /// The boundary matters. A link only counts as a route when another starts with it
+        /// FOLLOWED BY a separator, so "/video/watch" is removed by "/video/watch/abc" while
+        /// "/video/1" survives "/video/12" - which a plain string prefix would have eaten.
+        /// </summary>
+        private static List<EpisodeLink> RemoveRouteStubs(List<EpisodeLink> links)
+        {
+            if (links.Count < 2) return links;
+
+            var kept = links
+                .Where(link =>
+                {
+                    string prefix = link.Url.TrimEnd('/') + "/";
+
+                    return !links.Any(other =>
+                        !ReferenceEquals(other, link) &&
+                        other.Url.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                })
+                .ToList();
+
+            // Never return nothing: if every link looks like a route stub the rule has
+            // misfired, and whatever was found is better than an empty list.
+            return kept.Count > 0 ? kept : links;
         }
 
         private static string? FirstPathSegmentOf(string url)

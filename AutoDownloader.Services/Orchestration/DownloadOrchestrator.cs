@@ -842,14 +842,19 @@ namespace AutoDownloader.Services.Orchestration
             {
                 found = await indexer.IndexAsync(seriesUrl, renderJavaScript: false).ConfigureAwait(false);
 
-                if (found.Count < 2 && !cancellationToken.IsCancellationRequested)
+                // The rendered pass always runs, not only when the static HTML looked empty.
+                //
+                // "More than two links" was never a test of whether those links work. A
+                // Discovery+ show page ships twenty-five route links in its raw HTML that all
+                // redirect to an error page, which was enough to skip rendering entirely -
+                // and with it the signed-in session, the episode list in the page's API
+                // responses, and the season chooser. The run failed every episode while the
+                // log reported it had indexed twenty-five of them.
+                //
+                // Rendering is what a person actually sees, so it wins ties. It costs one
+                // browser load per job, not per episode.
+                if (!cancellationToken.IsCancellationRequested)
                 {
-                    Log("--- Few links in the static HTML; retrying with a headless browser... ---", JobLogLevel.Warning);
-
-                    // A show page displays one season at a time. Ask before reading it, so a
-                    // nineteen-season show is not silently reduced to whichever season the
-                    // page happened to open on - and so nobody discovers hours later that
-                    // only one was wanted.
                     var seasonsOffered = await indexer.DiscoverSeasonsAsync(seriesUrl).ConfigureAwait(false);
 
                     List<EpisodeLink> rendered;
@@ -885,7 +890,16 @@ namespace AutoDownloader.Services.Orchestration
                         rendered = await indexer.IndexAsync(seriesUrl, renderJavaScript: true).ConfigureAwait(false);
                     }
 
-                    if (rendered.Count > found.Count) found = rendered;
+                    if (rendered.Count >= found.Count && rendered.Count > 0)
+                    {
+                        if (found.Count > 0 && !rendered.SequenceEqual(found))
+                        {
+                            Log($"--- The rendered page gives {rendered.Count} link(s); using those "
+                                + $"rather than the {found.Count} in the raw HTML. ---", JobLogLevel.Notice);
+                        }
+
+                        found = rendered;
+                    }
                 }
             }
             catch (Exception ex)
@@ -1345,9 +1359,12 @@ namespace AutoDownloader.Services.Orchestration
                     // no video on it, when the usual cause is that the scanner is a separate
                     // browser with no session - so a page behind a login never starts its
                     // player, and there is nothing to observe.
-                    Log("--- No media requests were observed on that page. The page scanner runs "
-                        + "its own browser and is not signed in to anything, so a page behind a "
-                        + "login will look empty to it even when the video plays for you. ---",
+                    // Now that the scanner carries the configured browser session, a login
+                    // wall is no longer the likeliest explanation - so this no longer claims
+                    // it is. The usual cause is a link that is not a player page at all.
+                    Log("--- No media requests were observed on that page. Either it is not a "
+                        + "player page, or the player never started. If cookies are set to None "
+                        + "in Preferences, a site that needs a sign-in will look empty here. ---",
                         JobLogLevel.Warning);
                     return null;
                 }

@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-081`**
+**Next free ID: `AD-084`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -70,6 +70,9 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-078 | - | One season is read and the rest are invisible; no way to choose | feature | high |
 | AD-079 | - | Dropdown and menu text is unreadable: light popups inherit a white foreground | bug | high |
 | AD-080 | - | No way to change theme, and colours are hardcoded in every window | feature | medium |
+| AD-081 | - | Raw HTML full of dead route links skips rendering entirely | bug | critical |
+| AD-082 | - | A bare route path is treated as an episode | bug | medium |
+| AD-083 | - | ComboBox chrome ignores Background, so the closed box stays system-coloured | bug | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
