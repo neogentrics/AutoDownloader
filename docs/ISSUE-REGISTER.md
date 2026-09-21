@@ -1,4 +1,4 @@
-# Issue Register
+﻿# Issue Register
 
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
@@ -45,10 +45,22 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-027 | [#50](https://github.com/neogentrics/AutoDownloader/issues/50) | No progress bar, percentage, speed or ETA during downloads | feature | high |
 | AD-030 | [#52](https://github.com/neogentrics/AutoDownloader/issues/52) | No headless CLI entry point for unattended runs | feature | high |
 | AD-022 | [#45](https://github.com/neogentrics/AutoDownloader/issues/45) | `DeveloperLogger` queue grows without bound | bug | medium |
-| AD-031 | [#53](https://github.com/neogentrics/AutoDownloader/issues/53) | Custom domain `githubprojects.neogentrics.com` does not resolve to GitHub Pages | task | medium |
+
 | AD-024 | [#47](https://github.com/neogentrics/AutoDownloader/issues/47) | `MaxConcurrentDownloads` setting is never read | bug | low |
 | AD-025 | [#48](https://github.com/neogentrics/AutoDownloader/issues/48) | Orphaned `PlaywrightTests` stub project | task | low |
-| AD-028 | [#51](https://github.com/neogentrics/AutoDownloader/issues/51) | GitHub Pages publishes the entire repository root | task | low |
+
+
+## Resolved by retiring GitHub Pages
+
+The project page now lives on the Recon Towers site, generated from
+`recontowers/src/lib/projects.ts`, so the GitHub Pages site was retired rather than
+repaired. The deploy workflow has been removed; the Pages site itself is unpublished from
+**Settings -> Pages**.
+
+| ID | # | Title | Outcome |
+| :--- | :--- | :--- | :--- |
+| AD-028 | [#51](https://github.com/neogentrics/AutoDownloader/issues/51) | GitHub Pages publishes the entire repository root | Moot - Pages retired |
+| AD-031 | [#53](https://github.com/neogentrics/AutoDownloader/issues/53) | Custom domain does not resolve to GitHub Pages | Retired in favour of recontowers.com |
 
 ## Pre-existing issues
 
