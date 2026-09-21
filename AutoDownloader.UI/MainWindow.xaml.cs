@@ -249,7 +249,7 @@ namespace AutoDownloader.UI
         /// also be driven headlessly. This method only adapts it to the window: events in,
         /// log lines and status text out.
         /// </summary>
-        private async Task ProcessSingleDownloadAsync(string searchTerm)
+        private async Task ProcessSingleDownloadAsync(string searchTerm, IUserPrompt prompt)
         {
             if (string.IsNullOrWhiteSpace(searchTerm)) return;
 
@@ -265,7 +265,7 @@ namespace AutoDownloader.UI
                 _searchService,
                 _xmlService,
                 _ytDlpService,
-                new WpfUserPrompt(this))
+                prompt)
             {
                 CookieSource = _settingsService.Settings.CookieSource
             };
@@ -644,7 +644,20 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
                 return;
             }
 
-            //2. Process each item sequentially
+            //2. Identify everything before downloading anything.
+            //
+            // Each item used to be identified as its turn came round, so a batch of ten
+            // stopped ten times, scattered through the run - a question could arrive forty
+            // minutes in and then sit waiting. Asking up front means the questions happen
+            // while the user is still at the keyboard, and the downloads can be left alone.
+            var resolutionCache = new SeriesResolutionCache();
+            var prompt = new CachingUserPrompt(new WpfUserPrompt(this), resolutionCache);
+
+            SetUiLock(true);
+
+            if (!await ResolveBatchIdentitiesAsync(searchTerms, prompt)) return;
+
+            //3. Process each item sequentially
             AppendLog($"--- Starting Batch Download ({searchTerms.Count} items) ---", Brushes.Aqua);
 
             foreach (var term in searchTerms)
@@ -657,7 +670,7 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
                 // unlocked it mid-batch, which let a second click start a concurrent run.
                 SetUiLock(true);
 
-                await ProcessSingleDownloadAsync(term);
+                await ProcessSingleDownloadAsync(term, prompt);
 
                 if (_cancellation?.IsCancellationRequested == true)
                 {
@@ -670,6 +683,68 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
             AppendLog("\n--- Batch Download Finished. ---", Brushes.Aqua);
             StatusTextBlock.Text = "Batch complete.";
             SetUiLock(false);
+        }
+
+        /// <summary>
+        /// Works out what every item in the batch is, before any of it downloads.
+        ///
+        /// Failing to identify an item is not a reason to stop: the download may still work,
+        /// and the metadata step tries again. Only an outright cancel ends the batch.
+        /// </summary>
+        /// <returns>False if the user cancelled, in which case the batch is over.</returns>
+        private async Task<bool> ResolveBatchIdentitiesAsync(List<string> searchTerms, IUserPrompt prompt)
+        {
+            // This now runs before ProcessSingleDownloadAsync, which is where the guard
+            // against a click landing mid-initialisation used to live. Without repeating it
+            // here, an early click reaches the resolver with null services.
+            if (_ytDlpService == null || _metadataService == null || _searchService == null)
+            {
+                AppendLog("--- ERROR: Services are still initializing. Please wait a moment and try again. ---",
+                    Brushes.Red);
+                SetUiLock(false);
+                return false;
+            }
+
+            AppendLog($"--- Identifying {searchTerms.Count} item(s) before downloading. ---", Brushes.Aqua);
+
+            var resolver = new DownloadOrchestrator(
+                _metadataService!, _searchService!, _xmlService, _ytDlpService!, prompt);
+
+            resolver.OnDiagnostic += line => DeveloperLogger.Append(line);
+
+            for (int i = 0; i < searchTerms.Count; i++)
+            {
+                string term = searchTerms[i];
+                if (string.IsNullOrWhiteSpace(term)) continue;
+
+                StatusTextBlock.Text = $"Identifying {i + 1} of {searchTerms.Count}...";
+
+                var resolution = await resolver.ResolveIdentityAsync(
+                    term, _cancellation?.Token ?? CancellationToken.None);
+
+                if (resolution.Cancelled || _cancellation?.IsCancellationRequested == true)
+                {
+                    AppendLog("--- Cancelled while identifying. Nothing was downloaded. ---", Brushes.Red);
+                    StatusTextBlock.Text = "Cancelled.";
+                    SetUiLock(false);
+                    return false;
+                }
+
+                if (resolution.Problem != null)
+                {
+                    AppendLog($"    {i + 1}. {term} -> {resolution.Problem} "
+                        + "Will try again when it downloads.", Brushes.Orange);
+                }
+                else
+                {
+                    AppendLog($"    {i + 1}. {term} -> {resolution.Display} (season {resolution.Season})",
+                        Brushes.LightGreen);
+                }
+            }
+
+            AppendLog("--- All items identified. No further questions about which show is which. ---",
+                Brushes.Aqua);
+            return true;
         }
 
         /// <summary>

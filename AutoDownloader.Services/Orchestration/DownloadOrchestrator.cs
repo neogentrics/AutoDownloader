@@ -402,6 +402,115 @@ namespace AutoDownloader.Services.Orchestration
         /// Returns as soon as one form resolves. Cancelled is set when the user declined to
         /// choose between candidates, which is a deliberate stop rather than a failure.
         /// </summary>
+        /// <summary>
+        /// The outcome of working out what one batch item actually is, before anything is
+        /// downloaded.
+        /// </summary>
+        public class IdentityResolution
+        {
+            public string SearchTerm { get; set; } = string.Empty;
+
+            /// <summary>The show as the databases know it, once the user has confirmed it.</summary>
+            public string? ResolvedTitle { get; set; }
+
+            public int? Year { get; set; }
+
+            public int Season { get; set; } = 1;
+
+            public bool Cancelled { get; set; }
+
+            /// <summary>Set when the item could not be identified; it is still downloadable.</summary>
+            public string? Problem { get; set; }
+
+            public string Display => ResolvedTitle == null
+                ? SearchTerm
+                : Year.HasValue ? $"{ResolvedTitle} ({Year})" : ResolvedTitle;
+        }
+
+        /// <summary>
+        /// Works out which show a batch item is, asking whatever needs asking, without
+        /// downloading anything.
+        ///
+        /// Running this over the whole batch first means every question is asked while the
+        /// user is still at the keyboard, instead of one arriving forty minutes into a run
+        /// that then sits waiting. The answers are recorded by the prompt this orchestrator
+        /// was given, so the download pass finds them already answered.
+        ///
+        /// An item that cannot be identified is not an error here. It is reported and left
+        /// alone, because the download may still work and the metadata step will try again.
+        /// </summary>
+        public async Task<IdentityResolution> ResolveIdentityAsync(
+            string searchTerm,
+            CancellationToken cancellationToken = default,
+            int? seasonOverride = null)
+        {
+            var resolution = new IdentityResolution { SearchTerm = searchTerm };
+
+            if (string.IsNullOrWhiteSpace(searchTerm))
+            {
+                resolution.Problem = "Empty entry.";
+                return resolution;
+            }
+
+            string searchTarget = searchTerm;
+
+            if (searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                // Reading the page for its title is the expensive half of identifying a URL,
+                // and it is exactly the "index it first" the batch is asking for.
+                var (parsedName, parsedSeason) = await _urlParser
+                    .ParseAsync(searchTerm, cancellationToken).ConfigureAwait(false);
+
+                searchTarget = parsedName;
+                if (parsedSeason.HasValue) resolution.Season = parsedSeason.Value;
+            }
+
+            if (seasonOverride.HasValue && seasonOverride.Value > 0)
+            {
+                resolution.Season = seasonOverride.Value;
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                resolution.Cancelled = true;
+                return resolution;
+            }
+
+            string? confirmed = await _prompt
+                .ConfirmShowNameAsync(searchTarget, cancellationToken).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(confirmed))
+            {
+                resolution.Cancelled = true;
+                return resolution;
+            }
+
+            if (!_metadataService.IsTmdbKeyValid && !_metadataService.IsTvdbKeyValid)
+            {
+                resolution.Problem = "No metadata API key configured.";
+                return resolution;
+            }
+
+            var resolved = await TryResolveSeriesAsync(
+                confirmed!, resolution.Season, cancellationToken).ConfigureAwait(false);
+
+            if (resolved.Cancelled)
+            {
+                resolution.Cancelled = true;
+                return resolution;
+            }
+
+            if (resolved.Merged == null)
+            {
+                resolution.Problem = $"No database match for '{confirmed}'.";
+                return resolution;
+            }
+
+            resolution.ResolvedTitle = resolved.MatchedName ?? confirmed;
+            resolution.Year = resolved.Year;
+            return resolution;
+        }
+
         private async Task<(MergedSeriesMetadata? Merged, int? Year, string? MatchedName, bool Cancelled)>
             TryResolveSeriesAsync(string searchTerm, int seasonNumber, CancellationToken cancellationToken)
         {

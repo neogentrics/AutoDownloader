@@ -116,6 +116,12 @@ autodl "The Mandalorian" --json --quiet
 `--json` prints a machine-readable summary on stdout with logs kept on stderr, which is what
 makes it usable from a scheduler or a webhook. Run `autodl --help` for the full option list.
 
+In multi-link mode every item is identified first - page read, databases searched, and
+any "which show is this?" asked - before a single byte is downloaded. That way the
+questions happen while you are still at the keyboard instead of arriving forty minutes
+into a run, and the downloads can be left alone. Answers last the whole batch, including
+"keep all" and "replace all".
+
 Episodes already on disk are kept, not re-downloaded. The desktop app asks what to do about
 each one, with "keep all" and "replace all" so a season is one decision rather than twelve;
 the CLI never asks, since nobody is there to answer. Pass `--overwrite` when you do want

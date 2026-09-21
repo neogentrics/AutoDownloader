@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-066`**
+**Next free ID: `AD-067`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -55,6 +55,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-063 | - | Session logs kept by count, so a day of use erased the run you wanted | bug | medium |
 | AD-064 | - | Confirm-show dialog auto-answers in 20s, even while you are reading it | bug | high |
 | AD-065 | - | Multi-link hint text is parsed as a search term | bug | high |
+| AD-066 | - | A batch stops to ask which show each item is, scattered through the run | feature | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
