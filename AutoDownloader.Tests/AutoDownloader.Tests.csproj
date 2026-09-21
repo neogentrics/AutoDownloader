@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AutoDownloader.Core\AutoDownloader.Core.csproj" />
     <ProjectReference Include="..\AutoDownloader.Services\AutoDownloader.Services.csproj" />
+    <ProjectReference Include="..\AutoDownloader.Cli\AutoDownloader.Cli.csproj" />
   </ItemGroup>
 
   <ItemGroup>

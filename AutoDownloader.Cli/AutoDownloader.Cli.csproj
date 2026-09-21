@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- "autodl" rather than the project name, because this is typed by hand and pasted
+         into schedulers. -->
+    <AssemblyName>autodl</AssemblyName>
+    <RootNamespace>AutoDownloader.Cli</RootNamespace>
+
+    <!-- The tools it drives (yt-dlp.exe, aria2c.exe, ffmpeg.exe) are Windows builds, so
+         although nothing here is Windows-specific at the language level, this only runs
+         usefully on Windows today. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutoDownloader.Core\AutoDownloader.Core.csproj" />
+    <ProjectReference Include="..\AutoDownloader.Services\AutoDownloader.Services.csproj" />
+  </ItemGroup>
+
+</Project>

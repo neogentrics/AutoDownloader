@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoDownloader.Services", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoDownloader.Tests", "AutoDownloader.Tests\AutoDownloader.Tests.csproj", "{490C92E1-82D8-48EC-B124-033B3F60C293}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoDownloader.Cli", "AutoDownloader.Cli\AutoDownloader.Cli.csproj", "{8A16A8AA-BAC0-436C-B944-0E752D10F002}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{490C92E1-82D8-48EC-B124-033B3F60C293}.Release|x64.Build.0 = Release|Any CPU
 		{490C92E1-82D8-48EC-B124-033B3F60C293}.Release|x86.ActiveCfg = Release|Any CPU
 		{490C92E1-82D8-48EC-B124-033B3F60C293}.Release|x86.Build.0 = Release|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Debug|x64.Build.0 = Debug|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Debug|x86.Build.0 = Debug|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Release|x64.ActiveCfg = Release|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Release|x64.Build.0 = Release|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Release|x86.ActiveCfg = Release|Any CPU
+		{8A16A8AA-BAC0-436C-B944-0E752D10F002}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
