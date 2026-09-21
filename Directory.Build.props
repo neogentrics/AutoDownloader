@@ -3,10 +3,10 @@
   <!-- One place to set the version. Previously the title bar, the welcome text and the CLI
        each carried their own hardcoded string and disagreed with each other. -->
   <PropertyGroup>
-    <!-- 2.0.0: the version the project had already earmarked for this work in AD-049.
-         Not a feature count - 1.x could not reliably download a season at all, and the
-         CLI is a new public interface, so the jump is about what the thing now is. -->
-    <VersionPrefix>2.0.0</VersionPrefix>
+    <!-- 2.1.0: features since 2.0.0 - the season picker, a switchable theme, and a page
+         scanner that can use the signed-in session - plus a run of bug fixes. Backwards
+         compatible throughout, so the minor number moves rather than the major one. -->
+    <VersionPrefix>2.1.0</VersionPrefix>
     <VersionSuffix></VersionSuffix>
     <Product>AutoDownloader</Product>
     <Company>Neo Gentrics</Company>
