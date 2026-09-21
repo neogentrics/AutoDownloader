@@ -57,42 +57,36 @@ namespace AutoDownloader.Services.Scrapers
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         /// <summary>
-        /// Indexes a series/season page and returns its episode links in document order.
+        /// How many pages of a listing to follow. High enough for a long back catalogue,
+        /// low enough that a malformed pager cannot run for an hour.
         /// </summary>
-        /// <param name="seriesUrl">The series or season page to index.</param>
-        /// <param name="renderJavaScript">
-        /// When true, render the page in headless Chromium first. Use this only after a plain
-        /// fetch has come back with too few links.
-        /// </param>
-        public async Task<List<EpisodeLink>> IndexAsync(string seriesUrl, bool renderJavaScript = false)
+        private const int MaxPages = 25;
+
+        /// <summary>
+        /// Adds this page's same-host anchors to the running list, skipping any already seen.
+        /// </summary>
+        private static void CollectCandidates(
+            string html,
+            string pageUrl,
+            Uri baseUri,
+            string seriesUrl,
+            HashSet<string> seen,
+            List<EpisodeLink> candidates)
         {
-            var results = new List<EpisodeLink>();
+            Uri pageUri;
+            try { pageUri = new Uri(pageUrl); }
+            catch { pageUri = baseUri; }
 
-            string? html = renderJavaScript
-                ? await RenderWithPlaywrightAsync(seriesUrl)
-                : await FetchAsync(seriesUrl);
+            var document = new HtmlParser().ParseDocument(html);
 
-            if (string.IsNullOrWhiteSpace(html))
-            {
-                OnLog?.Invoke($"SeriesIndexer: no HTML retrieved for {seriesUrl}");
-                return results;
-            }
-
-            var baseUri = new Uri(seriesUrl);
-            var doc = new HtmlParser().ParseDocument(html);
-
-            // Collect every same-host anchor, in document order, de-duplicated by URL.
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var candidates = new List<EpisodeLink>();
-
-            foreach (var anchor in doc.QuerySelectorAll("a"))
+            foreach (var anchor in document.QuerySelectorAll("a"))
             {
                 var href = anchor.GetAttribute("href");
                 if (string.IsNullOrWhiteSpace(href)) continue;
                 if (href.StartsWith("#") || href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase)) continue;
 
                 Uri absolute;
-                try { absolute = new Uri(baseUri, href); }
+                try { absolute = new Uri(pageUri, href); }
                 catch { continue; }
 
                 if (absolute.Scheme != Uri.UriSchemeHttp && absolute.Scheme != Uri.UriSchemeHttps) continue;
@@ -116,6 +110,87 @@ namespace AutoDownloader.Services.Scrapers
                     DetectedSeasonNumber = season,
                     DetectedEpisodeNumber = episode,
                 });
+            }
+        }
+
+        /// <summary>
+        /// Indexes a series/season page and returns its episode links in document order.
+        /// </summary>
+        /// <param name="seriesUrl">The series or season page to index.</param>
+        /// <param name="renderJavaScript">
+        /// When true, render the page in headless Chromium first. Use this only after a plain
+        /// fetch has come back with too few links.
+        /// </param>
+        public async Task<List<EpisodeLink>> IndexAsync(string seriesUrl, bool renderJavaScript = false)
+        {
+            var results = new List<EpisodeLink>();
+
+            Uri baseUri;
+            try { baseUri = new Uri(seriesUrl); }
+            catch
+            {
+                OnLog?.Invoke($"SeriesIndexer: not a usable URL: {seriesUrl}");
+                return results;
+            }
+
+            // Collect same-host anchors across every page of the listing, in document order,
+            // de-duplicated by URL.
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var candidates = new List<EpisodeLink>();
+            var visitedPages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            string? currentPage = seriesUrl;
+            int pagesRead = 0;
+
+            while (currentPage != null && pagesRead < MaxPages)
+            {
+                // A pager that points back at somewhere already read would otherwise loop for
+                // as long as the cap allows.
+                if (!visitedPages.Add(currentPage.TrimEnd('/'))) break;
+
+                string? html = renderJavaScript
+                    ? await RenderWithPlaywrightAsync(currentPage)
+                    : await FetchAsync(currentPage);
+
+                if (string.IsNullOrWhiteSpace(html))
+                {
+                    if (pagesRead == 0)
+                    {
+                        OnLog?.Invoke($"SeriesIndexer: no HTML retrieved for {currentPage}");
+                        return results;
+                    }
+
+                    // A later page failing is not fatal; keep what earlier pages gave.
+                    OnLog?.Invoke($"SeriesIndexer: could not read page {pagesRead + 1}; keeping what was found.");
+                    break;
+                }
+
+                pagesRead++;
+
+                int before = candidates.Count;
+                CollectCandidates(html, currentPage, baseUri, seriesUrl, seen, candidates);
+                int added = candidates.Count - before;
+
+                // A page contributing nothing new means the pager is going in circles or has
+                // run past the end, whatever its links claim.
+                if (pagesRead > 1 && added == 0)
+                {
+                    OnLog?.Invoke($"SeriesIndexer: page {pagesRead} added no new links; stopping.");
+                    break;
+                }
+
+                currentPage = PaginationFinder.FindNextPage(html, currentPage);
+            }
+
+            if (pagesRead > 1)
+            {
+                OnLog?.Invoke($"SeriesIndexer: followed {pagesRead} page(s) of the listing, "
+                            + $"{candidates.Count} link(s) in total.");
+            }
+
+            if (pagesRead >= MaxPages)
+            {
+                OnLog?.Invoke($"SeriesIndexer: stopped at the {MaxPages}-page limit; there may be more.");
             }
 
             // Prefer links that actually look like episodes. If a decent number of them carry a
