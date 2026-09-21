@@ -53,6 +53,14 @@ namespace AutoDownloader.Services.Scrapers
         /// Matches a season and episode together: "s01-e01", "S01E01", "season 2 episode 5".
         /// Requiring both in one expression avoids reading an unrelated number as a season.
         /// </summary>
+        /// <summary>
+        /// A tile numbered at the front, as a listing usually does: "1." or "1)".
+        /// The trailing punctuation is what keeps a year or a duration out.
+        /// </summary>
+        private static readonly Regex LeadingListNumberPattern = new Regex(
+            "^([0-9]{1,3})[.)]",
+            RegexOptions.Compiled);
+
         private static readonly Regex SeasonEpisodePattern = new Regex(
             @"\bs(?:eason)?[\s._-]*(\d{1,3})[\s._-]*e(?:p(?:isode)?)?[\s._-]*(\d{1,4})\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -72,7 +80,8 @@ namespace AutoDownloader.Services.Scrapers
             Uri baseUri,
             string seriesUrl,
             HashSet<string> seen,
-            List<EpisodeLink> candidates)
+            List<EpisodeLink> candidates,
+            bool fromDocument = true)
         {
             Uri pageUri;
             try { pageUri = new Uri(pageUrl); }
@@ -110,6 +119,7 @@ namespace AutoDownloader.Services.Scrapers
                     LinkText = text,
                     DetectedSeasonNumber = season,
                     DetectedEpisodeNumber = episode,
+                    FromDocument = fromDocument,
                 });
             }
         }
@@ -198,7 +208,8 @@ namespace AutoDownloader.Services.Scrapers
                     if (fromJson.Length > 0)
                     {
                         int beforeJson = candidates.Count;
-                        CollectCandidates(fromJson, currentPage, baseUri, seriesUrl, seen, candidates);
+                        CollectCandidates(fromJson, currentPage, baseUri, seriesUrl, seen, candidates,
+                            fromDocument: false);
                         int fromApi = candidates.Count - beforeJson;
 
                         if (fromApi > 0)
@@ -409,6 +420,24 @@ namespace AutoDownloader.Services.Scrapers
                 }
             }
 
+            // A listing very often numbers its tiles - "1. Steak and Sides" - and that is a
+            // far better signal than the tile's position, which is only right while the page
+            // happens to be sorted the way the databases are.
+            //
+            // Only at the very start, and only when followed by a full stop or bracket: the
+            // rest of a tile is full of numbers that are not episode numbers, like the year
+            // and the running time in "TV-G 22m 2008".
+            if (!string.IsNullOrWhiteSpace(linkText))
+            {
+                var leading = LeadingListNumberPattern.Match(linkText!.TrimStart());
+                if (leading.Success
+                    && int.TryParse(leading.Groups[1].Value, out int listed)
+                    && listed > 0)
+                {
+                    return (null, listed);
+                }
+            }
+
             return (null, DetectEpisodeNumber(linkText, url));
         }
 
@@ -500,7 +529,18 @@ namespace AutoDownloader.Services.Scrapers
                 .Where(x => x.Segment != null)
                 .GroupBy(x => x.Segment!, StringComparer.OrdinalIgnoreCase)
                 .Select(g => new { Segment = g.Key, Links = g.Select(x => x.Link).ToList() })
-                .OrderByDescending(g => g.Links.Count)
+
+                // A group the page actually links to outranks one that only appeared in an
+                // API payload, however many of the latter there are. On a Discovery+ show
+                // page the user's own watchlist supplied 36 mined paths against 25 real
+                // episode links, and won on count alone - so the indexer returned the
+                // watchlist instead of the episodes.
+                //
+                // Size still decides between groups of equal standing, which is what keeps
+                // working the pages whose markup carries no links at all and where mining is
+                // the only source there is.
+                .OrderByDescending(g => g.Links.Any(l => l.FromDocument) ? 1 : 0)
+                .ThenByDescending(g => g.Links.Count)
                 .ToList();
 
             foreach (var group in groups)

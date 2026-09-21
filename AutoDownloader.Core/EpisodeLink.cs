@@ -39,5 +39,15 @@
         /// Zero-based position of this link within the page, preserved from document order.
         /// </summary>
         public int Ordinal { get; set; }
+
+        /// <summary>
+        /// True when this link was in the page itself, rather than mined out of an API
+        /// response the page happened to fetch.
+        ///
+        /// Mining is what rescues a listing whose markup carries no links at all, but it
+        /// scoops up everything a payload mentions - navigation, recommendations, the user's
+        /// own watchlist - and those can easily outnumber the episodes.
+        /// </summary>
+        public bool FromDocument { get; set; }
     }
 }

@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-075`**
+**Next free ID: `AD-078`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -64,6 +64,9 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-072 | - | A cookie source of "none" is passed to yt-dlp as a browser name | bug | low |
 | AD-073 | - | A URL naming a show by UUID is searched for verbatim | bug | high |
 | AD-074 | - | The page scanner browses signed out, so login-gated listings look empty | feature | medium |
+| AD-075 | - | Episode numbers read out of UUIDs in the URL | bug | critical |
+| AD-076 | - | Mined API paths outvote the page's own links, so nav wins over episodes | bug | high |
+| AD-077 | - | A numbered listing is numbered by position instead of by its own numbers | bug | medium |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
