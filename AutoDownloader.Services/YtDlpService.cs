@@ -83,6 +83,16 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// </summary>
         private readonly bool _useDownloadArchive;
 
+        /// <summary>"compatible", "best" or "custom" - see VideoFormatPreference.</summary>
+        private readonly string _formatPreference;
+
+        /// <summary>
+        /// Set for one invocation when the external downloader has failed, so the retry uses
+        /// yt-dlp's own. YouTube's CDN rejects aria2c's ranged requests for some URLs with a
+        /// 403 that does not recur, which cost an episode in testing.
+        /// </summary>
+        private bool _skipExternalDownloader;
+
         /// <summary>
         /// A reference to the currently running yt-dlp.exe process.
         /// </summary>
@@ -113,8 +123,10 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             string videoQualityFormat,
             string ffmpegPath = "",
             string cookieSource = "",
-            bool useDownloadArchive = true)
+            bool useDownloadArchive = true,
+            string formatPreference = "compatible")
         {
+            _formatPreference = formatPreference ?? "compatible";
             _ytDlpPath = ytDlpPath;
             _ariaPath = ariaPath;
             _userAgent = userAgent;
@@ -228,10 +240,19 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 }
 
                 // Format
-                if (!string.IsNullOrWhiteSpace(_videoQualityFormat))
+                string formatSelector = VideoFormatPreference.Resolve(_formatPreference, _videoQualityFormat);
+
+                if (!string.IsNullOrWhiteSpace(formatSelector))
                 {
                     startInfo.ArgumentList.Add("-f");
-                    startInfo.ArgumentList.Add(_videoQualityFormat);
+                    startInfo.ArgumentList.Add(formatSelector);
+                }
+
+                if (VideoFormatPreference.PrefersMp4(_formatPreference))
+                {
+                    // Otherwise yt-dlp merges into MKV whenever the two streams disagree.
+                    startInfo.ArgumentList.Add("--merge-output-format");
+                    startInfo.ArgumentList.Add("mp4");
                 }
 
                 // Subtitles. --sub-format only expresses a PREFERENCE; sites that serve VTT
@@ -580,6 +601,11 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             // media-capture fallback that cannot possibly succeed against an encrypted stream.
             bool drmProtected = false;
 
+            // aria2c is fast, but YouTube's CDN rejects its ranged requests for some URLs.
+            // yt-dlp's own downloader handles those, so it is worth one retry rather than
+            // losing the episode.
+            bool downloaderRejected = false;
+
             Process? process = null;
             try
             {
@@ -589,6 +615,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                     if (args.Data == null) return;
                     if (TryReportProgress(args.Data)) return;
                     if (DrmDetector.IsDrmMessage(args.Data)) drmProtected = true;
+                    if (IsExternalDownloaderFailure(args.Data)) downloaderRejected = true;
                     OnOutputReceived?.Invoke(args.Data);
                 };
                 process.ErrorDataReceived += (_, args) =>
@@ -597,6 +624,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                     // aria2c writes its status lines to stderr.
                     if (TryReportProgress(args.Data)) return;
                     if (DrmDetector.IsDrmMessage(args.Data)) drmProtected = true;
+                    if (IsExternalDownloaderFailure(args.Data)) downloaderRejected = true;
                     OnOutputReceived?.Invoke($"[ERR] {args.Data}");
                 };
 
@@ -606,6 +634,26 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 process.BeginErrorReadLine();
 
                 await process.WaitForExitAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
+
+                // One retry without the external downloader, which recovers the transient
+                // CDN rejections. Not attempted for DRM, where nothing would change.
+                if (process.ExitCode != 0 && downloaderRejected && !drmProtected && !_skipExternalDownloader)
+                {
+                    OnOutputReceived?.Invoke("[WARN] The external downloader was rejected by the server. "
+                                           + "Retrying with yt-dlp's own downloader...");
+                    _skipExternalDownloader = true;
+
+                    try
+                    {
+                        return await DownloadEpisodeAsync(
+                            url, showTitle, seasonNumber, episodeNumber, episodeTitle,
+                            outputFolder, referer).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _skipExternalDownloader = false;
+                    }
+                }
 
                 return new EpisodeDownloadOutcome
                 {
@@ -668,10 +716,19 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 startInfo.ArgumentList.Add(Path.Combine(outputFolder, "downloaded.txt"));
             }
 
-            if (!string.IsNullOrWhiteSpace(_videoQualityFormat))
+            string formatSelector = VideoFormatPreference.Resolve(_formatPreference, _videoQualityFormat);
+
+            if (!string.IsNullOrWhiteSpace(formatSelector))
             {
                 startInfo.ArgumentList.Add("-f");
-                startInfo.ArgumentList.Add(_videoQualityFormat);
+                startInfo.ArgumentList.Add(formatSelector);
+            }
+
+            if (VideoFormatPreference.PrefersMp4(_formatPreference))
+            {
+                // Otherwise yt-dlp merges into MKV whenever the two streams disagree.
+                startInfo.ArgumentList.Add("--merge-output-format");
+                startInfo.ArgumentList.Add("mp4");
             }
 
             startInfo.ArgumentList.Add("--write-subs");
@@ -680,10 +737,13 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             startInfo.ArgumentList.Add("--convert-subs");
             startInfo.ArgumentList.Add("srt");
 
-            startInfo.ArgumentList.Add("--downloader");
-            startInfo.ArgumentList.Add("aria2c");
-            startInfo.ArgumentList.Add("--downloader-args");
-            startInfo.ArgumentList.Add("aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M");
+            if (!_skipExternalDownloader)
+            {
+                startInfo.ArgumentList.Add("--downloader");
+                startInfo.ArgumentList.Add("aria2c");
+                startInfo.ArgumentList.Add("--downloader-args");
+                startInfo.ArgumentList.Add("aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M");
+            }
 
             startInfo.ArgumentList.Add("--user-agent");
             startInfo.ArgumentList.Add(_userAgent);
@@ -718,6 +778,22 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
             OnProgress?.Invoke(progress);
             return true;
+        }
+
+        /// <summary>
+        /// True when a line reports the EXTERNAL downloader failing, as distinct from the
+        /// download being impossible. Deliberately narrow, so a genuine 404 or a DRM error is
+        /// not retried pointlessly.
+        /// </summary>
+        public static bool IsExternalDownloaderFailure(string? line)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return false;
+
+            if (line.Contains("aria2c exited with code", StringComparison.OrdinalIgnoreCase)) return true;
+
+            // aria2's own wording when the server refuses a ranged request.
+            return line.Contains("errorCode=22", StringComparison.OrdinalIgnoreCase)
+                && line.Contains("status=403", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

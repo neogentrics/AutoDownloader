@@ -70,6 +70,11 @@ namespace AutoDownloader.UI
         public MainWindow()
         {
             InitializeComponent();
+
+            // Start the session log before anything else, so startup problems are captured
+            // too - those are exactly the ones nobody is watching the window for.
+            SessionLogWriter.Start("ui");
+
             this.Title = $"AutoDownloader {CurrentVersion} - (For Personal Use Only)";
 
             // Keep the welcome banner in step with the real version.
@@ -111,6 +116,8 @@ namespace AutoDownloader.UI
             // of a chatty download, and a blocking marshal per line stalls the UI thread.
             DeveloperLogger.OnLogReceived += (line) =>
             {
+                SessionLogWriter.Append(line);
+
                 Dispatcher.BeginInvoke(() =>
                 {
                     if (DeveloperLogTextBox != null)
@@ -193,7 +200,8 @@ namespace AutoDownloader.UI
                 _settingsService.Settings.PreferredVideoQuality,
                 ffmpegPath,
                 _settingsService.Settings.CookieSource,
-                _settingsService.Settings.UseDownloadArchive
+                _settingsService.Settings.UseDownloadArchive,
+                _settingsService.Settings.FormatPreference
             );
 
             //4. Wire up the event handlers for the download service.
@@ -459,6 +467,8 @@ namespace AutoDownloader.UI
         /// </summary>
         private void AppendLog(string message, SolidColorBrush color)
         {
+            SessionLogWriter.Append(message);
+
             var p = new Paragraph(new Run(message));
             p.Foreground = color;
             OutputLogTextBox.Document.Blocks.Add(p);
@@ -503,7 +513,8 @@ namespace AutoDownloader.UI
                _settingsService.Settings.PreferredVideoQuality,
                ffmpegPath,
                _settingsService.Settings.CookieSource,
-               _settingsService.Settings.UseDownloadArchive
+               _settingsService.Settings.UseDownloadArchive,
+               _settingsService.Settings.FormatPreference
            );
 
             //3. Re-wire events for the new service instance.
@@ -703,6 +714,46 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
          {
           DeveloperLogPanel.Visibility = Visibility.Visible;
          }
+        }
+
+        /// <summary>
+        /// Opens the folder holding the automatic session logs.
+        /// </summary>
+        private void OpenLogFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Directory.CreateDirectory(SessionLogWriter.LogFolder);
+                Process.Start(new ProcessStartInfo(SessionLogWriter.LogFolder) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Could not open the log folder: {ex.Message}", Brushes.Red);
+            }
+        }
+
+        /// <summary>
+        /// Copies this session's log path, so it can be pasted somewhere useful.
+        /// </summary>
+        private void CopyLogPath_Click(object sender, RoutedEventArgs e)
+        {
+            string? path = SessionLogWriter.CurrentPath;
+
+            if (string.IsNullOrEmpty(path))
+            {
+                AppendLog("No session log is being written.", Brushes.Orange);
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(path);
+                AppendLog($"Log path copied: {path}", Brushes.Green);
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Could not copy the path: {ex.Message}. The log is at: {path}", Brushes.Orange);
+            }
         }
 
         private void DeveloperLogClear_Click(object sender, RoutedEventArgs e)

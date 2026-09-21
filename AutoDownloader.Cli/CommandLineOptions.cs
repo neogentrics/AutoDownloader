@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 
@@ -39,6 +39,12 @@ namespace AutoDownloader.Cli
 
         /// <summary>Suppress progress and per-line logging; only report the outcome.</summary>
         public bool Quiet { get; set; }
+
+        /// <summary>Convert existing files in this folder instead of downloading.</summary>
+        public string? ConvertFolder { get; set; }
+
+        /// <summary>Replace the originals rather than writing converted copies alongside.</summary>
+        public bool ReplaceOriginals { get; set; }
 
         /// <summary>Print usage and exit.</summary>
         public bool Help { get; set; }
@@ -135,6 +141,15 @@ namespace AutoDownloader.Cli
                         if (options.HasError) return options;
                         break;
 
+                    case "--convert":
+                        options.ConvertFolder = TakeValue(arg);
+                        if (options.HasError) return options;
+                        break;
+
+                    case "--replace-originals":
+                        options.ReplaceOriginals = true;
+                        break;
+
                     case "--no-archive":
                         options.NoArchive = true;
                         break;
@@ -174,7 +189,10 @@ namespace AutoDownloader.Cli
                 return options;
             }
 
-            if (!options.Help && !options.Version && string.IsNullOrWhiteSpace(options.Target))
+            // --convert is a separate job that needs no download target.
+            if (!options.Help && !options.Version
+                && string.IsNullOrWhiteSpace(options.ConvertFolder)
+                && string.IsNullOrWhiteSpace(options.Target))
             {
                 options.Error = "No URL or search term given. Try --help.";
             }
@@ -200,6 +218,11 @@ OPTIONS
       --no-ffmpeg              Do not download ffmpeg if it is missing.
       --json                   Print a JSON summary on stdout instead of prose.
       --quiet                  Only report the outcome, with no progress output.
+      --convert <folder>       Convert existing files to a widely playable MP4 instead
+                               of downloading. Remuxes where the codecs already allow
+                               it (seconds, lossless) and only re-encodes when needed.
+      --replace-originals      With --convert, replace each original rather than
+                               writing the converted file alongside it.
   -h, --help                   Show this help.
   -v, --version                Show the version.
 

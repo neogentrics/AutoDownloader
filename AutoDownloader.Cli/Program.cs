@@ -1,6 +1,7 @@
 ﻿using AutoDownloader.Services;
 using AutoDownloader.Services.Orchestration;
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,6 +29,8 @@ namespace AutoDownloader.Cli
 
         public static async Task<int> Main(string[] args)
         {
+            SessionLogWriter.Start("cli");
+
             var options = CommandLineOptions.Parse(args);
 
             if (options.HasError)
@@ -46,6 +49,11 @@ namespace AutoDownloader.Cli
             {
                 Console.WriteLine($"AutoDownloader CLI {Version}");
                 return ExitCompleted;
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.ConvertFolder))
+            {
+                return await ConvertAsync(options).ConfigureAwait(false);
             }
 
             using var cancellation = new CancellationTokenSource();
@@ -129,7 +137,8 @@ namespace AutoDownloader.Cli
                 quality,
                 ffmpegPath,
                 cookieSource,
-                useArchive);
+                useArchive,
+                settings.FormatPreference);
 
             var orchestrator = new DownloadOrchestrator(
                 metadataService,
@@ -159,6 +168,10 @@ namespace AutoDownloader.Cli
 
             orchestrator.OnProgress += renderer.Report;
 
+            // The file gets everything, regardless of --quiet or --json.
+            orchestrator.OnLog += (_, e) => SessionLogWriter.Append(e.Message);
+            orchestrator.OnDiagnostic += SessionLogWriter.Append;
+
             // ---------------------------------------------------------------- run
             var result = await orchestrator.RunAsync(
                 options.Target!,
@@ -167,6 +180,8 @@ namespace AutoDownloader.Cli
                 options.Season);
 
             renderer.Clear();
+
+            SessionLogWriter.NoteRunFinished(Summarise(result).Replace("\n", " | "));
 
             if (options.Json)
             {
@@ -198,6 +213,66 @@ namespace AutoDownloader.Cli
             if (result.FilesAdded == 0 && result.EpisodesSucceeded == 0) return ExitNothingDownloaded;
 
             return ExitCompleted;
+        }
+
+        /// <summary>
+        /// Converts an existing folder rather than downloading anything.
+        /// </summary>
+        private static async Task<int> ConvertAsync(CommandLineOptions options)
+        {
+            var settingsService = new SettingsService();
+
+            var toolManager = new ToolManagerService
+            {
+                AutoDownloadFfmpeg = !options.NoFfmpeg && settingsService.Settings.AutoDownloadFfmpeg
+            };
+
+            if (!options.Quiet) toolManager.OnToolLogReceived += line => Console.WriteLine($"  {line}");
+
+            var (_, _, ffmpegPath) = await toolManager.EnsureToolsAvailableAsync().ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(ffmpegPath))
+            {
+                Console.Error.WriteLine("ffmpeg is required to convert and could not be found.");
+                return ExitFailed;
+            }
+
+            var converter = new MediaConverter(ffmpegPath);
+            if (!options.Quiet) converter.OnLog += Console.WriteLine;
+            converter.OnLog += SessionLogWriter.Append;
+
+            if (options.ReplaceOriginals && !options.Quiet)
+            {
+                Console.WriteLine("Originals will be replaced once each conversion succeeds.");
+            }
+
+            var results = await converter
+                .ConvertFolderAsync(options.ConvertFolder!, options.ReplaceOriginals)
+                .ConfigureAwait(false);
+
+            int converted = results.Count(r => r.Succeeded && !r.Skipped);
+            int skipped = results.Count(r => r.Skipped);
+            int failed = results.Count(r => !r.Succeeded && !r.Skipped);
+
+            if (options.Json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    converted,
+                    skipped,
+                    failed,
+                    files = results.Select(r => new { source = r.SourcePath, output = r.OutputPath, r.Message })
+                }, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            else if (!options.Quiet)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"{converted} converted, {skipped} already fine, {failed} failed.");
+            }
+
+            SessionLogWriter.NoteRunFinished($"convert: {converted} converted, {skipped} skipped, {failed} failed");
+
+            return failed > 0 ? ExitFailed : ExitCompleted;
         }
 
         private static string Summarise(DownloadJobResult result)

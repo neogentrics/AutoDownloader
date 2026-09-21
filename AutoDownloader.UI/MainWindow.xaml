@@ -168,6 +168,11 @@
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Log" IsChecked="True" IsCheckable="True" Click="ToggleDeveloperLog_Click" />
+                <Separator/>
+                <MenuItem Header="Open Log _Folder" Click="OpenLogFolder_Click"
+                          ToolTip="Every run writes a timestamped log here automatically."/>
+                <MenuItem Header="Copy Log _Path" Click="CopyLogPath_Click"
+                          ToolTip="Copies the path of this session's log file to the clipboard."/>
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="About_Click"/>

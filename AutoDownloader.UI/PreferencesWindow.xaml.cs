@@ -78,9 +78,55 @@ namespace AutoDownloader.UI // <-- CORRECT: This is a UI file
             QualityTextBox.Text = settings.PreferredVideoQuality;
             AutoInstallPlaywrightCheckBox.IsChecked = settings.AutoInstallPlaywrightBrowsers;
             AutoDownloadFfmpegCheckBox.IsChecked = settings.AutoDownloadFfmpeg;
+
+            LoadFormatPreference(settings.FormatPreference);
             UseDownloadArchiveCheckBox.IsChecked = settings.UseDownloadArchive;
 
             LoadCookieSource(settings.CookieSource);
+        }
+
+        /// <summary>
+        /// Fills the format dropdown and selects the saved preference.
+        /// </summary>
+        private void LoadFormatPreference(string? stored)
+        {
+            FormatPreferenceComboBox.Items.Clear();
+
+            foreach (var (label, value) in new[]
+                     {
+                         ("Most compatible - H.264/AAC in MP4 (recommended)", VideoFormatPreference.Compatible),
+                         ("Best quality - any codec, may produce WebM/AV1", VideoFormatPreference.BestQuality),
+                         ("Custom format string", VideoFormatPreference.Custom),
+                     })
+            {
+                FormatPreferenceComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = label,
+                    Tag = value,
+                    Foreground = Brushes.Black
+                });
+            }
+
+            string target = string.IsNullOrWhiteSpace(stored) ? VideoFormatPreference.Compatible : stored.Trim();
+
+            FormatPreferenceComboBox.SelectedItem = FormatPreferenceComboBox.Items
+                .OfType<ComboBoxItem>()
+                .FirstOrDefault(i => string.Equals((string?)i.Tag, target, StringComparison.OrdinalIgnoreCase))
+                ?? FormatPreferenceComboBox.Items[0];
+        }
+
+        /// <summary>
+        /// The custom format box is only relevant for the Custom preference.
+        /// </summary>
+        private void FormatPreferenceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (QualityTextBox == null || CustomFormatLabel == null) return;
+
+            bool isCustom = FormatPreferenceComboBox.SelectedItem is ComboBoxItem item
+                            && (string?)item.Tag == VideoFormatPreference.Custom;
+
+            QualityTextBox.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
+            CustomFormatLabel.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>
@@ -184,6 +230,11 @@ namespace AutoDownloader.UI // <-- CORRECT: This is a UI file
             settings.PreferredVideoQuality = QualityTextBox.Text.Trim();
             settings.AutoInstallPlaywrightBrowsers = AutoInstallPlaywrightCheckBox.IsChecked == true;
             settings.AutoDownloadFfmpeg = AutoDownloadFfmpegCheckBox.IsChecked == true;
+
+            if (FormatPreferenceComboBox.SelectedItem is ComboBoxItem formatItem)
+            {
+                settings.FormatPreference = (string?)formatItem.Tag ?? VideoFormatPreference.Compatible;
+            }
             settings.UseDownloadArchive = UseDownloadArchiveCheckBox.IsChecked == true;
 
             string cookieSource = ResolveCookieSource();

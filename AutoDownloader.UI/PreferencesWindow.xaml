@@ -103,7 +103,17 @@
                             Style="{StaticResource ActionButtonStyle}" Background="#FF4A4A4A"/>
                 </Grid>
 
-                <Label Content="Preferred Video Quality (yt-dlp format):" Foreground="White"/>
+                <Label Content="Format preference:" Foreground="White"/>
+                <ComboBox x:Name="FormatPreferenceComboBox" Height="30" Margin="0,0,0,4"
+                          SelectionChanged="FormatPreferenceComboBox_SelectionChanged"/>
+                <TextBlock Foreground="#FFB0B0B0" TextWrapping="Wrap" Margin="0,0,0,10" FontSize="12">
+                    "Best quality" means best per byte, which on YouTube is AV1 in a WebM container &#8212;
+                    excellent compression, and close to unplayable on a TV or an older Plex client. The same
+                    video is usually also offered as H.264/AAC in MP4 at the same resolution, so preferring
+                    it costs nothing and avoids a conversion that would be slow, lossy and produce a larger file.
+                </TextBlock>
+
+                <Label x:Name="CustomFormatLabel" Content="Custom yt-dlp format string:" Foreground="White"/>
                 <TextBox x:Name="QualityTextBox" Height="30" Margin="0,0,0,10" 
                          ToolTip="Example: bestvideo+bestaudio/best. (Advanced setting)"/>
 

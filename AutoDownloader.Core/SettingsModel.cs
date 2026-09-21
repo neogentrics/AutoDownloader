@@ -49,6 +49,18 @@ namespace AutoDownloader.Core // <-- CORRECT: This is a data model, it belongs i
         public string TvdbApiKey { get; set; } = "YOUR_TVDB_API_KEY_HERE";
 
         /// <summary>
+        /// How to choose between the formats a site offers: "compatible", "best" or "custom".
+        ///
+        /// Defaults to compatible, because "best" means best by compression efficiency, which
+        /// on YouTube is AV1 in a WebM container - superb quality per byte, and close to
+        /// unplayable on a TV or an older Plex client. The same video is usually also offered
+        /// as H.264/AAC in MP4 at the same resolution, which costs nothing to prefer.
+        ///
+        /// Use "custom" to supply your own selector in PreferredVideoQuality.
+        /// </summary>
+        public string FormatPreference { get; set; } = "compatible";
+
+        /// <summary>
         /// Where yt-dlp should read cookies from, for sites that gate content behind a login.
         /// Empty (the default) means send no cookies at all.
         /// Accepts either a browser name ("firefox", "chrome", "edge", "brave", ...) or the
