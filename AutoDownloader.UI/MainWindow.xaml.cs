@@ -1,11 +1,13 @@
 ﻿using AutoDownloader.Core; // For the data models (SettingsModel, DownloadMetadata)
 using AutoDownloader.Services;
-using AutoDownloader.Services.Scrapers; // For all the logic (YtDlpService, SettingsService, etc.)
+using AutoDownloader.Services.Scrapers;
+using AutoDownloader.Services.Orchestration; // For all the logic (YtDlpService, DownloadOrchestrator, etc.)
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Documents;
@@ -53,7 +55,7 @@ namespace AutoDownloader.UI
         /// found, search failed) left Stop visible and aborted the remaining items with a
         /// bogus "cancelled by user" message.
         /// </summary>
-        private bool _cancellationRequested = false;
+        private CancellationTokenSource? _cancellation;
 
         /// <summary>
         /// The authoritative version number for the application.
@@ -226,467 +228,52 @@ namespace AutoDownloader.UI
         }
 
         // --- Core Application Logic ---
-
         /// <summary>
-        /// This is the main download orchestration method, called by StartDownloadButton_Click.
+        /// Runs one download job by handing it to the orchestrator.
+        ///
+        /// The pipeline itself now lives in AutoDownloader.Services.Orchestration, so it can
+        /// also be driven headlessly. This method only adapts it to the window: events in,
+        /// log lines and status text out.
         /// </summary>
         private async Task ProcessSingleDownloadAsync(string searchTerm)
         {
             if (string.IsNullOrWhiteSpace(searchTerm)) return;
 
-            // CRITICAL: Guard against premature button click.
+            // Guard against a click landing before async initialisation has finished.
             if (_ytDlpService == null || _metadataService == null || _searchService == null)
             {
                 AppendLog("--- ERROR: Services are still initializing. Please wait a moment and try again. ---", Brushes.Red);
                 return;
             }
 
-            string baseOutputFolder = OutputFolderTextBox.Text;
-            string finalUrl = searchTerm;
-            string finalOutputFolder = baseOutputFolder;
-            string searchTarget = searchTerm;
+            var orchestrator = new DownloadOrchestrator(
+                _metadataService,
+                _searchService,
+                _xmlService,
+                _ytDlpService,
+                new WpfUserPrompt(this));
 
-            // The Anime/TV Shows/Playlists choice used to be computed and then thrown away,
-            // because phase 2 unconditionally rebuilt the path under "TV Shows".
-            string categoryFolder = "TV Shows";
+            orchestrator.OnLog += (_, e) => Dispatcher.Invoke(() => AppendLog(e.Message, BrushForLevel(e.Level)));
+            orchestrator.OnStatusChanged += text => Dispatcher.BeginInvoke(() => StatusTextBlock.Text = text);
+            orchestrator.OnDiagnostic += line => DeveloperLogger.Append(line);
 
-            DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
-
-            // --- PHASE1: Determine the Final Download URL ---
-            if (!searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-            {
-                // Case A: Search Term
-                AppendLog($"--- Starting Gemini web search for: '{searchTarget}' ---", Brushes.Aqua);
-                StatusTextBlock.Text = $"Searching for content: {searchTarget}";
-                try
-                {
-                    var (type, url) = await _searchService.FindShowUrlAsync(searchTarget);
-                    if (url == "not-found")
-                    {
-                        AppendLog($"Could not find a download page for '{searchTarget}'.", Brushes.Red);
-                        AppendLog("--- Search failed. ---", Brushes.Red);
-                        return;
-                    }
-                    finalUrl = url;
-                    metadataToPass.SourceUrl = url;
-                    categoryFolder = type.Contains("Anime") ? "Anime TV Shows" :
-                                        type.Contains("TV Show") ? "TV Shows" : "Playlists";
-                    finalOutputFolder = Path.Combine(baseOutputFolder, categoryFolder);
-                    Directory.CreateDirectory(finalOutputFolder);
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"--- Smart search failed: {ex.Message} ---", Brushes.Red);
-                    return;
-                }
-            }
-            else
-            {
-                // Case B: Direct URL
-                AppendLog("--- Direct URL detected. Skipping Gemini search. ---", Brushes.Aqua);
-                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows");
-                Directory.CreateDirectory(finalOutputFolder);
-
-                // Parse the URL for a name and (hopefully) a season number.
-                var (parsedName, parsedSeason) = await ParseMetadataFromUrlAsync(searchTerm);
-
-                searchTarget = parsedName;
-                if (parsedSeason.HasValue)
-                {
-                    metadataToPass.NextSeasonNumber = parsedSeason.Value;
-                    AppendLog($"Detected Season: {parsedSeason.Value} from URL.", Brushes.Yellow);
-                }
-
-                // Site-specific scraping, for hosts yt-dlp cannot handle on its own.
-                //
-                // Two changes from the previous behaviour:
-                //   * only hosts with a DEDICATED scraper are scraped. Everything else goes
-                //     straight to yt-dlp, which has real extractors for Tubi/Pluto/YouTube and
-                //     expands their playlists properly.
-                //   * ALL discovered links are kept. Taking only playables[0] reduced an entire
-                //     season to one episode - and when the first regex hit was an advert or a
-                //     trailer, to the wrong file entirely.
-                try
-                {
-                    var scraper = ScraperFactory.GetScraperForUrl(searchTerm);
-                    if (scraper != null)
-                    {
-                        var playables = await scraper.GetPlayableUrlsAsync(searchTerm);
-                        if (playables != null && playables.Count >0)
-                        {
-                            metadataToPass.SourceUrls = playables;
-                            metadataToPass.SourceUrl = playables[0];
-                            AppendLog($"Scraper found {playables.Count} playable link(s); all will be downloaded.", Brushes.Yellow);
-                        }
-                        else
-                        {
-                            AppendLog("Scraper found no playable links. Letting yt-dlp handle the original URL.", Brushes.Orange);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AppendLog($"Scraper error: {ex.Message}. Letting yt-dlp handle the original URL.", Brushes.Orange);
-                }
-            }
-
-            // --- PHASE 2: Official metadata, from BOTH databases ---
-            AppendLog($"--- Starting metadata lookup for: '{searchTarget}' ---", Brushes.Aqua);
-            StatusTextBlock.Text = $"Looking up official metadata for: {searchTarget}";
-
-            // Confirm the show name (auto-confirms after 15s so unattended runs still proceed).
-            ConfirmNameWindow confirmDialog = new ConfirmNameWindow(searchTarget) { Owner = this };
-            bool? confirmResult = confirmDialog.ShowDialog();
-
-            if (confirmResult != true)
-            {
-                AppendLog("--- Metadata lookup cancelled by user. Aborting. ---", Brushes.Red);
-                return;
-            }
-
-            string confirmedSearchTarget = confirmDialog.ShowName;
-
-            if (!_metadataService.IsTmdbKeyValid && !_metadataService.IsTvdbKeyValid)
-            {
-                AppendLog("--- No metadata API key configured. Set one in Edit -> Preferences. ---", Brushes.Red);
-                return;
-            }
-
-            // Query TMDB and TVDB together and merge. Neither is complete on its own: TVDB is
-            // generally better for anime and irregular season splits, TMDB for mainstream TV.
-            // The old "pick a database" dialog forced an either/or and lost episode titles.
-            AppendLog($"--- Searching TMDB and TVDB for: '{confirmedSearchTarget}' (season {metadataToPass.NextSeasonNumber}) ---", Brushes.Aqua);
-
-            MergedSeriesMetadata? merged;
-            try
-            {
-                merged = await _metadataService.GetMergedMetadataAsync(
-                    confirmedSearchTarget, metadataToPass.NextSeasonNumber);
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"--- Metadata lookup failed: {ex.Message} ---", Brushes.Red);
-                return;
-            }
-
-            if (merged == null)
-            {
-                AppendLog($"Could not find official metadata for '{confirmedSearchTarget}'. Download aborted.", Brushes.Red);
-                return;
-            }
-
-            AppendLog($"Official Title Found: {merged.OfficialTitle}", Brushes.Yellow);
-            AppendLog($"Metadata Source: {merged.SourceSummary}", Brushes.Yellow);
-            AppendLog($"Season {merged.SeasonNumber}: {merged.ExpectedEpisodeCount} expected episode(s), {merged.Episodes.Count} title(s) known.", Brushes.Yellow);
-
-            metadataToPass.OfficialTitle = merged.OfficialTitle;
-            metadataToPass.SeriesId = merged.TmdbSeriesId ?? merged.TvdbSeriesId;
-            metadataToPass.NextSeasonNumber = merged.SeasonNumber;
-            metadataToPass.ExpectedEpisodeCount = merged.ExpectedEpisodeCount;
-            metadataToPass.Episodes = merged.Episodes;
-
-            // SanitizeFileName is essential here: a title such as "Star Wars: The Clone Wars"
-            // throws straight out of Directory.CreateDirectory otherwise.
-            var safeTitle = SanitizeFileName(merged.OfficialTitle);
-            finalOutputFolder = Path.Combine(baseOutputFolder, categoryFolder, safeTitle);
-            Directory.CreateDirectory(finalOutputFolder);
-
-            // Persist what we know before downloading anything, so an interrupted run still
-            // leaves a usable record of the season.
-            AppendLog("--- Saving metadata to series_metadata.xml... ---", Brushes.Yellow);
-            await _xmlService.SaveMetadataAsync(finalOutputFolder, metadataToPass);
-            AppendLog("--- Metadata saved. ---", Brushes.Green);
-
-            // --- PHASE 3: Work out what to download ---
-
-            List<EpisodeLink> episodeLinks = await BuildEpisodePlanAsync(finalUrl, metadataToPass);
-
-            string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
-
-            int filesBefore = CountVideoFiles(finalSeasonFolder);
-
-            // --- PHASE 4: Download ---
-            try
-            {
-                if (episodeLinks.Count > 0)
-                {
-                    await DownloadEpisodesAsync(episodeLinks, metadataToPass, finalOutputFolder);
-                }
-                else
-                {
-                    // Nothing could be enumerated. Hand the original URL to yt-dlp whole and
-                    // let it do whatever it can with it.
-                    AppendLog("--- No episode list could be built; passing the URL to yt-dlp directly. ---", Brushes.Orange);
-                    StatusTextBlock.Text = $"Downloading: {metadataToPass.SourceUrl}";
-                    await _ytDlpService.DownloadVideoAsync(metadataToPass, finalOutputFolder);
-                }
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"--- Download task failed: {ex.Message} ---", Brushes.Red);
-            }
-
-            // --- PHASE 5: Verify ---
-            int filesAfter = CountVideoFiles(finalSeasonFolder);
-            int filesDownloaded = filesAfter - filesBefore;
-
-            if (metadataToPass.ExpectedEpisodeCount > 0)
-            {
-                int missingCount = metadataToPass.ExpectedEpisodeCount - filesAfter;
-
-                if (missingCount <= 0)
-                {
-                    AppendLog($"CONTENT VERIFICATION: SUCCESS! All {metadataToPass.ExpectedEpisodeCount} expected episode(s) are present ({filesDownloaded} new this run).", Brushes.Green);
-                }
-                else
-                {
-                    AppendLog($"CONTENT VERIFICATION: WARNING! {missingCount} episode(s) missing (found {filesAfter} of {metadataToPass.ExpectedEpisodeCount} expected, {filesDownloaded} new this run).", Brushes.OrangeRed);
-                }
-            }
-            else
-            {
-                AppendLog($"CONTENT VERIFICATION: Completed. Downloaded {filesDownloaded} file(s) this run. (No metadata count available)", Brushes.Cyan);
-            }
+            await orchestrator.RunAsync(
+                searchTerm,
+                OutputFolderTextBox.Text,
+                _cancellation?.Token ?? CancellationToken.None);
         }
 
         /// <summary>
-        /// Counts finished video files in a season folder.
+        /// Maps an orchestrator log level onto the colour the log window uses.
         /// </summary>
-        private static int CountVideoFiles(string folder)
+        private static SolidColorBrush BrushForLevel(JobLogLevel level) => level switch
         {
-            if (!Directory.Exists(folder)) return 0;
-
-            string[] videoExtensions = { ".mp4", ".mkv", ".webm", ".avi", ".m4v", ".mov" };
-
-            return Directory.GetFiles(folder, "*.*", SearchOption.TopDirectoryOnly)
-                .Count(file => videoExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()));
-        }
-
-        /// <summary>
-        /// Works out the ordered list of episode pages to download.
-        ///
-        /// Order of preference:
-        ///   1. Ask yt-dlp. It has purpose-built extractors for well over a thousand sites plus
-        ///      a generic one, and it expands their playlists natively. If it understands the
-        ///      page, nothing else is needed.
-        ///   2. Index the page ourselves, static HTML first.
-        ///   3. Re-index with a headless browser, for listings built by JavaScript.
-        ///
-        /// Returns an empty list when nothing could be enumerated, in which case the caller
-        /// falls back to handing the whole URL to yt-dlp.
-        /// </summary>
-        private async Task<List<EpisodeLink>> BuildEpisodePlanAsync(string seriesUrl, DownloadMetadata metadata)
-        {
-            var plan = new List<EpisodeLink>();
-
-            if (string.IsNullOrWhiteSpace(seriesUrl) || !seriesUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-            {
-                return plan;
-            }
-
-            // 1. Let yt-dlp try first.
-            StatusTextBlock.Text = "Asking yt-dlp what this page contains...";
-            AppendLog("--- Probing the URL with yt-dlp... ---", Brushes.Aqua);
-
-            List<string> probed;
-            try
-            {
-                probed = await _ytDlpService.ProbeEntriesAsync(seriesUrl);
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"Probe failed: {ex.Message}", Brushes.Orange);
-                probed = new List<string>();
-            }
-
-            if (probed.Count > 1)
-            {
-                AppendLog($"yt-dlp recognised the page as a playlist of {probed.Count} item(s).", Brushes.Green);
-                for (int i = 0; i < probed.Count; i++)
-                {
-                    plan.Add(new EpisodeLink { Url = probed[i], Ordinal = i });
-                }
-                return AssignEpisodeNumbers(plan, metadata);
-            }
-
-            // 2. Index the page ourselves.
-            AppendLog("--- yt-dlp saw no playlist; indexing the page for episode links... ---", Brushes.Aqua);
-            StatusTextBlock.Text = "Indexing episode links...";
-
-            var indexer = new SeriesIndexer();
-            indexer.OnLog += line => DeveloperLogger.Append(line);
-
-            List<EpisodeLink> found;
-            try
-            {
-                found = await indexer.IndexAsync(seriesUrl, renderJavaScript: false);
-
-                // 3. Too little to be a real episode listing - the page is probably built by JS.
-                if (found.Count < 2)
-                {
-                    AppendLog("--- Few links in the static HTML; retrying with a headless browser... ---", Brushes.Orange);
-                    var rendered = await indexer.IndexAsync(seriesUrl, renderJavaScript: true);
-                    if (rendered.Count > found.Count) found = rendered;
-                }
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"Indexing failed: {ex.Message}", Brushes.Orange);
-                found = new List<EpisodeLink>();
-            }
-
-            if (found.Count == 0)
-            {
-                AppendLog("--- No episode links found on the page. ---", Brushes.Orange);
-                return plan;
-            }
-
-            AppendLog($"Indexed {found.Count} episode link(s).", Brushes.Green);
-            return AssignEpisodeNumbers(found, metadata);
-        }
-
-        /// <summary>
-        /// Gives every link an episode number: the one parsed from the page when there is one,
-        /// otherwise its position in the list. This is what lets a site that publishes no
-        /// metadata at all still produce correctly numbered, Plex-ready filenames.
-        /// </summary>
-        private List<EpisodeLink> AssignEpisodeNumbers(List<EpisodeLink> links, DownloadMetadata metadata)
-        {
-            bool anyDetected = links.Any(l => l.DetectedEpisodeNumber.HasValue);
-
-            if (!anyDetected)
-            {
-                AppendLog("--- No episode numbers on the page; using page order instead. ---", Brushes.Yellow);
-                for (int i = 0; i < links.Count; i++)
-                {
-                    links[i].DetectedEpisodeNumber = i + 1;
-                }
-            }
-
-            // Warn when the site and the databases disagree - usually means the page covers
-            // every season at once, or the season number was parsed wrong.
-            if (metadata.ExpectedEpisodeCount > 0 && links.Count != metadata.ExpectedEpisodeCount)
-            {
-                AppendLog(
-                    $"--- NOTE: the page lists {links.Count} episode(s) but the databases expect " +
-                    $"{metadata.ExpectedEpisodeCount} for season {metadata.NextSeasonNumber}. ---",
-                    Brushes.Orange);
-            }
-
-            return links;
-        }
-
-        /// <summary>
-        /// Downloads each episode individually, naming it from the merged metadata rather than
-        /// from whatever the site happens to expose.
-        /// </summary>
-        private async Task DownloadEpisodesAsync(
-            List<EpisodeLink> links,
-            DownloadMetadata metadata,
-            string outputFolder)
-        {
-            // Episode number -> official title, for naming.
-            var titlesByNumber = metadata.Episodes
-                .Where(e => e.EpisodeNumber > 0)
-                .GroupBy(e => e.EpisodeNumber)
-                .ToDictionary(g => g.Key, g => g.First().EpisodeTitle);
-
-            string showTitle = metadata.OfficialTitle ?? "Unknown Show";
-            int succeeded = 0;
-            int failed = 0;
-
-            for (int i = 0; i < links.Count; i++)
-            {
-                if (_cancellationRequested)
-                {
-                    AppendLog("--- Stopped by the user. ---", Brushes.Red);
-                    return;
-                }
-
-                var link = links[i];
-                int episodeNumber = link.DetectedEpisodeNumber ?? (i + 1);
-                titlesByNumber.TryGetValue(episodeNumber, out string? episodeTitle);
-
-                StatusTextBlock.Text =
-                    $"Downloading {showTitle} S{metadata.NextSeasonNumber:00}E{episodeNumber:00} ({i + 1} of {links.Count})";
-
-                int exitCode = await _ytDlpService.DownloadEpisodeAsync(
-                    link.Url,
-                    showTitle,
-                    metadata.NextSeasonNumber,
-                    episodeNumber,
-                    episodeTitle,
-                    outputFolder);
-
-                if (exitCode != 0)
-                {
-                    // yt-dlp could not resolve the page. Before giving up, watch what the page
-                    // actually requests over the network.
-                    //
-                    // This is the last resort on purpose. Parsing HTML only finds a media URL
-                    // when the URL is written in the markup; a player that builds its stream
-                    // URL in JavaScript inside an iframe leaves nothing in the document to
-                    // find. Observing the requests the player makes does not depend on how the
-                    // URL was constructed.
-                    AppendLog($"--- yt-dlp could not resolve episode {episodeNumber}; watching the page's network activity... ---", Brushes.Orange);
-
-                    string? captured = await CaptureMediaUrlAsync(link.Url);
-
-                    if (!string.IsNullOrWhiteSpace(captured))
-                    {
-                        AppendLog($"--- Captured a media stream; retrying episode {episodeNumber}. ---", Brushes.Yellow);
-
-                        exitCode = await _ytDlpService.DownloadEpisodeAsync(
-                            captured!,
-                            showTitle,
-                            metadata.NextSeasonNumber,
-                            episodeNumber,
-                            episodeTitle,
-                            outputFolder,
-                            referer: link.Url);
-                    }
-                }
-
-                if (exitCode == 0) succeeded++;
-                else
-                {
-                    failed++;
-                    AppendLog($"--- Episode {episodeNumber} failed (exit {exitCode}). Continuing. ---", Brushes.OrangeRed);
-                }
-            }
-
-            AppendLog($"--- Finished: {succeeded} succeeded, {failed} failed, out of {links.Count}. ---",
-                failed == 0 ? Brushes.Green : Brushes.OrangeRed);
-        }
-
-        /// <summary>
-        /// Loads an episode page in a headless browser and returns the best media URL observed
-        /// in its network traffic, or null if none appeared.
-        /// </summary>
-        private async Task<string?> CaptureMediaUrlAsync(string pageUrl)
-        {
-            try
-            {
-                var extractor = new MediaUrlExtractor();
-                extractor.OnLog += line => DeveloperLogger.Append(line);
-
-                var urls = await extractor.ExtractMediaUrlsAsync(pageUrl);
-
-                if (urls.Count == 0)
-                {
-                    AppendLog("--- No media requests were observed on that page. ---", Brushes.Orange);
-                    return null;
-                }
-
-                DeveloperLogger.Append($"MediaUrlExtractor: {urls.Count} candidate(s) for {pageUrl}");
-                return urls[0];
-            }
-            catch (Exception ex)
-            {
-                AppendLog($"--- Media capture failed: {ex.Message} ---", Brushes.Orange);
-                return null;
-            }
-        }
+            JobLogLevel.Success => Brushes.Green,
+            JobLogLevel.Notice => Brushes.Yellow,
+            JobLogLevel.Warning => Brushes.Orange,
+            JobLogLevel.Error => Brushes.Red,
+            _ => Brushes.Aqua,
+        };
 
         // --- UI Event Handlers & Helpers ---
 
@@ -771,7 +358,7 @@ namespace AutoDownloader.UI
         /// </summary>
         private void StopDownloadButton_Click(object sender, RoutedEventArgs e)
         {
-            _cancellationRequested = true;
+            _cancellation?.Cancel();
             _ytDlpService?.StopDownload();
             StatusTextBlock.Text = "Stopping download...";
         }
@@ -920,7 +507,8 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
         private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
         {
             SetUiLock(true);
-            _cancellationRequested = false;
+            _cancellation?.Dispose();
+            _cancellation = new CancellationTokenSource();
             OutputLogTextBox.Document.Blocks.Clear(); // Clear the log
             StatusTextBlock.Text = "Starting...";
 
@@ -960,7 +548,7 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
 
                 await ProcessSingleDownloadAsync(term);
 
-                if (_cancellationRequested)
+                if (_cancellation?.IsCancellationRequested == true)
                 {
                     AppendLog("--- Batch operation cancelled by user. ---", Brushes.Red);
                     SetUiLock(false);
@@ -1023,121 +611,6 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
             {
                 e.Handled = true;
                 Preferences_Click(sender, e);
-            }
-        }
-
-        /// <summary>
-        /// Helper to parse show name and season number from a given URL.
-        /// V1.9.2 FIX: This logic fixes the "Season2" bug (Issue #14).
-        /// This async variant attempts to scrape the page for a title when the URL segments don't yield a clear show name.
-        /// </summary>
-        private async Task<(string ShowName, int? SeasonNumber)> ParseMetadataFromUrlAsync(string url)
-        {
-            try
-            {
-                var uri = new Uri(url);
-                var segments = uri.Segments.Select(s => s.TrimEnd('/')).Where(s => !string.IsNullOrEmpty(s)).ToList();
-
-                int? seasonNum = null;
-                string showName = "";
-
-                // Look for explicit season-like segments (e.g., "season-2", "s2", "season", or "s/2")
-                for (int i =0; i < segments.Count; i++)
-                {
-                    var seg = segments[i].Trim().Trim('/');
-                    if (string.IsNullOrEmpty(seg)) continue;
-
-                    // Normalize for matching
-                    string segLower = seg.ToLowerInvariant();
-
-                    // Pattern: "season-2", "season_2", "s2", "s02"
-                    var m = Regex.Match(segLower, "^(?:season[-_]?|s)(\\d{1,3})$", RegexOptions.IgnoreCase);
-                    if (m.Success)
-                    {
-                        if (int.TryParse(m.Groups[1].Value, out int s)) seasonNum = s;
-                        if (i >0) showName = segments[i -1];
-                        break;
-                    }
-
-                    // Pattern: segment == "season" and next segment is numeric (e.g., "/season/2/")
-                    if (segLower == "season" && i +1 < segments.Count)
-                    {
-                        var next = segments[i +1].ToLowerInvariant();
-                        if (int.TryParse(next, out int s2))
-                        {
-                            seasonNum = s2;
-                            if (i >0) showName = segments[i -1];
-                            break;
-                        }
-                    }
-                }
-
-                // If we didn't find an explicit season segment, fall back to older logic: pick the last meaningful segment
-                if (string.IsNullOrWhiteSpace(showName))
-                {
-                    showName = segments
-                        .Where(s => !s.All(char.IsDigit)
-                        && !s.Equals("series", StringComparison.OrdinalIgnoreCase)
-                        && !s.Equals("seasons", StringComparison.OrdinalIgnoreCase)
-                        && !Regex.IsMatch(s, "^(?:season[-_]?|s)\\d+$", RegexOptions.IgnoreCase))
-                        .LastOrDefault() ?? string.Empty;
-                }
-
-                // If showName is still empty or looks like a season placeholder, try scraping the page for a title as a fallback.
-                if (string.IsNullOrWhiteSpace(showName) || Regex.IsMatch(showName, "^(?:season[-_]?|s)\\d+$", RegexOptions.IgnoreCase))
-                {
-                    try
-                    {
-                        using var http = new HttpClient();
-                        http.Timeout = TimeSpan.FromSeconds(6);
-                        var resp = await http.GetAsync(uri).ConfigureAwait(false);
-                        if (resp.IsSuccessStatusCode)
-                        {
-                            var html = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                            // Try common metadata tags in order: og:title, twitter:title, <title>
-                            string? title = null;
-                            var og = Regex.Match(html, "<meta\\s+property=[\"']og:title[\"']\\s+content=[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase);
-                            if (!og.Success)
-                                og = Regex.Match(html, "<meta\\s+name=[\"']og:title[\"']\\s+content=[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase);
-                            if (og.Success) title = og.Groups[1].Value;
-
-                            if (string.IsNullOrWhiteSpace(title))
-                            {
-                                var tw = Regex.Match(html, "<meta\\s+name=[\"']twitter:title[\"']\\s+content=[\"']([^\"']+)[\"']", RegexOptions.IgnoreCase);
-                                if (tw.Success) title = tw.Groups[1].Value;
-                            }
-
-                            if (string.IsNullOrWhiteSpace(title))
-                            {
-                                var t = Regex.Match(html, "<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-                                if (t.Success) title = Regex.Replace(t.Groups[1].Value, "\\s+", " ").Trim();
-                            }
-
-                            if (!string.IsNullOrWhiteSpace(title))
-                            {
-                                // Remove site suffixes (e.g., " - Tubi", " | YouTube")
-                                var cleaned = title.Split(new[] { "|", " - ", " — " }, StringSplitOptions.None)[0].Trim();
-                                showName = cleaned;
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Ignore network failures; we will fall back to URL segment logic
-                    }
-                }
-
-                // Clean up the name (e.g., "love-thy-neighbor" -> "Love Thy Neighbor")
-                if (string.IsNullOrWhiteSpace(showName)) showName = "Unknown Show";
-                string cleanName = showName.Replace('-', ' ').Replace('_', ' ').Trim();
-                TextInfo ti = new CultureInfo("en-US", false).TextInfo;
-
-                return (ti.ToTitleCase(cleanName), seasonNum);
-            }
-            catch
-            {
-                return ("Unknown Show", null);
             }
         }
 
@@ -1379,32 +852,5 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
         }
 
         // Helper to sanitize strings for use as file/folder names on Windows
-        private static string SanitizeFileName(string name)
-        {
-            // Many streaming sites include characters that are illegal in Windows
-            // filenames (e.g., ':', '?', '|'). Creating directories using raw
-            // titles caused the IO exception reported by users. This helper
-            // normalizes title names to safe folder names and prevents runtime
-            // failures when creating directories. If sanitization produces an
-            // empty string, we fall back to "Unknown Show".
-            if (string.IsNullOrWhiteSpace(name)) return "Unknown Show";
-            // Remove control chars
-            var cleaned = new string(name.Where(c => !char.IsControl(c)).ToArray());
-            // Replace any invalid file name chars with underscore
-            foreach (var c in Path.GetInvalidFileNameChars())
-            {
-                cleaned = cleaned.Replace(c, '_');
-            }
-            // Also replace invalid path chars just in case
-            foreach (var c in Path.GetInvalidPathChars())
-            {
-                cleaned = cleaned.Replace(c, '_');
-            }
-            // Trim spaces and dots at end (Windows forbids trailing spaces/dots)
-            cleaned = cleaned.Trim();
-            while (cleaned.EndsWith(".") || cleaned.EndsWith(" ")) cleaned = cleaned.Substring(0, cleaned.Length -1);
-            if (string.IsNullOrWhiteSpace(cleaned)) return "Unknown Show";
-            return cleaned;
-        }
     }
 }

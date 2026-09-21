@@ -1,95 +1,107 @@
-name: .NET Core Desktop Build and Publish
+name: Build and Publish Release
 
 on:
+  # Tag filters belong on the push event. The previous config used the "create" event
+  # with a tags filter, which that event does not support - it fires for every branch
+  # and tag creation instead.
   push:
     branches: [ "master" ]
-    
-  create:
-    tags:
-      - 'v*' # This is the trigger for your releases
-      
+    tags: [ 'v*' ]
   workflow_dispatch:
 
+permissions:
+  contents: write # required to create a release
+
 jobs:
-
   build:
-    permissions:
-      contents: write # This is required to create a release
-
-    runs-on: windows-latest 
+    runs-on: windows-latest
 
     env:
       Solution_Name: AutoDownloader.sln
-      DotNet_Version: 9.0.x
-      Publish_Project_Path: AutoDownloader.UI/AutoDownloader.UI.csproj 
+      Publish_Project_Path: AutoDownloader.UI/AutoDownloader.UI.csproj
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Install .NET Core SDK
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DotNet_Version }}
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
 
-    - name: Setup MSBuild.exe
-      uses: microsoft/setup-msbuild@v2
+      - name: Analyze Tag for Release Type
+        id: tag_analysis
+        shell: pwsh
+        run: |
+          $tagName = "${{ github.ref_name }}"
+          $isPreRelease = $tagName -match "-alpha|-beta|-rc"
 
-    # 1. ANALYZE TAG, SET DYNAMIC VARIABLES
-    - name: Analyze Tag for Release Type
-      id: tag_analysis
-      shell: pwsh
-      run: |
-        $tagName = "${{ github.ref_name }}"
-        $isPreRelease = $tagName -match "-alpha|-beta"
-        
-        if ($isPreRelease) {
-          $releaseName = "Pre-Release $tagName (Alpha/Beta)"
-        } else {
-          $releaseName = "Release $tagName - Stable"
-        }
-        
-        "IS_PRERELEASE=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        "RELEASE_NAME=$releaseName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        "TAG_NAME=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if ($isPreRelease) {
+            $releaseName = "Pre-Release $tagName (Alpha/Beta)"
+          } else {
+            $releaseName = "Release $tagName - Stable"
+          }
 
-    # 2. RESTORE AND BUILD SOLUTION
-    - name: Restore and Build Solution
-      run: msbuild $env:Solution_Name /t:Restore /p:Configuration=Release /p:RestorePackagesConfig=true
+          "IS_PRERELEASE=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "RELEASE_NAME=$releaseName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "TAG_NAME=$tagName"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-    # 3. PUBLISH the executable (creating the self-contained files)
-    - name: Publish AutoDownloader.UI
-      run: |
-        dotnet publish ${{ env.Publish_Project_Path }} -c Release -r win-x64 --self-contained true -o ${{ github.workspace }}/publish_output
+      # Restore/build via the dotnet CLI throughout. The previous msbuild step passed
+      # /p:RestorePackagesConfig=true, which is for packages.config projects; these are
+      # all SDK-style PackageReference projects.
+      - name: Restore
+        run: dotnet restore ${{ env.Solution_Name }}
 
-    # 4. ZIP the entire published directory for the installer package
-    - name: Zip Published Output for Release
-      run: |
-        Compress-Archive -Path ${{ github.workspace }}/publish_output/* -DestinationPath ${{ github.workspace }}/AutoDownloader_${{ github.ref_name }}.zip
+      - name: Build
+        run: dotnet build ${{ env.Solution_Name }} --configuration Release --no-restore
 
-    # 5. UPLOAD ARTIFACT (This is for debugging, not the release)
-    - name: Upload Build Artifact (Debug)
-      uses: actions/upload-artifact@v4
-      with:
-        name: AutoDownloader-${{ github.sha }}
-        path: ${{ github.workspace }}/publish_output
-    
-    # 6. CRITICAL: Create Release and Upload Assets
-    - name: Create GitHub Release and Upload Assets
-      if: startsWith(github.ref, 'refs/tags/')
-      # --- FIX 1: Use the newer v2 of the action ---
-      uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag_analysis.outputs.TAG_NAME }}
-        name: ${{ steps.tag_analysis.outputs.RELEASE_NAME }}
-        body: "Release ${{ github.ref_name }}. See the project page for full changelog."
-        prerelease: ${{ steps.tag_analysis.outputs.IS_PRERELEASE }} 
-        
-        # --- FIX 2: Use RELATIVE paths, not absolute paths ---
-        files: |
-          AutoDownloader_${{ github.ref_name }}.zip
-          publish_output/AutoDownloader.UI.exe
+      - name: Test
+        run: dotnet test ${{ env.Solution_Name }} --configuration Release --no-build --verbosity normal
+
+      - name: Publish AutoDownloader.UI
+        run: >
+          dotnet publish ${{ env.Publish_Project_Path }}
+          -c Release -r win-x64 --self-contained true
+          -o ${{ github.workspace }}/publish_output
+
+      # Playwright browsers are installed into the published output so the distributed
+      # artifact is ready to run without a first-launch download.
+      - name: Install Playwright browsers into the artifact
+        shell: pwsh
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/publish_output/.playwright
+        run: |
+          $script = "${{ github.workspace }}/publish_output/playwright.ps1"
+          if (Test-Path $script) {
+            & $script install chromium
+          } else {
+            Write-Warning "playwright.ps1 not found in the published output; skipping."
+          }
+
+      - name: Zip Published Output for Release
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path ${{ github.workspace }}/publish_output/* `
+            -DestinationPath ${{ github.workspace }}/AutoDownloader_${{ github.ref_name }}.zip
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoDownloader-${{ github.sha }}
+          path: ${{ github.workspace }}/publish_output
+
+      - name: Create GitHub Release and Upload Assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag_analysis.outputs.TAG_NAME }}
+          name: ${{ steps.tag_analysis.outputs.RELEASE_NAME }}
+          body: "Release ${{ github.ref_name }}. See the project page for the full changelog."
+          prerelease: ${{ steps.tag_analysis.outputs.IS_PRERELEASE }}
+          files: |
+            AutoDownloader_${{ github.ref_name }}.zip

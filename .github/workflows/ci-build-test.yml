@@ -1,0 +1,50 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # NuGet.config at the repository root registers vendor-packages/, which holds the
+      # private TvDbSharper build that is not published on nuget.org. Without it this
+      # restore fails on any machine but the original developer's.
+      - name: Restore
+        run: dotnet restore AutoDownloader.sln
+
+      - name: Build
+        run: dotnet build AutoDownloader.sln --configuration Release --no-restore
+
+      # The unit tests cover pure logic only (episode-number parsing, filename
+      # sanitisation, output-template construction) and need no browser, so they run
+      # before the Playwright install and fail fast if something is broken.
+      - name: Test
+        run: dotnet test AutoDownloader.sln --configuration Release --no-build --verbosity normal
+
+      # Installs the browser binaries Playwright needs at runtime. The generated script
+      # lives beside the build output, so the path must match the configuration built
+      # above - this previously pointed at bin/Debug after a Release build and could
+      # never have worked.
+      - name: Install Playwright browsers
+        shell: pwsh
+        run: |
+          $script = "AutoDownloader.UI/bin/Release/net9.0-windows/playwright.ps1"
+          if (-not (Test-Path $script)) {
+            Write-Error "Playwright bootstrap script not found at $script"
+            exit 1
+          }
+          & $script install chromium --with-deps
