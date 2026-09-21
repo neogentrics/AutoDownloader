@@ -256,11 +256,81 @@ namespace AutoDownloader.UI
             orchestrator.OnLog += (_, e) => Dispatcher.Invoke(() => AppendLog(e.Message, BrushForLevel(e.Level)));
             orchestrator.OnStatusChanged += text => Dispatcher.BeginInvoke(() => StatusTextBlock.Text = text);
             orchestrator.OnDiagnostic += line => DeveloperLogger.Append(line);
+            orchestrator.OnProgress += p => Dispatcher.BeginInvoke(() => ShowProgress(p));
 
-            await orchestrator.RunAsync(
-                searchTerm,
-                OutputFolderTextBox.Text,
-                _cancellation?.Token ?? CancellationToken.None);
+            try
+            {
+                await orchestrator.RunAsync(
+                    searchTerm,
+                    OutputFolderTextBox.Text,
+                    _cancellation?.Token ?? CancellationToken.None);
+            }
+            finally
+            {
+                HideProgress();
+            }
+        }
+
+        /// <summary>
+        /// Updates the status-bar progress display.
+        ///
+        /// The bar shows progress across the whole job rather than the current file, because
+        /// "62% of episode 7 of 12" is what someone actually wants to know; the per-file
+        /// percentage is in the detail text beside it.
+        /// </summary>
+        private void ShowProgress(JobProgress progress)
+        {
+            ProgressPanel.Visibility = Visibility.Visible;
+
+            double? overall = progress.OverallPercent;
+
+            if (overall.HasValue)
+            {
+                DownloadProgressBar.IsIndeterminate = false;
+                DownloadProgressBar.Value = overall.Value;
+                ProgressPercentTextBlock.Text = $"{overall.Value:0}%";
+            }
+            else if (progress.File?.Percent is double filePercent)
+            {
+                // No episode count to scale against - show the file's own progress instead.
+                DownloadProgressBar.IsIndeterminate = false;
+                DownloadProgressBar.Value = filePercent;
+                ProgressPercentTextBlock.Text = $"{filePercent:0}%";
+            }
+            else
+            {
+                DownloadProgressBar.IsIndeterminate = true;
+                ProgressPercentTextBlock.Text = string.Empty;
+            }
+
+            var parts = new List<string>();
+
+            if (progress.EpisodeCount > 1 && progress.EpisodeIndex > 0)
+            {
+                string label = string.IsNullOrEmpty(progress.EpisodeLabel)
+                    ? $"{progress.EpisodeIndex}/{progress.EpisodeCount}"
+                    : $"{progress.EpisodeLabel} ({progress.EpisodeIndex}/{progress.EpisodeCount})";
+                parts.Add(label);
+            }
+
+            if (progress.File?.Percent is double pct) parts.Add($"{pct:0.0}%");
+            if (!string.IsNullOrWhiteSpace(progress.File?.Speed)) parts.Add(progress.File!.Speed!);
+            if (!string.IsNullOrWhiteSpace(progress.File?.Eta)) parts.Add($"ETA {progress.File!.Eta}");
+
+            ProgressDetailTextBlock.Text = string.Join("   ", parts);
+            ProgressDetailTextBlock.Visibility = parts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Clears the progress display once a job ends, so a stale bar does not linger.
+        /// </summary>
+        private void HideProgress()
+        {
+            ProgressPanel.Visibility = Visibility.Collapsed;
+            ProgressDetailTextBlock.Visibility = Visibility.Collapsed;
+            DownloadProgressBar.IsIndeterminate = false;
+            DownloadProgressBar.Value = 0;
+
         }
 
         /// <summary>

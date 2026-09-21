@@ -32,6 +32,12 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// </summary>
         public event Action<int>? OnDownloadComplete;
 
+        /// <summary>
+        /// Fires whenever the downloader reports progress for the file being transferred.
+        /// Readings come from aria2c or from yt-dlp depending on which is doing the work.
+        /// </summary>
+        public event Action<DownloadProgress>? OnProgress;
+
         // --- Private Fields ---
 
         /// <summary>
@@ -199,6 +205,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 startInfo.ArgumentList.Add("--embed-metadata");
                 // Keep going when one episode in a season fails rather than aborting the batch.
                 startInfo.ArgumentList.Add("--ignore-errors");
+                AddProgressArguments(startInfo);
                 // Never silently clobber an existing episode.
                 startInfo.ArgumentList.Add("--no-overwrites");
 
@@ -279,19 +286,18 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 // Handle standard output (download progress, etc.)
                 _process.OutputDataReceived += (sender, args) =>
                 {
-                    if (args.Data != null)
-                    {
-                        OnOutputReceived?.Invoke(args.Data);
-                    }
+                    if (args.Data == null) return;
+                    if (TryReportProgress(args.Data)) return;
+                    OnOutputReceived?.Invoke(args.Data);
                 };
 
                 // Handle error output
                 _process.ErrorDataReceived += (sender, args) =>
                 {
-                    if (args.Data != null)
-                    {
-                        OnOutputReceived?.Invoke($"[ERR] {args.Data}");
-                    }
+                    if (args.Data == null) return;
+                    // aria2c writes its status lines to stderr.
+                    if (TryReportProgress(args.Data)) return;
+                    OnOutputReceived?.Invoke($"[ERR] {args.Data}");
                 };
 
                 // Handle the process exiting (log only). Do NOT dispose or null _process here --
@@ -533,8 +539,19 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             try
             {
                 process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-                process.OutputDataReceived += (_, args) => { if (args.Data != null) OnOutputReceived?.Invoke(args.Data); };
-                process.ErrorDataReceived += (_, args) => { if (args.Data != null) OnOutputReceived?.Invoke($"[ERR] {args.Data}"); };
+                process.OutputDataReceived += (_, args) =>
+                {
+                    if (args.Data == null) return;
+                    if (TryReportProgress(args.Data)) return;
+                    OnOutputReceived?.Invoke(args.Data);
+                };
+                process.ErrorDataReceived += (_, args) =>
+                {
+                    if (args.Data == null) return;
+                    // aria2c writes its status lines to stderr.
+                    if (TryReportProgress(args.Data)) return;
+                    OnOutputReceived?.Invoke($"[ERR] {args.Data}");
+                };
 
                 process.Start();
                 _process = process;
@@ -585,6 +602,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             startInfo.ArgumentList.Add("--embed-metadata");
             startInfo.ArgumentList.Add("--ignore-errors");
             startInfo.ArgumentList.Add("--no-overwrites");
+            AddProgressArguments(startInfo);
 
             if (!string.IsNullOrWhiteSpace(_ffmpegPath) && File.Exists(_ffmpegPath))
             {
@@ -621,6 +639,33 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             AddCookieArguments(startInfo);
 
             return startInfo;
+        }
+
+        /// <summary>
+        /// Asks for machine-readable progress on its own line.
+        ///
+        /// --newline matters: without it yt-dlp rewrites one line with carriage returns, which
+        /// never completes a line for the redirected reader, so nothing arrives until the end.
+        /// </summary>
+        private static void AddProgressArguments(ProcessStartInfo startInfo)
+        {
+            startInfo.ArgumentList.Add("--newline");
+            startInfo.ArgumentList.Add("--progress-template");
+            startInfo.ArgumentList.Add(ProgressParser.YtDlpProgressTemplate);
+        }
+
+        /// <summary>
+        /// Raises OnProgress when a line is a progress reading. Returns true when the line was
+        /// progress and should not also be logged verbatim, since these arrive once a second
+        /// and would otherwise drown the log.
+        /// </summary>
+        private bool TryReportProgress(string line)
+        {
+            var progress = ProgressParser.Parse(line);
+            if (progress == null) return false;
+
+            OnProgress?.Invoke(progress);
+            return true;
         }
 
         /// <summary>

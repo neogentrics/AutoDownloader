@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace AutoDownloader.Services.Orchestration
 {
@@ -61,6 +61,41 @@ namespace AutoDownloader.Services.Orchestration
 
         /// <summary>The folder the series was written to.</summary>
         public string? OutputFolder { get; set; }
+    }
+
+    /// <summary>
+    /// Progress for a job: how far through the current file, and how far through the season.
+    /// </summary>
+    public class JobProgress
+    {
+        /// <summary>Progress of the file currently transferring, if reported.</summary>
+        public AutoDownloader.Core.DownloadProgress? File { get; set; }
+
+        /// <summary>1-based index of the episode being fetched.</summary>
+        public int EpisodeIndex { get; set; }
+
+        /// <summary>Total episodes in this job.</summary>
+        public int EpisodeCount { get; set; }
+
+        /// <summary>The season/episode label, e.g. "S02E07".</summary>
+        public string? EpisodeLabel { get; set; }
+
+        /// <summary>
+        /// Overall completion across the whole job, 0-100: finished episodes plus how far
+        /// through the current one. Null when the episode count is unknown.
+        /// </summary>
+        public double? OverallPercent
+        {
+            get
+            {
+                if (EpisodeCount <= 0) return null;
+
+                double completed = Math.Max(0, EpisodeIndex - 1);
+                double withinCurrent = (File?.Percent ?? 0d) / 100d;
+
+                return Math.Min(100d, (completed + withinCurrent) / EpisodeCount * 100d);
+            }
+        }
     }
 
     /// <summary>

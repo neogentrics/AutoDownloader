@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using AutoDownloader.Services.Scrapers;
 using System;
 using System.Collections.Generic;
@@ -37,6 +37,14 @@ namespace AutoDownloader.Services.Orchestration
         /// <summary>Verbose output intended for the developer log only.</summary>
         public event Action<string>? OnDiagnostic;
 
+        /// <summary>Progress of the current file and of the job as a whole.</summary>
+        public event Action<JobProgress>? OnProgress;
+
+        /// <summary>Tracks which episode progress readings belong to.</summary>
+        private int _currentEpisodeIndex;
+        private int _currentEpisodeCount;
+        private string? _currentEpisodeLabel;
+
         /// <summary>Video container extensions counted during verification.</summary>
         private static readonly string[] VideoExtensions =
             { ".mp4", ".mkv", ".webm", ".avi", ".m4v", ".mov" };
@@ -53,6 +61,19 @@ namespace AutoDownloader.Services.Orchestration
             _xmlService = xmlService;
             _ytDlpService = ytDlpService;
             _prompt = prompt;
+
+            // Re-raise file progress with the episode context the UI needs to show
+            // "episode 3 of 12" alongside the bar.
+            _ytDlpService.OnProgress += fileProgress =>
+            {
+                OnProgress?.Invoke(new JobProgress
+                {
+                    File = fileProgress,
+                    EpisodeIndex = _currentEpisodeIndex,
+                    EpisodeCount = _currentEpisodeCount,
+                    EpisodeLabel = _currentEpisodeLabel,
+                });
+            };
         }
 
         private void Log(string message, JobLogLevel level = JobLogLevel.Info)
@@ -451,7 +472,11 @@ namespace AutoDownloader.Services.Orchestration
                 int episodeNumber = link.DetectedEpisodeNumber ?? (i + 1);
                 titlesByNumber.TryGetValue(episodeNumber, out string? episodeTitle);
 
-                Status($"Downloading {showTitle} S{metadata.NextSeasonNumber:00}E{episodeNumber:00} ({i + 1} of {links.Count})");
+                _currentEpisodeIndex = i + 1;
+                _currentEpisodeCount = links.Count;
+                _currentEpisodeLabel = $"S{metadata.NextSeasonNumber:00}E{episodeNumber:00}";
+
+                Status($"Downloading {showTitle} {_currentEpisodeLabel} ({i + 1} of {links.Count})");
 
                 int exitCode = await _ytDlpService.DownloadEpisodeAsync(
                     link.Url,
