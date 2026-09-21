@@ -179,6 +179,7 @@ namespace AutoDownloader.Cli
                     season = result.SeasonNumber,
                     episodesSucceeded = result.EpisodesSucceeded,
                     episodesFailed = result.EpisodesFailed,
+                    episodesDrmProtected = result.EpisodesProtected,
                     expectedEpisodeCount = result.ExpectedEpisodeCount,
                     filesAdded = result.FilesAdded,
                     filesPresent = result.FilesPresentAfter,
@@ -211,9 +212,9 @@ namespace AutoDownloader.Cli
             string title = result.OfficialTitle ?? "Unknown";
             string where = result.OutputFolder ?? "(unknown folder)";
 
-            string counts = result.EpisodesFailed > 0
-                ? $"{result.EpisodesSucceeded} succeeded, {result.EpisodesFailed} failed"
-                : $"{result.EpisodesSucceeded} succeeded";
+            string counts = $"{result.EpisodesSucceeded} succeeded";
+            if (result.EpisodesFailed > 0) counts += $", {result.EpisodesFailed} failed";
+            if (result.EpisodesProtected > 0) counts += $", {result.EpisodesProtected} DRM protected";
 
             string verification = result.ExpectedEpisodeCount > 0
                 ? $"{result.FilesPresentAfter} of {result.ExpectedEpisodeCount} expected episode(s) present"

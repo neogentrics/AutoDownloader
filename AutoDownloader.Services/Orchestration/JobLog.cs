@@ -50,6 +50,13 @@ namespace AutoDownloader.Services.Orchestration
         /// <summary>Episodes that failed even after the media-capture retry.</summary>
         public int EpisodesFailed { get; set; }
 
+        /// <summary>
+        /// Episodes skipped because the content is DRM protected. Counted separately from
+        /// failures: these cannot be downloaded by any means, so they are not worth retrying
+        /// and should not read as a fault in the app.
+        /// </summary>
+        public int EpisodesProtected { get; set; }
+
         /// <summary>Video files present in the season folder once the job finished.</summary>
         public int FilesPresentAfter { get; set; }
 

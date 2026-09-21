@@ -528,7 +528,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// metadata at all: the show title, season and episode number come from TMDB/TVDB and
         /// the page ordering, never from the site, so nothing is left to guess.
         /// </summary>
-        public async Task<int> DownloadEpisodeAsync(
+        public async Task<EpisodeDownloadOutcome> DownloadEpisodeAsync(
             string url,
             string showTitle,
             int seasonNumber,
@@ -540,7 +540,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath))
             {
                 OnOutputReceived?.Invoke($"[FATAL] yt-dlp executable not found at '{_ytDlpPath}'.");
-                return -1;
+                return EpisodeDownloadOutcome.Failed();
             }
 
             string seasonFolder = $"Season {seasonNumber:00}";
@@ -576,6 +576,10 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
             _cancellationTokenSource ??= new CancellationTokenSource();
 
+            // Set when the downloader reports protected content, so the caller can skip the
+            // media-capture fallback that cannot possibly succeed against an encrypted stream.
+            bool drmProtected = false;
+
             Process? process = null;
             try
             {
@@ -584,6 +588,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 {
                     if (args.Data == null) return;
                     if (TryReportProgress(args.Data)) return;
+                    if (DrmDetector.IsDrmMessage(args.Data)) drmProtected = true;
                     OnOutputReceived?.Invoke(args.Data);
                 };
                 process.ErrorDataReceived += (_, args) =>
@@ -591,6 +596,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                     if (args.Data == null) return;
                     // aria2c writes its status lines to stderr.
                     if (TryReportProgress(args.Data)) return;
+                    if (DrmDetector.IsDrmMessage(args.Data)) drmProtected = true;
                     OnOutputReceived?.Invoke($"[ERR] {args.Data}");
                 };
 
@@ -600,17 +606,22 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 process.BeginErrorReadLine();
 
                 await process.WaitForExitAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-                return process.ExitCode;
+
+                return new EpisodeDownloadOutcome
+                {
+                    ExitCode = process.ExitCode,
+                    DrmProtected = drmProtected
+                };
             }
             catch (OperationCanceledException)
             {
                 OnOutputReceived?.Invoke("--- Stopped by the user. ---");
-                return -1;
+                return EpisodeDownloadOutcome.Failed();
             }
             catch (Exception ex)
             {
                 OnOutputReceived?.Invoke($"--- [ERROR] Episode download failed: {ex.Message} ---");
-                return -1;
+                return EpisodeDownloadOutcome.Failed();
             }
             finally
             {

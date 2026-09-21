@@ -324,11 +324,12 @@ namespace AutoDownloader.Services.Orchestration
             {
                 if (episodeLinks.Count > 0)
                 {
-                    var (succeeded, failed) = await DownloadEpisodesAsync(
+                    var (succeeded, failed, protectedCount) = await DownloadEpisodesAsync(
                         episodeLinks, metadata, finalOutputFolder, cancellationToken).ConfigureAwait(false);
 
                     result.EpisodesSucceeded = succeeded;
                     result.EpisodesFailed = failed;
+                    result.EpisodesProtected = protectedCount;
                 }
                 else
                 {
@@ -359,6 +360,12 @@ namespace AutoDownloader.Services.Orchestration
                 if (missing <= 0)
                 {
                     Log($"CONTENT VERIFICATION: SUCCESS! All {metadata.ExpectedEpisodeCount} expected episode(s) are present ({result.FilesAdded} new this run).", JobLogLevel.Success);
+                }
+                else if (result.EpisodesProtected > 0 && result.EpisodesSucceeded == 0)
+                {
+                    // Distinguish "we could not get it" from "nobody can get it".
+                    Log($"CONTENT VERIFICATION: {result.EpisodesProtected} episode(s) are DRM protected "
+                        + "and cannot be downloaded from this source.", JobLogLevel.Warning);
                 }
                 else
                 {
@@ -631,7 +638,7 @@ namespace AutoDownloader.Services.Orchestration
         /// Downloads each episode individually, naming it from the merged metadata rather than
         /// from whatever the site happens to expose.
         /// </summary>
-        private async Task<(int Succeeded, int Failed)> DownloadEpisodesAsync(
+        private async Task<(int Succeeded, int Failed, int Protected)> DownloadEpisodesAsync(
             List<EpisodeLink> links,
             DownloadMetadata metadata,
             string outputFolder,
@@ -645,6 +652,7 @@ namespace AutoDownloader.Services.Orchestration
             string showTitle = metadata.OfficialTitle ?? "Unknown Show";
             int succeeded = 0;
             int failed = 0;
+            int protectedCount = 0;
 
             for (int i = 0; i < links.Count; i++)
             {
@@ -664,13 +672,26 @@ namespace AutoDownloader.Services.Orchestration
 
                 Status($"Downloading {showTitle} {_currentEpisodeLabel} ({i + 1} of {links.Count})");
 
-                int exitCode = await _ytDlpService.DownloadEpisodeAsync(
+                var outcome = await _ytDlpService.DownloadEpisodeAsync(
                     link.Url,
                     showTitle,
                     metadata.NextSeasonNumber,
                     episodeNumber,
                     episodeTitle,
                     outputFolder).ConfigureAwait(false);
+
+                // Protected content is encrypted at source. Watching the page's network
+                // traffic cannot recover it, so skip the fallback rather than spending
+                // twelve seconds per episode proving that again.
+                if (outcome.DrmProtected)
+                {
+                    protectedCount++;
+                    Log($"--- {_currentEpisodeLabel}: skipped - this video is DRM protected and cannot be downloaded. ---",
+                        JobLogLevel.Warning);
+                    continue;
+                }
+
+                int exitCode = outcome.ExitCode;
 
                 if (exitCode != 0 && !cancellationToken.IsCancellationRequested)
                 {
@@ -685,7 +706,7 @@ namespace AutoDownloader.Services.Orchestration
                     {
                         Log($"--- Captured a media stream; retrying episode {episodeNumber}. ---", JobLogLevel.Notice);
 
-                        exitCode = await _ytDlpService.DownloadEpisodeAsync(
+                        var retry = await _ytDlpService.DownloadEpisodeAsync(
                             captured!,
                             showTitle,
                             metadata.NextSeasonNumber,
@@ -693,6 +714,16 @@ namespace AutoDownloader.Services.Orchestration
                             episodeTitle,
                             outputFolder,
                             referer: link.Url).ConfigureAwait(false);
+
+                        if (retry.DrmProtected)
+                        {
+                            protectedCount++;
+                            Log($"--- {_currentEpisodeLabel}: skipped - this video is DRM protected. ---",
+                                JobLogLevel.Warning);
+                            continue;
+                        }
+
+                        exitCode = retry.ExitCode;
                     }
                 }
 
@@ -707,10 +738,19 @@ namespace AutoDownloader.Services.Orchestration
                 }
             }
 
-            Log($"--- Finished: {succeeded} succeeded, {failed} failed, out of {links.Count}. ---",
-                failed == 0 ? JobLogLevel.Success : JobLogLevel.Warning);
+            string summary = $"{succeeded} succeeded, {failed} failed";
+            if (protectedCount > 0) summary += $", {protectedCount} DRM protected";
 
-            return (succeeded, failed);
+            Log($"--- Finished: {summary}, out of {links.Count}. ---",
+                failed == 0 && protectedCount == 0 ? JobLogLevel.Success : JobLogLevel.Warning);
+
+            if (protectedCount == links.Count && links.Count > 0)
+            {
+                Log("--- Every episode on this source is DRM protected. This content cannot be "
+                    + "downloaded by any tool; it is not a fault in the app. ---", JobLogLevel.Error);
+            }
+
+            return (succeeded, failed, protectedCount);
         }
 
         /// <summary>
