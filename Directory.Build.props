@@ -1,0 +1,12 @@
+<Project>
+
+  <!-- One place to set the version. Previously the title bar, the welcome text and the CLI
+       each carried their own hardcoded string and disagreed with each other. -->
+  <PropertyGroup>
+    <VersionPrefix>1.11.0</VersionPrefix>
+    <VersionSuffix>beta</VersionSuffix>
+    <Product>AutoDownloader</Product>
+    <Company>Neo Gentrics</Company>
+  </PropertyGroup>
+
+</Project>

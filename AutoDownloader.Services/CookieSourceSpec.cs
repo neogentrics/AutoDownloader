@@ -1,5 +1,7 @@
-using System;
+﻿using System;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace AutoDownloader.Services
 {
@@ -43,6 +45,71 @@ namespace AutoDownloader.Services
             if (value.Length > 2 && value[1] == ':' && char.IsLetter(value[0])) return true;
 
             return false;
+        }
+
+        /// <summary>
+        /// Chromium-based browsers hold an exclusive lock on their cookie database while
+        /// running on Windows, so yt-dlp cannot read it and aborts the download outright.
+        /// Firefox is absent deliberately: it can be read while running.
+        /// </summary>
+        private static readonly (string Browser, string ProcessName)[] LockingBrowsers =
+        {
+            ("chrome",   "chrome"),
+            ("edge",     "msedge"),
+            ("brave",    "brave"),
+            ("chromium", "chromium"),
+            ("opera",    "opera"),
+            ("vivaldi",  "vivaldi"),
+            ("whale",    "whale"),
+        };
+
+        /// <summary>
+        /// Returns a warning when the configured cookie source cannot currently be read, or
+        /// null when it looks usable.
+        ///
+        /// This exists because the failure is otherwise invisible until the download is
+        /// already running, and then it repeats once per episode. yt-dlp reports it as
+        /// "Could not copy Chrome cookie database" even for Edge, which does not make the
+        /// cause obvious.
+        /// </summary>
+        public static string? GetPreflightWarning(string? cookieSource)
+        {
+            if (IsNone(cookieSource)) return null;
+
+            string value = cookieSource!.Trim();
+
+            if (IsFilePath(value))
+            {
+                return File.Exists(value)
+                    ? null
+                    : $"The cookies file was not found: {value}. yt-dlp treats an unreadable "
+                      + "cookie source as fatal, so downloads will fail.";
+            }
+
+            // Match the browser name before any +keyring / :profile suffix.
+            string browser = value.Split('+', ':')[0].Trim().ToLowerInvariant();
+
+            var locking = LockingBrowsers.FirstOrDefault(b => b.Browser == browser);
+            if (locking.Browser == null) return null;
+
+            if (!IsProcessRunning(locking.ProcessName)) return null;
+
+            return $"{char.ToUpperInvariant(browser[0])}{browser.Substring(1)} is currently running, "
+                 + "and it locks its cookie database while open. yt-dlp will fail on every episode "
+                 + $"until you either close {browser} completely or set cookies to None in Preferences.";
+        }
+
+        private static bool IsProcessRunning(string processName)
+        {
+            try
+            {
+                return Process.GetProcessesByName(processName).Length > 0;
+            }
+            catch
+            {
+                // Process enumeration can be denied; a missing warning is better than a crash.
+                return false;
+            }
         }
 
         /// <summary>

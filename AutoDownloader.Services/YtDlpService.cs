@@ -450,6 +450,14 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 using var document = JsonDocument.Parse(json);
                 var root = document.RootElement;
 
+                // yt-dlp prints a bare "null" (or nothing useful) when extraction fails, and
+                // TryGetProperty throws on a non-object root rather than returning false. That
+                // turned a plain extraction failure into a confusing type error in the log.
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    return entries;
+                }
+
                 if (root.TryGetProperty("entries", out var entriesElement)
                     && entriesElement.ValueKind == JsonValueKind.Array)
                 {
