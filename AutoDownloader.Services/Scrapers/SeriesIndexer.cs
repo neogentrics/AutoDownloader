@@ -395,7 +395,7 @@ namespace AutoDownloader.Services.Scrapers
         /// </summary>
         public static (int? Season, int? Episode) DetectSeasonAndEpisode(string? linkText, string url)
         {
-            foreach (var source in new[] { linkText, Uri.UnescapeDataString(url) })
+            foreach (var source in new[] { StripIdentifiers(linkText), StripIdentifiers(Uri.UnescapeDataString(url)) })
             {
                 if (string.IsNullOrWhiteSpace(source)) continue;
 
@@ -413,12 +413,42 @@ namespace AutoDownloader.Services.Scrapers
         }
 
         /// <summary>
+        /// Blanks out ids before anything tries to read episode numbers out of a string.
+        ///
+        /// A UUID is a rich source of accidental matches: in
+        /// /video/watch/6149ec80-e617-4bd6-bd0e-abf48e1a30b5 the run "-e617-" reads exactly
+        /// like "episode 617" to a pattern looking for e-then-digits, dashes and all.
+        ///
+        /// That is not a cosmetic mislabel. Two of a hundred and fifty links picking up a
+        /// bogus number was enough to convince the indexer that the page numbered its
+        /// episodes, so it kept those two and discarded everything else.
+        ///
+        /// The patterns avoid backslash escapes entirely, which keeps them readable and
+        /// survives being edited by tooling that eats them.
+        /// </summary>
+        public static string StripIdentifiers(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+
+            // 8-4-4-4-12 hexadecimal: a UUID in its usual written form.
+            string cleaned = Regex.Replace(
+                value,
+                "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                " ");
+
+            // Any other long hexadecimal run: a hash or an id, never an episode number.
+            cleaned = Regex.Replace(cleaned, "[0-9a-fA-F]{12,}", " ");
+
+            return cleaned;
+        }
+
+        /// <summary>
         /// Pulls an episode number out of link text first (more reliable) then the URL.
         /// Public so the parsing rules can be unit tested without a network round trip.
         /// </summary>
         public static int? DetectEpisodeNumber(string? linkText, string url)
         {
-            foreach (var source in new[] { linkText, Uri.UnescapeDataString(url) })
+            foreach (var source in new[] { StripIdentifiers(linkText), StripIdentifiers(Uri.UnescapeDataString(url)) })
             {
                 if (string.IsNullOrWhiteSpace(source)) continue;
 

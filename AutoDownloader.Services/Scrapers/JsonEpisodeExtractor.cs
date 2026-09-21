@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -74,7 +74,7 @@ namespace AutoDownloader.Services.Scrapers
 
         private static JsonEpisode? ReadEpisode(JsonElement obj)
         {
-            string? path = null;
+            string? ownPath = null;
             int? season = null;
             int? episode = null;
             string? name = null;
@@ -87,14 +87,12 @@ namespace AutoDownloader.Services.Scrapers
                 {
                     string value = property.Value.GetString() ?? string.Empty;
 
-                    // A link field: the name says so and the value looks like a path, not a
-                    // sentence. Several fields may qualify; the first usable one wins.
-                    if (path == null
+                    if (ownPath == null
                         && (key == "path" || key == "url" || key == "href" || key == "link"
                             || key == "alternateid" || key == "slug")
                         && LooksLikePath(value))
                     {
-                        path = value;
+                        ownPath = value;
                     }
                     else if (name == null && (key == "name" || key == "title" || key == "episodename"))
                     {
@@ -102,14 +100,11 @@ namespace AutoDownloader.Services.Scrapers
                     }
                 }
 
-                // Numbers arrive as numbers or as strings depending on the site.
                 int? number = ReadInt(property.Value);
                 if (number == null) continue;
 
                 if (season == null && key.Contains("season")) season = number;
 
-                // "episodenumber" contains both words, so episode is checked for its own
-                // marker rather than by elimination.
                 if (episode == null
                     && (key == "episodenumber" || key == "episode" || key == "episodenum"
                         || key == "number" || key == "episodeindex"))
@@ -117,6 +112,12 @@ namespace AutoDownloader.Services.Scrapers
                     episode = number;
                 }
             }
+
+            // The link is often not on the object that knows what the episode is. Discovery+
+            // nests it a couple of levels down, in an object carrying nothing but
+            // { canonical, component, url } - so requiring both on the same object found
+            // every link and numbered none of them.
+            string? path = ownPath ?? FindNestedPath(obj, depth: 0);
 
             if (path == null) return null;
             if (episode == null && season == null) return null;
@@ -128,6 +129,50 @@ namespace AutoDownloader.Services.Scrapers
                 EpisodeNumber = episode,
                 Name = string.IsNullOrWhiteSpace(name) ? null : name
             };
+        }
+
+        /// <summary>
+        /// Looks a little way down for a link, for the common shape where an episode object
+        /// holds its numbering and hands the URL to a nested link object.
+        ///
+        /// Deliberately shallow: go deep enough and an object starts finding links belonging
+        /// to its neighbours, which is worse than finding none.
+        /// </summary>
+        private static string? FindNestedPath(JsonElement element, int depth)
+        {
+            const int MaxDepth = 3;
+            if (depth > MaxDepth) return null;
+
+            if (element.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in element.EnumerateObject())
+                {
+                    string key = property.Name.ToLowerInvariant();
+
+                    if (property.Value.ValueKind == JsonValueKind.String
+                        && (key == "path" || key == "url" || key == "href" || key == "link")
+                        && LooksLikePath(property.Value.GetString() ?? string.Empty))
+                    {
+                        return property.Value.GetString();
+                    }
+                }
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    var nested = FindNestedPath(property.Value, depth + 1);
+                    if (nested != null) return nested;
+                }
+            }
+            else if (element.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in element.EnumerateArray())
+                {
+                    var nested = FindNestedPath(item, depth + 1);
+                    if (nested != null) return nested;
+                }
+            }
+
+            return null;
         }
 
         private static int? ReadInt(JsonElement value)

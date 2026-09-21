@@ -139,13 +139,15 @@ namespace AutoDownloader.Services.Scrapers
                     Timeout = 30000
                 });
 
-                // Some players only begin loading on interaction. A click in the middle of the
-                // viewport is usually enough to start playback.
-                try
-                {
-                    await page.Mouse.ClickAsync(640, 360);
-                }
-                catch { /* not fatal - many players autostart */ }
+                // An episode link often does not lead to a player at all. Discovery+ bounces
+                // its own deep links back to the show page, so what actually loads is a
+                // listing with a "Watch S1 E1" button - and clicking blankly in the middle of
+                // that hits artwork, starts nothing, and the capture comes back empty.
+                //
+                // So look for something that starts playback, press it, and keep listening
+                // afterwards: pressing it usually navigates to the real player page, and the
+                // manifest is only requested once we are there.
+                await StartPlaybackAsync(page);
 
                 // Keep listening while the player does its work.
                 await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, settleSeconds)));
@@ -179,6 +181,57 @@ namespace AutoDownloader.Services.Scrapers
 
             return MediaMarkers.Any(m => path.EndsWith(m, StringComparison.OrdinalIgnoreCase)
                                       || path.Contains(m + "?", StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Gets something playing, by whatever control the page offers.
+        ///
+        /// Tried in order of how specific they are: a labelled play control first, then a
+        /// link to a watch page, then the middle of the viewport for players that sit there
+        /// waiting for any click. Every step is optional - many players simply autostart.
+        /// </summary>
+        private static async Task StartPlaybackAsync(IPage page)
+        {
+            string[] selectors =
+            {
+                "button[aria-label*='play' i]",
+                "button[title*='play' i]",
+                "[data-testid*='play' i]",
+                "button:has-text('Watch')",
+                "a:has-text('Watch')",
+                "button:has-text('Play')",
+                "a[href*='/video/watch/']",
+                "a[href*='/watch/']",
+            };
+
+            foreach (var selector in selectors)
+            {
+                try
+                {
+                    var element = await page.QuerySelectorAsync(selector);
+                    if (element == null) continue;
+                    if (!await element.IsVisibleAsync()) continue;
+
+                    await element.ClickAsync(new ElementHandleClickOptions { Timeout = 5000 });
+
+                    // Pressing it usually navigates; the player then loads on the new page.
+                    try
+                    {
+                        await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+                            new PageWaitForLoadStateOptions { Timeout = 15000 });
+                    }
+                    catch { /* a player that loads in place never goes idle */ }
+
+                    return;
+                }
+                catch
+                {
+                    // Covered by another selector, or by the blank click below.
+                }
+            }
+
+            try { await page.Mouse.ClickAsync(640, 360); }
+            catch { /* not fatal - many players autostart */ }
         }
 
         private static string Truncate(string value) =>
