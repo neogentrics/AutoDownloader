@@ -100,14 +100,14 @@ project's history stays legible. IDs were assigned in GitHub issue order.
 | AD-038 | [#7](https://github.com/neogentrics/AutoDownloader/issues/7) | Design and implement the Settings/Preferences UI | feature | Closed |
 | AD-039 | [#8](https://github.com/neogentrics/AutoDownloader/issues/8) | Playlist limit: the 20-item cap on some sites | bug | **Open** |
 | AD-040 | [#9](https://github.com/neogentrics/AutoDownloader/issues/9) | Refactor: implement native URL parsing | task | Closed |
-| AD-041 | [#10](https://github.com/neogentrics/AutoDownloader/issues/10) | Support external download managers | feature | **Open** |
+| AD-041 | [#10](https://github.com/neogentrics/AutoDownloader/issues/10) | Support external download managers | feature | Closed |
 | AD-042 | [#11](https://github.com/neogentrics/AutoDownloader/issues/11) | Hardcoded search term for metadata lookup on a direct URL | bug | Closed |
 | AD-043 | [#13](https://github.com/neogentrics/AutoDownloader/issues/13) | App crash | bug | Closed |
 | AD-044 | [#14](https://github.com/neogentrics/AutoDownloader/issues/14) | URL parsing | bug | Closed |
 | AD-045 | [#15](https://github.com/neogentrics/AutoDownloader/issues/15) | Playlist parsing | bug | **Open** |
 | AD-046 | [#16](https://github.com/neogentrics/AutoDownloader/issues/16) | Wire up the scraper selection UI flow | feature | **Open** |
-| AD-047 | [#17](https://github.com/neogentrics/AutoDownloader/issues/17) | Package the forked TVDB library as a private NuGet package | task | **Open** |
-| AD-048 | [#18](https://github.com/neogentrics/AutoDownloader/issues/18) | Integrate a new TVDB NuGet package and replace TvDbSharper | task | **Open** |
+| AD-047 | [#17](https://github.com/neogentrics/AutoDownloader/issues/17) | Package the forked TVDB library as a private NuGet package | task | Closed |
+| AD-048 | [#18](https://github.com/neogentrics/AutoDownloader/issues/18) | Integrate a new TVDB NuGet package and replace TvDbSharper | task | Closed |
 | AD-049 | [#20](https://github.com/neogentrics/AutoDownloader/issues/20) | Major architectural refactor (v2.0) | task | **Open** |
 
 ### Where later work overlaps
