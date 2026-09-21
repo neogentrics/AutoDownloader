@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Issue conventions
+    url: https://github.com/neogentrics/AutoDownloader/blob/master/docs/ISSUE-CONVENTIONS.md
+    about: How AD- identifiers, labels and branch names work in this repository.
+  - name: Project roadmap
+    url: https://github.com/neogentrics/AutoDownloader/blob/master/docs/ROADMAP.md
+    about: What is planned, and what has already shipped.
