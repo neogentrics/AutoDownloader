@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
@@ -22,6 +23,21 @@ namespace AutoDownloader.Services.Orchestration
         private static readonly Regex SeasonSegmentPattern =
             new Regex(@"^(?:season[-_]?|s)(\d{1,3})$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        /// <summary>
+        /// Path segments that describe the kind of page rather than naming anything.
+        ///
+        /// A YouTube playlist URL is the clearest case: everything identifying the content is
+        /// in the query string, so the path yields "playlist" and the metadata lookup would
+        /// dutifully go looking for a show called Playlist. When the URL only offers one of
+        /// these, the page title is a far better source.
+        /// </summary>
+        private static readonly HashSet<string> PlaceholderNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "playlist", "playlists", "watch", "video", "videos", "embed", "list",
+            "index", "home", "browse", "channel", "channels", "user", "c",
+            "series", "show", "shows", "tv", "anime", "episode", "episodes", "title"
+        };
+
         private static readonly HttpClient _http = CreateClient();
 
         private static HttpClient CreateClient()
@@ -34,6 +50,18 @@ namespace AutoDownloader.Services.Orchestration
         /// <summary>
         /// Parses the URL only. No network access, so this is deterministic and testable.
         /// </summary>
+        /// <summary>
+        /// True when a parsed name describes the page type rather than naming the content,
+        /// so the caller knows the URL alone was not enough.
+        /// </summary>
+        public static bool IsPlaceholderName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return true;
+
+            return PlaceholderNames.Contains(name)
+                || PlaceholderNames.Contains(name.Replace(" ", string.Empty));
+        }
+
         public static (string ShowName, int? SeasonNumber) ParseFromUrl(string url)
         {
             try
@@ -106,12 +134,26 @@ namespace AutoDownloader.Services.Orchestration
             bool needsFallback =
                 string.IsNullOrWhiteSpace(showName)
                 || showName.Equals("Unknown Show", StringComparison.OrdinalIgnoreCase)
+                || PlaceholderNames.Contains(showName.Replace(" ", string.Empty))
+                || PlaceholderNames.Contains(showName)
                 || SeasonSegmentPattern.IsMatch(showName.Replace(" ", "-"));
 
             if (!needsFallback) return (showName, seasonNumber);
 
             string? scraped = await TryScrapeTitleAsync(url, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(scraped)) return (TidyName(scraped!), seasonNumber);
+
+            if (!string.IsNullOrWhiteSpace(scraped))
+            {
+                string tidied = TidyName(scraped!);
+
+                // Guard against swapping one placeholder for another, e.g. a page titled
+                // simply "Playlist" or "YouTube".
+                if (!PlaceholderNames.Contains(tidied.Replace(" ", string.Empty))
+                    && !tidied.Equals("YouTube", StringComparison.OrdinalIgnoreCase))
+                {
+                    return (tidied, seasonNumber);
+                }
+            }
 
             return (showName, seasonNumber);
         }

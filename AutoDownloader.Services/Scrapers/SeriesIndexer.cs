@@ -49,6 +49,14 @@ namespace AutoDownloader.Services.Scrapers
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         /// <summary>
+        /// Matches a season and episode together: "s01-e01", "S01E01", "season 2 episode 5".
+        /// Requiring both in one expression avoids reading an unrelated number as a season.
+        /// </summary>
+        private static readonly Regex SeasonEpisodePattern = new Regex(
+            @"\bs(?:eason)?[\s._-]*(\d{1,3})[\s._-]*e(?:p(?:isode)?)?[\s._-]*(\d{1,4})\b",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
         /// Indexes a series/season page and returns its episode links in document order.
         /// </summary>
         /// <param name="seriesUrl">The series or season page to index.</param>
@@ -99,11 +107,14 @@ namespace AutoDownloader.Services.Scrapers
                 string text = (anchor.TextContent ?? string.Empty).Trim();
                 text = Regex.Replace(text, @"\s+", " ");
 
+                var (season, episode) = DetectSeasonAndEpisode(text, url);
+
                 candidates.Add(new EpisodeLink
                 {
                     Url = url,
                     LinkText = text,
-                    DetectedEpisodeNumber = DetectEpisodeNumber(text, url),
+                    DetectedSeasonNumber = season,
+                    DetectedEpisodeNumber = episode,
                 });
             }
 
@@ -226,6 +237,29 @@ namespace AutoDownloader.Services.Scrapers
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Reads a season and episode from a link, preferring a combined "S01E01" form because
+        /// it is unambiguous. Falls back to an episode number alone.
+        /// </summary>
+        public static (int? Season, int? Episode) DetectSeasonAndEpisode(string? linkText, string url)
+        {
+            foreach (var source in new[] { linkText, Uri.UnescapeDataString(url) })
+            {
+                if (string.IsNullOrWhiteSpace(source)) continue;
+
+                var combined = SeasonEpisodePattern.Match(source);
+                if (combined.Success
+                    && int.TryParse(combined.Groups[1].Value, out int season)
+                    && int.TryParse(combined.Groups[2].Value, out int episode)
+                    && episode > 0)
+                {
+                    return (season, episode);
+                }
+            }
+
+            return (null, DetectEpisodeNumber(linkText, url));
         }
 
         /// <summary>

@@ -384,7 +384,7 @@ namespace AutoDownloader.Services.Orchestration
             Status("Asking yt-dlp what this page contains...");
             Log("--- Probing the URL with yt-dlp... ---");
 
-            List<string> probed;
+            List<EpisodeLink> probed;
             try
             {
                 probed = await _ytDlpService.ProbeEntriesAsync(seriesUrl).ConfigureAwait(false);
@@ -392,17 +392,13 @@ namespace AutoDownloader.Services.Orchestration
             catch (Exception ex)
             {
                 Log($"Probe failed: {ex.Message}", JobLogLevel.Warning);
-                probed = new List<string>();
+                probed = new List<EpisodeLink>();
             }
 
             if (probed.Count > 1)
             {
                 Log($"yt-dlp recognised the page as a playlist of {probed.Count} item(s).", JobLogLevel.Success);
-                for (int i = 0; i < probed.Count; i++)
-                {
-                    plan.Add(new EpisodeLink { Url = probed[i], Ordinal = i });
-                }
-                return AssignEpisodeNumbers(plan, metadata);
+                return AssignEpisodeNumbers(probed, metadata);
             }
 
             if (cancellationToken.IsCancellationRequested) return plan;
@@ -448,25 +444,68 @@ namespace AutoDownloader.Services.Orchestration
         /// </summary>
         public List<EpisodeLink> AssignEpisodeNumbers(List<EpisodeLink> links, DownloadMetadata metadata)
         {
+            int targetSeason = metadata.NextSeasonNumber;
+
+            // When the links say which season they belong to, keep only the one asked for.
+            // A listing that covers every season at once would otherwise be flattened into
+            // the target season - five seasons of a show arriving as S01E01 to S01E65.
+            var withSeason = links.Where(l => l.DetectedSeasonNumber.HasValue).ToList();
+
+            if (withSeason.Count > 0)
+            {
+                var thisSeason = withSeason.Where(l => l.DetectedSeasonNumber == targetSeason).ToList();
+
+                if (thisSeason.Count > 0)
+                {
+                    if (thisSeason.Count < links.Count)
+                    {
+                        var seasons = withSeason.Select(l => l.DetectedSeasonNumber!.Value)
+                            .Distinct().OrderBy(n => n).ToList();
+
+                        Log($"--- The page covers season(s) {string.Join(", ", seasons)}; "
+                            + $"keeping the {thisSeason.Count} link(s) for season {targetSeason}. ---",
+                            JobLogLevel.Notice);
+                    }
+
+                    links = thisSeason;
+                }
+                else
+                {
+                    Log($"--- WARNING: no link on the page belongs to season {targetSeason}. "
+                        + "Continuing with everything found, which may be misnumbered. ---",
+                        JobLogLevel.Warning);
+                }
+            }
+
             if (!links.Any(l => l.DetectedEpisodeNumber.HasValue))
             {
-                Log("--- No episode numbers on the page; using page order instead. ---", JobLogLevel.Notice);
+                // Position is the only ordering signal left. That is fine for a single season
+                // and wrong for anything else, so say so rather than quietly guessing.
+                if (metadata.ExpectedEpisodeCount > 0 && links.Count > metadata.ExpectedEpisodeCount)
+                {
+                    Log($"--- WARNING: {links.Count} link(s) found but season {targetSeason} has "
+                        + $"{metadata.ExpectedEpisodeCount} episode(s), and the page gives no episode "
+                        + "numbers. Numbering by position is unlikely to be correct. ---",
+                        JobLogLevel.Error);
+                }
+                else
+                {
+                    Log("--- No episode numbers on the page; using page order instead. ---", JobLogLevel.Notice);
+                }
+
                 for (int i = 0; i < links.Count; i++)
                 {
                     links[i].DetectedEpisodeNumber = i + 1;
                 }
             }
-
-            // A mismatch usually means the page covers every season at once, or the season
-            // number was parsed wrong.
-            if (metadata.ExpectedEpisodeCount > 0 && links.Count != metadata.ExpectedEpisodeCount)
+            else if (metadata.ExpectedEpisodeCount > 0 && links.Count != metadata.ExpectedEpisodeCount)
             {
                 Log($"--- NOTE: the page lists {links.Count} episode(s) but the databases expect "
-                    + $"{metadata.ExpectedEpisodeCount} for season {metadata.NextSeasonNumber}. ---",
+                    + $"{metadata.ExpectedEpisodeCount} for season {targetSeason}. ---",
                     JobLogLevel.Warning);
             }
 
-            return links;
+            return links.OrderBy(l => l.DetectedEpisodeNumber ?? int.MaxValue).ToList();
         }
 
         /// <summary>
