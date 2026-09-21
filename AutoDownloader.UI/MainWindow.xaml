@@ -176,7 +176,38 @@
 
         <!-- Status Bar at the bottom -->
         <StatusBar DockPanel.Dock="Bottom" Background="#FF007ACC" Foreground="White">
-            <TextBlock x:Name="StatusTextBlock" Margin="5,2" Text="Ready."/>
+            <StatusBar.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+                </ItemsPanelTemplate>
+            </StatusBar.ItemsPanel>
+
+            <StatusBarItem Grid.Column="0">
+                <TextBlock x:Name="StatusTextBlock" Margin="5,2" Text="Ready." TextTrimming="CharacterEllipsis"/>
+            </StatusBarItem>
+
+            <!-- Speed / ETA. Hidden until there is something to report, so an idle app
+                 does not show empty placeholders. -->
+            <StatusBarItem Grid.Column="1">
+                <TextBlock x:Name="ProgressDetailTextBlock" Margin="5,2" FontFamily="Consolas"
+                           FontSize="12" Visibility="Collapsed"/>
+            </StatusBarItem>
+
+            <StatusBarItem Grid.Column="2">
+                <Grid x:Name="ProgressPanel" Width="220" Margin="5,0" Visibility="Collapsed">
+                    <ProgressBar x:Name="DownloadProgressBar" Height="16" Minimum="0" Maximum="100"
+                                 Background="#FF005A9E" BorderThickness="0" Foreground="#FF4EC9B0"/>
+                    <TextBlock x:Name="ProgressPercentTextBlock" HorizontalAlignment="Center"
+                               VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold"
+                               Foreground="White"/>
+                </Grid>
+            </StatusBarItem>
         </StatusBar>
 
         <!-- Input Panel at the top -->
