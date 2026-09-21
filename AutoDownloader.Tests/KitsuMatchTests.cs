@@ -1,4 +1,4 @@
-using AutoDownloader.Services;
+﻿using AutoDownloader.Services;
 
 namespace AutoDownloader.Tests
 {
@@ -63,11 +63,53 @@ namespace AutoDownloader.Tests
         }
 
         [TestMethod]
-        public void HalfTheWordsIsEnough()
+        public void ASubtitleTheQueryLacksDoesNotSinkAMatch()
         {
-            // The threshold: a subtitle the query does not have must not sink a real match.
-            Assert.IsTrue(KitsuMetadataClient.IsPlausibleMatch(
-                "Steins Gate", "Steins;Gate 0"));
+            Assert.IsTrue(KitsuMetadataClient.IsPlausibleMatch("Steins Gate", "Steins;Gate 0"));
+        }
+
+        /// <summary>
+        /// The case that prompted tightening the threshold. A franchise prefix is worth
+        /// exactly half a two-word title, so at a half-or-better threshold every Fate series
+        /// matched every other one - and would have been handed the wrong episode titles.
+        /// </summary>
+        [TestMethod]
+        [DataRow("Fate/Zero", "Fate/stay night")]
+        [DataRow("Fate/Apocrypha", "Fate/Grand Order")]
+        [DataRow("Fate/stay night", "Fate/Apocrypha")]
+        public void SharingOnlyAFranchisePrefixIsNotAMatch(string query, string candidate)
+        {
+            Assert.IsFalse(KitsuMetadataClient.IsPlausibleMatch(query, candidate),
+                $"'{candidate}' should NOT be accepted for '{query}'");
+        }
+
+        [TestMethod]
+        [DataRow("Fate/Zero", "Fate/Zero")]
+        [DataRow("Fate/stay night", "Fate/stay night: Unlimited Blade Works")]
+        public void TheRightEntryInAFranchiseStillMatches(string query, string candidate)
+        {
+            Assert.IsTrue(KitsuMetadataClient.IsPlausibleMatch(query, candidate));
+        }
+
+        /// <summary>
+        /// Databases romanise the same show differently, and treating those spellings as
+        /// different words is what forced the threshold low enough for franchise prefixes to
+        /// slip through in the first place. Both halves have to hold at once.
+        /// </summary>
+        [TestMethod]
+        [DataRow("Naruto Shippuden", "Naruto: Shippuuden")]
+        [DataRow("Tengen Toppa Gurren Lagann", "Tengen Toppa Gurren-Lagann")]
+        public void RomanisationVariantsCountAsTheSameWord(string query, string candidate)
+        {
+            Assert.IsTrue(KitsuMetadataClient.IsPlausibleMatch(query, candidate));
+        }
+
+        [TestMethod]
+        public void ShortWordsAreNotMatchedLoosely()
+        {
+            // At four letters a single edit is the difference between two real words, so
+            // loose matching is only allowed for longer ones.
+            Assert.IsFalse(KitsuMetadataClient.IsPlausibleMatch("Zero Zero", "Hero Hero"));
         }
     }
 }

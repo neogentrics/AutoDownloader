@@ -80,13 +80,23 @@ namespace AutoDownloader.Services
                 if (!int.TryParse(idElement.GetString(), out int id)) continue;
                 if (!item.TryGetProperty("attributes", out var attributes)) continue;
 
-                string title = ReadString(attributes, "canonicalTitle") ?? showName;
+                var knownTitles = ReadAllTitles(attributes);
+
+                // Prefer the English title for naming, since that is what the files are
+                // called; Kitsu's canonical title is often the romanised Japanese one.
+                string title = ReadString(attributes, "titles", "en")
+                               ?? ReadString(attributes, "canonicalTitle")
+                               ?? showName;
 
                 // Kitsu's text search always returns something. Asked for "Alex vs America"
                 // it offers Chocolate Underground, Totally Spies! and Captain Laserhawk - so
                 // without this, a non-anime show whose other databases came up empty would be
                 // given a completely unrelated anime's episode list.
-                if (!IsPlausibleMatch(showName, title)) continue;
+                //
+                // Every known title is tried, not just the canonical one: Demon Slayer is
+                // canonically "Kimetsu no Yaiba", and checking that alone would reject the
+                // name almost everybody searches by.
+                if (!knownTitles.Any(t => IsPlausibleMatch(showName, t))) continue;
 
                 results.Add(new SeriesCandidate
                 {
@@ -200,9 +210,76 @@ namespace AutoDownloader.Services
             var offered = SignificantWords(candidateTitle);
             if (offered.Count == 0) return false;
 
-            int shared = wanted.Count(w => offered.Contains(w));
+            int shared = wanted.Count(w => offered.Any(o => SameWord(w, o)));
 
-            return (double)shared / wanted.Count >= 0.5;
+            // Strictly more than half, not half. Half is exactly what a shared franchise
+            // prefix buys you: "Fate/Zero" against "Fate/stay night" matches on "fate" alone,
+            // as does "Fate/Apocrypha" against "Fate/Grand Order". Those are different shows,
+            // and accepting them would hand one series the other's episode titles.
+            return (double)shared / wanted.Count > 0.5;
+        }
+
+        /// <summary>
+        /// Whether two words are the same word, allowing for romanisation.
+        ///
+        /// The same anime is spelled differently by different databases - "Shippuden" and
+        /// "Shippuuden", "Ryuu" and "Ryu" - and treating those as different words is what
+        /// forces the match threshold down low enough for franchise prefixes to slip through.
+        /// Only longer words are compared loosely: at four letters a single edit is the
+        /// difference between "zero" and "hero".
+        /// </summary>
+        private static bool SameWord(string a, string b)
+        {
+            if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) return true;
+
+            if (a.Length < 6 || b.Length < 6) return false;
+            if (Math.Abs(a.Length - b.Length) > 1) return false;
+
+            return EditDistanceAtMostOne(a, b);
+        }
+
+        /// <summary>
+        /// True when one word can be turned into the other by a single insertion, deletion or
+        /// substitution. Written as a direct scan rather than a full edit-distance matrix,
+        /// since only the distance-one case is wanted.
+        /// </summary>
+        private static bool EditDistanceAtMostOne(string a, string b)
+        {
+            // Make 'a' the shorter, so the only cases are equal length or one longer.
+            if (a.Length > b.Length)
+            {
+                (a, b) = (b, a);
+            }
+
+            int i = 0, j = 0;
+            bool usedEdit = false;
+
+            while (i < a.Length && j < b.Length)
+            {
+                if (char.ToLowerInvariant(a[i]) == char.ToLowerInvariant(b[j]))
+                {
+                    i++;
+                    j++;
+                    continue;
+                }
+
+                if (usedEdit) return false;
+                usedEdit = true;
+
+                if (a.Length == b.Length)
+                {
+                    // A substitution: step over both.
+                    i++;
+                    j++;
+                }
+                else
+                {
+                    // An insertion in the longer word: step over it alone.
+                    j++;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -229,6 +306,51 @@ namespace AutoDownloader.Services
             }
 
             return words;
+        }
+
+        /// <summary>
+        /// Every name Kitsu knows a show by: the canonical one, the localised ones, and the
+        /// abbreviations. A show is routinely searched for by a name that is none of them.
+        /// </summary>
+        private static List<string> ReadAllTitles(JsonElement attributes)
+        {
+            var titles = new List<string>();
+
+            void Add(string? value)
+            {
+                if (!string.IsNullOrWhiteSpace(value)) titles.Add(value!);
+            }
+
+            Add(ReadString(attributes, "canonicalTitle"));
+
+            if (attributes.TryGetProperty("titles", out var localised)
+                && localised.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in localised.EnumerateObject())
+                {
+                    if (property.Value.ValueKind == JsonValueKind.String) Add(property.Value.GetString());
+                }
+            }
+
+            if (attributes.TryGetProperty("abbreviatedTitles", out var abbreviations)
+                && abbreviations.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in abbreviations.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String) Add(item.GetString());
+                }
+            }
+
+            return titles;
+        }
+
+        /// <summary>Reads a string from a nested object, e.g. titles.en.</summary>
+        private static string? ReadString(JsonElement element, string objectName, string propertyName)
+        {
+            return element.TryGetProperty(objectName, out var nested)
+                   && nested.ValueKind == JsonValueKind.Object
+                ? ReadString(nested, propertyName)
+                : null;
         }
 
         private async Task<JsonElement?> GetJsonAsync(string url, CancellationToken cancellationToken)
