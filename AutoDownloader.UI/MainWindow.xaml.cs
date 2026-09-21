@@ -618,6 +618,35 @@ namespace AutoDownloader.UI
                     episodeTitle,
                     outputFolder);
 
+                if (exitCode != 0)
+                {
+                    // yt-dlp could not resolve the page. Before giving up, watch what the page
+                    // actually requests over the network.
+                    //
+                    // This is the last resort on purpose. Parsing HTML only finds a media URL
+                    // when the URL is written in the markup; a player that builds its stream
+                    // URL in JavaScript inside an iframe leaves nothing in the document to
+                    // find. Observing the requests the player makes does not depend on how the
+                    // URL was constructed.
+                    AppendLog($"--- yt-dlp could not resolve episode {episodeNumber}; watching the page's network activity... ---", Brushes.Orange);
+
+                    string? captured = await CaptureMediaUrlAsync(link.Url);
+
+                    if (!string.IsNullOrWhiteSpace(captured))
+                    {
+                        AppendLog($"--- Captured a media stream; retrying episode {episodeNumber}. ---", Brushes.Yellow);
+
+                        exitCode = await _ytDlpService.DownloadEpisodeAsync(
+                            captured!,
+                            showTitle,
+                            metadata.NextSeasonNumber,
+                            episodeNumber,
+                            episodeTitle,
+                            outputFolder,
+                            referer: link.Url);
+                    }
+                }
+
                 if (exitCode == 0) succeeded++;
                 else
                 {
@@ -628,6 +657,35 @@ namespace AutoDownloader.UI
 
             AppendLog($"--- Finished: {succeeded} succeeded, {failed} failed, out of {links.Count}. ---",
                 failed == 0 ? Brushes.Green : Brushes.OrangeRed);
+        }
+
+        /// <summary>
+        /// Loads an episode page in a headless browser and returns the best media URL observed
+        /// in its network traffic, or null if none appeared.
+        /// </summary>
+        private async Task<string?> CaptureMediaUrlAsync(string pageUrl)
+        {
+            try
+            {
+                var extractor = new MediaUrlExtractor();
+                extractor.OnLog += line => DeveloperLogger.Append(line);
+
+                var urls = await extractor.ExtractMediaUrlsAsync(pageUrl);
+
+                if (urls.Count == 0)
+                {
+                    AppendLog("--- No media requests were observed on that page. ---", Brushes.Orange);
+                    return null;
+                }
+
+                DeveloperLogger.Append($"MediaUrlExtractor: {urls.Count} candidate(s) for {pageUrl}");
+                return urls[0];
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"--- Media capture failed: {ex.Message} ---", Brushes.Orange);
+                return null;
+            }
         }
 
         // --- UI Event Handlers & Helpers ---

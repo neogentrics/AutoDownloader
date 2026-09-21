@@ -499,7 +499,8 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             int seasonNumber,
             int episodeNumber,
             string? episodeTitle,
-            string outputFolder)
+            string outputFolder,
+            string? referer = null)
         {
             if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath))
             {
@@ -523,6 +524,15 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             try { Directory.CreateDirectory(Path.Combine(outputFolder, seasonFolder)); } catch { }
 
             var startInfo = BuildCommonStartInfo(outputFolder);
+
+            // A stream URL captured from a player is usually only served to requests carrying
+            // the originating page as referer.
+            if (!string.IsNullOrWhiteSpace(referer))
+            {
+                startInfo.ArgumentList.Add("--referer");
+                startInfo.ArgumentList.Add(referer!);
+            }
+
             startInfo.ArgumentList.Add("-o");
             startInfo.ArgumentList.Add(outputTemplate);
             startInfo.ArgumentList.Add(url);
