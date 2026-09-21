@@ -125,12 +125,61 @@ namespace AutoDownloader.Services.Scrapers
                 OnLog?.Invoke($"SeriesIndexer: no episode numbering found; {chosen.Count} link(s) matched by URL shape.");
             }
 
+            // Keep only links belonging to THIS series.
+            //
+            // A numbered link is not necessarily one of our episodes: listing pages carry
+            // sidebars, "recently added" panels and related-show rails, all full of other
+            // series' episode links that are numbered exactly the same way. Measured on a real
+            // 12-episode page, taking every numbered link gave 59 - so 47 episodes of other
+            // shows would have been downloaded and filed under this one.
+            //
+            // Episode URLs almost universally contain the series slug, so that is the filter.
+            // It is applied only when it leaves a plausible result, so a site that names its
+            // episode pages differently still works.
+            string? slug = ExtractSeriesSlug(baseUri);
+            if (slug != null)
+            {
+                var onThisSeries = chosen
+                    .Where(c => c.Url.Contains(slug, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (onThisSeries.Count >= 2 && onThisSeries.Count < chosen.Count)
+                {
+                    OnLog?.Invoke($"SeriesIndexer: kept {onThisSeries.Count} of {chosen.Count} link(s) matching series slug '{slug}'; "
+                                + $"discarded {chosen.Count - onThisSeries.Count} belonging to other titles.");
+                    chosen = onThisSeries;
+                }
+                else if (onThisSeries.Count == 0)
+                {
+                    OnLog?.Invoke($"SeriesIndexer: no link contained the slug '{slug}'; keeping all {chosen.Count}.");
+                }
+            }
+
             // Sort by detected episode number when we have it, otherwise keep document order.
             if (chosen.Any(c => c.DetectedEpisodeNumber.HasValue))
             {
                 chosen = chosen
                     .OrderBy(c => c.DetectedEpisodeNumber ?? int.MaxValue)
                     .ToList();
+            }
+
+            // One link per episode number. The same episode is frequently linked more than
+            // once on a page (a thumbnail and a title, say), and without this each duplicate
+            // becomes a repeated download.
+            if (chosen.Any(c => c.DetectedEpisodeNumber.HasValue))
+            {
+                int before = chosen.Count;
+
+                chosen = chosen
+                    .GroupBy(c => c.DetectedEpisodeNumber)
+                    .Select(g => g.First())
+                    .OrderBy(c => c.DetectedEpisodeNumber ?? int.MaxValue)
+                    .ToList();
+
+                if (chosen.Count < before)
+                {
+                    OnLog?.Invoke($"SeriesIndexer: collapsed {before} link(s) to {chosen.Count} distinct episode(s).");
+                }
             }
 
             for (int i = 0; i < chosen.Count; i++)
@@ -140,6 +189,43 @@ namespace AutoDownloader.Services.Scrapers
             }
 
             return results;
+        }
+
+        /// <summary>
+        /// Derives the series slug from a series/season URL, so episode links belonging to
+        /// other titles can be discarded.
+        ///
+        /// Takes the last path segment that is not structural ("anime", "series", "season-2",
+        /// a bare number). Returns null when nothing distinctive enough is found - a very short
+        /// slug would match half the page and do more harm than good.
+        /// </summary>
+        public static string? ExtractSeriesSlug(Uri seriesUri)
+        {
+            var structural = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "anime", "series", "show", "shows", "tv", "watch", "video", "seasons", "season", "episode"
+            };
+
+            var segments = seriesUri.Segments
+                .Select(seg => seg.Trim('/'))
+                .Where(seg => seg.Length > 0)
+                .ToList();
+
+            for (int i = segments.Count - 1; i >= 0; i--)
+            {
+                string segment = segments[i];
+
+                if (structural.Contains(segment)) continue;
+                if (segment.All(char.IsDigit)) continue;
+                if (Regex.IsMatch(segment, @"^(?:season[-_]?|s)\d+$", RegexOptions.IgnoreCase)) continue;
+
+                // Too short to be distinctive; matching on it would keep everything.
+                if (segment.Length < 3) continue;
+
+                return segment;
+            }
+
+            return null;
         }
 
         /// <summary>
