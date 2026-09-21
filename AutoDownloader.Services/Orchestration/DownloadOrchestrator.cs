@@ -221,11 +221,54 @@ namespace AutoDownloader.Services.Orchestration
 
             Log($"--- Searching TMDB and TVDB for: '{confirmedTarget}' (season {metadata.NextSeasonNumber}) ---");
 
+            // Work out whether the name identifies one show before looking anything up. A
+            // name can be exactly right and still match both a series and its reboot, and
+            // taking the first result produced plausible names from the wrong show entirely.
+            int? preferredYear = null;
+
+            try
+            {
+                var candidates = await _metadataService
+                    .SearchCandidatesAsync(confirmedTarget!)
+                    .ConfigureAwait(false);
+
+                var selection = SeriesSelector.Choose(confirmedTarget!, candidates);
+
+                if (selection.Kind == SeriesSelectionKind.Ambiguous && selection.Candidates.Count > 1)
+                {
+                    Log($"--- {selection.Reason}. Asking which one. ---", JobLogLevel.Notice);
+
+                    var chosen = await _prompt
+                        .ChooseSeriesAsync(confirmedTarget!, selection.Candidates, selection.Selected, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (chosen == null)
+                    {
+                        Log("--- No show chosen. Aborting. ---", JobLogLevel.Error);
+                        return Cancelled(result);
+                    }
+
+                    preferredYear = chosen.Year;
+                    confirmedTarget = chosen.Title;
+                    Log($"Using: {chosen.Display} (via {chosen.Source})", JobLogLevel.Notice);
+                }
+                else if (selection.Selected != null)
+                {
+                    preferredYear = selection.Selected.Year;
+                    Log($"Matched: {selection.Selected.Display} ({selection.Reason})", JobLogLevel.Notice);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal: fall back to the plain lookup below.
+                Log($"Could not list candidate shows: {ex.Message}", JobLogLevel.Warning);
+            }
+
             MergedSeriesMetadata? merged;
             try
             {
                 merged = await _metadataService
-                    .GetMergedMetadataAsync(confirmedTarget!, metadata.NextSeasonNumber)
+                    .GetMergedMetadataAsync(confirmedTarget!, metadata.NextSeasonNumber, preferredYear)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)

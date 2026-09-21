@@ -83,7 +83,7 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  /// Searches TMDB for a TV show and returns its metadata.
  /// </summary>
  public async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>
- GetTmdbMetadataAsync(string showName, int seasonNumber = 1)
+ GetTmdbMetadataAsync(string showName, int seasonNumber = 1, int? preferredYear = null)
  {
  if (!IsTmdbKeyValid) return null;
 
@@ -91,6 +91,17 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  {
  SearchContainer<SearchTv> searchResult = await _tmdbClient.SearchTvShowAsync(showName);
  SearchTv? firstResult = searchResult.Results.FirstOrDefault();
+
+ // When the caller already knows which show is meant, pick by year rather than
+ // taking whichever result ranks highest. Searching "teen titans" returns the 2013
+ // reboot first, which silently produced episode names from the wrong series.
+ if (preferredYear.HasValue)
+ {
+ var byYear = searchResult.Results.FirstOrDefault(
+ r => r.FirstAirDate.HasValue && r.FirstAirDate.Value.Year == preferredYear.Value);
+
+ if (byYear != null) firstResult = byYear;
+ }
 
  if (firstResult == null) return null;
 
@@ -155,11 +166,11 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  /// rather than indistinguishable from "no match".
  /// </summary>
  public async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>
- GetTvdbMetadataAsync(string showName, int seasonNumber = 1)
+ GetTvdbMetadataAsync(string showName, int seasonNumber = 1, int? preferredYear = null)
  {
  if (!IsTvdbKeyValid || _tvdbClient == null) return null;
 
- var found = await _tvdbClient.SearchSeriesAsync(showName).ConfigureAwait(false);
+ var found = await _tvdbClient.SearchSeriesAsync(showName, preferredYear).ConfigureAwait(false);
  if (found == null) return null;
 
  int targetSeasonNumber = seasonNumber > 0 ? seasonNumber : 1;
@@ -250,15 +261,16 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  /// <returns>
  /// The merged result, or null when NEITHER database could identify the show.
  /// </returns>
- public async Task<MergedSeriesMetadata?> GetMergedMetadataAsync(string showName, int seasonNumber = 1)
+ public async Task<MergedSeriesMetadata?> GetMergedMetadataAsync(
+ string showName, int seasonNumber = 1, int? preferredYear = null)
  {
  // Run both lookups concurrently; neither depends on the other.
  var tmdbTask = IsTmdbKeyValid
- ? GetTmdbMetadataAsync(showName, seasonNumber)
+ ? GetTmdbMetadataAsync(showName, seasonNumber, preferredYear)
  : Task.FromResult<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>(null);
 
  var tvdbTask = IsTvdbKeyValid
- ? GetTvdbMetadataAsync(showName, seasonNumber)
+ ? GetTvdbMetadataAsync(showName, seasonNumber, preferredYear)
  : Task.FromResult<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>(null);
 
  await Task.WhenAll(tmdbTask, tvdbTask).ConfigureAwait(false);
@@ -336,6 +348,59 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  : Math.Max(tmdb?.ExpectedEpisodeCount ?? 0, tvdb?.ExpectedEpisodeCount ?? 0);
 
  return result;
+ }
+
+ /// <summary>
+ /// Returns the possible matches for a name, from both databases, best first.
+ ///
+ /// The caller uses these to tell a show apart from its reboot. TMDB comes first because
+ /// its search ranking is generally better; TVDB contributes any title TMDB omitted.
+ /// </summary>
+ public async Task<List<SeriesCandidate>> SearchCandidatesAsync(string showName)
+ {
+ var candidates = new List<SeriesCandidate>();
+
+ if (IsTmdbKeyValid && _tmdbClient != null)
+ {
+ try
+ {
+ var results = await _tmdbClient.SearchTvShowAsync(showName);
+
+ foreach (var r in results.Results)
+ {
+ candidates.Add(new SeriesCandidate
+ {
+ Id = r.Id,
+ Title = r.Name,
+ Year = r.FirstAirDate?.Year,
+ Overview = r.Overview,
+ Source = "TMDB"
+ });
+ }
+ }
+ catch (Exception ex)
+ {
+ OnDiagnostic?.Invoke($"TMDB search for '{showName}' failed: {ex.Message}");
+ }
+ }
+
+ if (IsTvdbKeyValid && _tvdbClient != null)
+ {
+ var tvdb = await _tvdbClient.SearchCandidatesAsync(showName).ConfigureAwait(false);
+
+ // Only add titles TMDB did not already offer, so the list stays short enough to
+ // actually choose from.
+ foreach (var candidate in tvdb)
+ {
+ bool alreadyListed = candidates.Any(c =>
+ c.NormalisedTitle == candidate.NormalisedTitle
+ && (c.Year == null || candidate.Year == null || c.Year == candidate.Year));
+
+ if (!alreadyListed) candidates.Add(candidate);
+ }
+ }
+
+ return candidates;
  }
 
  /// <summary>

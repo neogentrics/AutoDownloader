@@ -1,4 +1,6 @@
+﻿using AutoDownloader.Core;
 using AutoDownloader.Services.Orchestration;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -32,6 +34,23 @@ namespace AutoDownloader.UI
                 bool? confirmed = dialog.ShowDialog();
 
                 return confirmed == true ? dialog.ShowName : null;
+            }).Task;
+        }
+
+        public Task<SeriesCandidate?> ChooseSeriesAsync(
+            string searchTerm,
+            IReadOnlyList<SeriesCandidate> candidates,
+            SeriesCandidate? suggested,
+            CancellationToken cancellationToken = default)
+        {
+            return _owner.Dispatcher.InvokeAsync(() =>
+            {
+                var dialog = new SelectSeriesWindow(searchTerm, candidates, suggested) { Owner = _owner };
+
+                // Auto-confirms after 20 seconds, so an unattended run still proceeds.
+                bool? chosen = dialog.ShowDialog();
+
+                return chosen == true ? dialog.SelectedSeries : null;
             }).Task;
         }
     }
