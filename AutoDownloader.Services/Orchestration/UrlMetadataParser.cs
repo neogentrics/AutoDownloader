@@ -59,7 +59,56 @@ namespace AutoDownloader.Services.Orchestration
             if (string.IsNullOrWhiteSpace(name)) return true;
 
             return PlaceholderNames.Contains(name)
-                || PlaceholderNames.Contains(name.Replace(" ", string.Empty));
+                || PlaceholderNames.Contains(name.Replace(" ", string.Empty))
+                || LooksLikeAnIdentifier(name!);
+        }
+
+        /// <summary>
+        /// Whether a name is really an id the site happened to put in its URL.
+        ///
+        /// Plenty of sites address a show by a UUID rather than its title, so the URL yields
+        /// something like "Cba7f3ea 50Cd 40Fa Aae3 Cba25feb1c3e". That is not a placeholder
+        /// word like "watch" or "playlist", so it was accepted as the show name and searched
+        /// for verbatim - and the user had to retype the title by hand every time.
+        ///
+        /// Recognising it as useless is what makes the parser go and read the page title
+        /// instead, which is where the real name was all along.
+        ///
+        /// A word only counts as id-like if it is pure hexadecimal AND contains a digit, so
+        /// ordinary titles survive: "Cafe" and "Deadbeef" are hexadecimal but have no digit,
+        /// and anything containing a letter past F - most words - cannot qualify at all.
+        /// </summary>
+        public static bool LooksLikeAnIdentifier(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            var words = name.Split(new[] { ' ', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length == 0) return false;
+
+            int idLike = words.Count(IsHexChunk);
+
+            // Half or more, so a title with one stray code in it is not thrown away.
+            return idLike * 2 >= words.Length;
+        }
+
+        private static bool IsHexChunk(string word)
+        {
+            if (word.Length < 4) return false;
+
+            bool hasDigit = false;
+
+            foreach (char c in word)
+            {
+                char lower = char.ToLowerInvariant(c);
+
+                bool isHexLetter = lower >= 'a' && lower <= 'f';
+                bool isDigit = lower >= '0' && lower <= '9';
+
+                if (!isHexLetter && !isDigit) return false;
+                if (isDigit) hasDigit = true;
+            }
+
+            return hasDigit;
         }
 
         public static (string ShowName, int? SeasonNumber) ParseFromUrl(string url)
@@ -136,6 +185,7 @@ namespace AutoDownloader.Services.Orchestration
                 || showName.Equals("Unknown Show", StringComparison.OrdinalIgnoreCase)
                 || PlaceholderNames.Contains(showName.Replace(" ", string.Empty))
                 || PlaceholderNames.Contains(showName)
+                || LooksLikeAnIdentifier(showName)
                 || SeasonSegmentPattern.IsMatch(showName.Replace(" ", "-"));
 
             if (!needsFallback) return (showName, seasonNumber);
@@ -207,6 +257,20 @@ namespace AutoDownloader.Services.Orchestration
 
             string cleaned = raw.Replace('-', ' ').Replace('_', ' ').Trim();
             cleaned = Regex.Replace(cleaned, @"\s+", " ");
+
+            // Page titles routinely open with the site's own verb - "Watch X", "Stream X" -
+            // and that word then goes into the database search verbatim, where it matches
+            // nothing. Only stripped when something is left afterwards, so a page actually
+            // titled "Watch" is not reduced to nothing.
+            foreach (var prefix in new[] { "watch ", "stream ", "play " })
+            {
+                if (cleaned.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                    && cleaned.Length > prefix.Length + 2)
+                {
+                    cleaned = cleaned.Substring(prefix.Length).Trim();
+                    break;
+                }
+            }
 
             if (string.IsNullOrWhiteSpace(cleaned)) return "Unknown Show";
 

@@ -68,6 +68,42 @@ namespace AutoDownloader.Services.Orchestration
         /// </summary>
         private const long MinimumUsableFileBytes = 100 * 1024;
 
+        /// <summary>
+        /// The user's browser session, loaded once per job and shared by the page scanner and
+        /// the stream capture. Null until first asked for.
+        /// </summary>
+        private List<Microsoft.Playwright.Cookie>? _pageCookies;
+
+        /// <summary>
+        /// The signed-in session for the headless scanner, or an empty list.
+        ///
+        /// Loaded on demand rather than at the start of every job, because a job whose site
+        /// yt-dlp handles outright never needs it, and exporting cookies means running
+        /// yt-dlp an extra time.
+        /// </summary>
+        private async Task<List<Microsoft.Playwright.Cookie>> GetPageCookiesAsync(
+            CancellationToken cancellationToken)
+        {
+            if (_pageCookies != null) return _pageCookies;
+
+            BrowserCookieProvider.OnDiagnostic += LogCookieDiagnostic;
+
+            try
+            {
+                _pageCookies = await BrowserCookieProvider
+                    .LoadAsync(_ytDlpService.YtDlpPath, CookieSource, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                BrowserCookieProvider.OnDiagnostic -= LogCookieDiagnostic;
+            }
+
+            return _pageCookies;
+        }
+
+        private void LogCookieDiagnostic(string message) => Log(message, JobLogLevel.Notice);
+
         /// <summary>Tracks which episode progress readings belong to.</summary>
         private int _currentEpisodeIndex;
         private int _currentEpisodeCount;
@@ -795,7 +831,10 @@ namespace AutoDownloader.Services.Orchestration
             Log("--- yt-dlp saw no playlist; indexing the page for episode links... ---");
             Status("Indexing episode links...");
 
-            var indexer = new SeriesIndexer();
+            var indexer = new SeriesIndexer
+            {
+                Cookies = await GetPageCookiesAsync(cancellationToken).ConfigureAwait(false),
+            };
             indexer.OnLog += line => OnDiagnostic?.Invoke(line);
 
             List<EpisodeLink> found;
@@ -1252,7 +1291,11 @@ namespace AutoDownloader.Services.Orchestration
         {
             try
             {
-                var extractor = new MediaUrlExtractor();
+                var extractor = new MediaUrlExtractor
+                {
+                    Cookies = _pageCookies ?? new List<Microsoft.Playwright.Cookie>(),
+                };
+
                 extractor.OnLog += line => OnDiagnostic?.Invoke(line);
 
                 var urls = await extractor.ExtractMediaUrlsAsync(pageUrl).ConfigureAwait(false);

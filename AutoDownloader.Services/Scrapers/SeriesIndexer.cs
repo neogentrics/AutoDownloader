@@ -542,6 +542,13 @@ namespace AutoDownloader.Services.Scrapers
         }
 
         /// <summary>
+        /// The user's browser session, so pages that only show their content to a signed-in
+        /// visitor are seen the same way they see them. Empty means browse anonymously.
+        /// </summary>
+        public List<Microsoft.Playwright.Cookie> Cookies { get; set; } =
+            new List<Microsoft.Playwright.Cookie>();
+
+        /// <summary>
         /// The smallest run of similar links worth treating as an episode list. Shared by the
         /// grouping and by the decision to go looking in the page's API responses.
         /// </summary>
@@ -715,6 +722,13 @@ namespace AutoDownloader.Services.Scrapers
                     // before any scrolling is needed at all.
                     ViewportSize = new Microsoft.Playwright.ViewportSize { Width = 1920, Height = 1080 }
                 });
+
+                // A show page often lists its episodes only to a signed-in visitor. Without
+                // these the scanner sees an empty season and looks like a broken indexer.
+                if (Cookies.Count > 0)
+                {
+                    await context.AddCookiesAsync(Cookies).ConfigureAwait(false);
+                }
 
                 var page = await context.NewPageAsync();
 

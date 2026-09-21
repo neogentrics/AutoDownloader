@@ -1,4 +1,4 @@
-using Microsoft.Playwright;
+﻿using Microsoft.Playwright;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -31,6 +31,13 @@ namespace AutoDownloader.Services.Scrapers
     /// </summary>
     public class MediaUrlExtractor
     {
+        /// <summary>
+        /// The user's browser session, so pages that only show their content to a signed-in
+        /// visitor are seen the same way they see them. Empty means browse anonymously.
+        /// </summary>
+        public List<Microsoft.Playwright.Cookie> Cookies { get; set; } =
+            new List<Microsoft.Playwright.Cookie>();
+
         public event Action<string>? OnLog;
 
         /// <summary>
@@ -82,6 +89,13 @@ namespace AutoDownloader.Services.Scrapers
                 {
                     UserAgent = ToolManagerService.FIREFOX_USER_AGENT
                 });
+
+                // Without these the player never starts on a page behind a login, so there
+                // is no traffic to watch and the page looks as though it has no video at all.
+                if (Cookies.Count > 0)
+                {
+                    await context.AddCookiesAsync(Cookies).ConfigureAwait(false);
+                }
 
                 var page = await context.NewPageAsync();
 
