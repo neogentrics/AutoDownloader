@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -170,6 +171,30 @@ namespace AutoDownloader.Services.Scrapers
                 int before = candidates.Count;
                 CollectCandidates(html, currentPage, baseUri, seriesUrl, seen, candidates);
                 int added = candidates.Count - before;
+
+                // The page may have fetched its list rather than shipped it. These go in
+                // alongside the document's own links rather than replacing them, so the
+                // grouping below still decides which run of links is the episode list -
+                // checking the candidate count first would not work, since that count is the
+                // raw pre-grouping list and includes every nav and footer link on the page.
+                if (renderJavaScript && _lastRenderJson.Count > 0)
+                {
+                    string fromJson = BuildHtmlFromJsonPaths(_lastRenderJson);
+
+                    if (fromJson.Length > 0)
+                    {
+                        int beforeJson = candidates.Count;
+                        CollectCandidates(fromJson, currentPage, baseUri, seriesUrl, seen, candidates);
+                        int fromApi = candidates.Count - beforeJson;
+
+                        if (fromApi > 0)
+                        {
+                            OnLog?.Invoke($"SeriesIndexer: the page listed {added} link(s) but its API "
+                                + $"responses carried {fromApi} more.");
+                            added += fromApi;
+                        }
+                    }
+                }
 
                 // A page contributing nothing new means the pager is going in circles or has
                 // run past the end, whatever its links claim.
@@ -422,7 +447,7 @@ namespace AutoDownloader.Services.Scrapers
             chosenSegment = null;
 
             // Below this a "group" is just as likely to be a menu as a listing.
-            const int MinimumGroupSize = 3;
+
 
             string? seriesSegment = FirstPathSegment(seriesPath);
 
@@ -503,6 +528,113 @@ namespace AutoDownloader.Services.Scrapers
         }
 
         /// <summary>
+        /// The smallest run of similar links worth treating as an episode list. Shared by the
+        /// grouping and by the decision to go looking in the page's API responses.
+        /// </summary>
+        private const int MinimumGroupSize = 3;
+
+        /// <summary>
+        /// JSON bodies seen during the most recent headless render.
+        /// </summary>
+        private List<string> _lastRenderJson = new List<string>();
+
+        /// <summary>
+        /// Turns paths found in the page's own API responses into anchors, so the ordinary
+        /// link handling can treat them like any other listing.
+        ///
+        /// A site built as a single-page app renders its episode tiles from JSON and gives
+        /// them no href at all - clicking is handled in script. A Food Network season page
+        /// carried two anchors in a 750 KB document while the API response behind it listed
+        /// seventeen episodes. Reading what the page itself fetched is the difference between
+        /// seeing a whole season and seeing whatever happened to be a real link.
+        ///
+        /// Rebuilt as HTML rather than handled separately, so grouping, slug filtering and
+        /// episode detection all apply unchanged.
+        /// </summary>
+        public static string BuildHtmlFromJsonPaths(IEnumerable<string> jsonBodies)
+        {
+            var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Two or more path segments: enough to look like a page rather than a bare word,
+            // without assuming anything about what a given site calls its episodes.
+            var pattern = new Regex("\"(/[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)+)\"",
+                RegexOptions.Compiled);
+
+            foreach (var body in jsonBodies)
+            {
+                if (string.IsNullOrWhiteSpace(body)) continue;
+
+                foreach (Match match in pattern.Matches(body))
+                {
+                    paths.Add(match.Groups[1].Value);
+                }
+            }
+
+            if (paths.Count == 0) return string.Empty;
+
+            var builder = new StringBuilder("<html><body>");
+
+            foreach (var path in paths)
+            {
+                builder.Append("<a href=\"").Append(path).Append("\">").Append(path).Append("</a>");
+            }
+
+            return builder.Append("</body></html>").ToString();
+        }
+
+        /// <summary>
+        /// Scrolls to the bottom until the page stops growing.
+        ///
+        /// Taking the HTML the moment the network goes idle captures only what has been
+        /// rendered so far, and a listing that loads more as you scroll has rendered almost
+        /// nothing at that point. A Food Network season page yielded two episodes this way -
+        /// exactly the two above the fold - while the season actually held far more.
+        ///
+        /// Stops as soon as a scroll adds nothing, so an ordinary page costs one extra check
+        /// rather than the full budget.
+        /// </summary>
+        private static async Task ScrollToLoadEverythingAsync(Microsoft.Playwright.IPage page)
+        {
+            const int MaxScrolls = 40;
+            const int SettleMs = 600;
+
+            try
+            {
+                int lastHeight = 0;
+                int unchanged = 0;
+
+                for (int i = 0; i < MaxScrolls; i++)
+                {
+                    int height = await page.EvaluateAsync<int>(
+                        "() => { window.scrollTo(0, document.body.scrollHeight); return document.body.scrollHeight; }");
+
+                    await page.WaitForTimeoutAsync(SettleMs);
+
+                    if (height <= lastHeight)
+                    {
+                        // Two stable passes, because a slow fetch can land between them.
+                        if (++unchanged >= 2) break;
+                    }
+                    else
+                    {
+                        unchanged = 0;
+                        lastHeight = height;
+                    }
+                }
+
+                // Back to the top: some listings render in place and only keep what is near
+                // the viewport, so leaving the page at the bottom can lose the early items.
+                await page.EvaluateAsync("() => window.scrollTo(0, 0)");
+                await page.WaitForTimeoutAsync(SettleMs);
+            }
+            catch
+            {
+                // Scrolling is an improvement, not a requirement: whatever rendered so far is
+                // still worth returning.
+            }
+        }
+
+        /// <summary>
         /// Renders the page in headless Chromium, for listings built by JavaScript.
         /// </summary>
         private async Task<string?> RenderWithPlaywrightAsync(string url)
@@ -515,15 +647,44 @@ namespace AutoDownloader.Services.Scrapers
 
                 var context = await browser.NewContextAsync(new Microsoft.Playwright.BrowserNewContextOptions
                 {
-                    UserAgent = ToolManagerService.FIREFOX_USER_AGENT
+                    UserAgent = ToolManagerService.FIREFOX_USER_AGENT,
+
+                    // A taller window is a cheap way to get more of a lazy list rendered
+                    // before any scrolling is needed at all.
+                    ViewportSize = new Microsoft.Playwright.ViewportSize { Width = 1920, Height = 1080 }
                 });
 
                 var page = await context.NewPageAsync();
+
+                // Keep whatever JSON the page fetches. A site that renders its episode list
+                // from an API leaves nothing in the document to find, but the list itself
+                // went past on the wire.
+                var json = new List<string>();
+                page.Response += async (_, response) =>
+                {
+                    try
+                    {
+                        if (!response.Headers.TryGetValue("content-type", out var type)) return;
+                        if (type.IndexOf("json", StringComparison.OrdinalIgnoreCase) < 0) return;
+
+                        string body = await response.TextAsync().ConfigureAwait(false);
+                        lock (json) { json.Add(body); }
+                    }
+                    catch
+                    {
+                        // A body that cannot be read is simply not available to mine.
+                    }
+                };
+
                 await page.GotoAsync(url, new Microsoft.Playwright.PageGotoOptions
                 {
                     WaitUntil = Microsoft.Playwright.WaitUntilState.NetworkIdle,
                     Timeout = 30000
                 });
+
+                await ScrollToLoadEverythingAsync(page);
+
+                lock (json) { _lastRenderJson = new List<string>(json); }
 
                 return await page.ContentAsync();
             }

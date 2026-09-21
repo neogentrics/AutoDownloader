@@ -62,6 +62,12 @@ namespace AutoDownloader.Services.Orchestration
         /// </summary>
         public bool AlwaysOverwrite { get; set; }
 
+        /// <summary>
+        /// Below this, a file on disk is a stub rather than an episode - enough to tell a
+        /// finished download from a truncated one, without ruling out genuinely short videos.
+        /// </summary>
+        private const long MinimumUsableFileBytes = 100 * 1024;
+
         /// <summary>Tracks which episode progress readings belong to.</summary>
         private int _currentEpisodeIndex;
         private int _currentEpisodeCount;
@@ -1063,6 +1069,38 @@ namespace AutoDownloader.Services.Orchestration
                 }
 
                 int exitCode = outcome.ExitCode;
+
+                // yt-dlp exits non-zero when a step after the download fails - writing
+                // metadata, renaming its temp file - even though the video itself is already
+                // downloaded, merged and playable. A locked file is enough to cause it, and
+                // antivirus or an open Explorer preview pane will do that.
+                //
+                // Treating that as "could not resolve the page" sent a finished episode round
+                // the network-capture fallback, which fetched the same episode by another
+                // route and left junk beside the good file. So before falling back, look at
+                // whether the download actually produced something.
+                if (exitCode != 0 && !cancellationToken.IsCancellationRequested)
+                {
+                    var produced = YtDlpService.FindExistingEpisode(
+                        showTitle, metadata.NextSeasonNumber, episodeNumber, episodeTitle, outputFolder);
+
+                    // It has to be a file this run produced. An untouched file left over from
+                    // an earlier run says nothing about whether this attempt worked.
+                    bool isFromThisRun = produced != null
+                        && produced.SizeBytes > MinimumUsableFileBytes
+                        && (existing == null
+                            || produced.LastModified != existing.LastModified
+                            || produced.SizeBytes != existing.SizeBytes);
+
+                    if (isFromThisRun)
+                    {
+                        succeeded++;
+                        Log($"--- {_currentEpisodeLabel}: downloaded ({produced!.SizeDisplay}). A step after "
+                            + "the download failed, so its metadata or subtitles may be incomplete, but the "
+                            + "video itself is finished. ---", JobLogLevel.Warning);
+                        continue;
+                    }
+                }
 
                 if (exitCode != 0 && !cancellationToken.IsCancellationRequested)
                 {
