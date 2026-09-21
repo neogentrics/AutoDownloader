@@ -782,6 +782,31 @@ namespace AutoDownloader.Services.Orchestration
                 }
             }
 
+            // Before falling back to position, see whether the links say what they are. A
+            // listing is often ordered by date or alphabetically, so pairing page order with
+            // database order writes the wrong title onto nearly every file.
+            if (!links.Any(l => l.DetectedEpisodeNumber.HasValue) && metadata.Episodes.Count > 0)
+            {
+                var match = EpisodeTitleMatcher.Apply(links, metadata.Episodes);
+
+                if (match.Applied)
+                {
+                    Log($"--- Matched {match.Matched} of {match.Total} link(s) to episodes by title. ---",
+                        JobLogLevel.Notice);
+
+                    if (match.Unmatched.Count > 0)
+                    {
+                        Log($"--- {match.Unmatched.Count} link(s) matched no known episode and were "
+                            + "placed after the last one. ---", JobLogLevel.Warning);
+                    }
+                }
+                else if (match.Matched > 0)
+                {
+                    Log($"--- Only {match.Matched} of {match.Total} link(s) matched an episode title, "
+                        + "too few to trust. Falling back to page order. ---", JobLogLevel.Warning);
+                }
+            }
+
             if (!links.Any(l => l.DetectedEpisodeNumber.HasValue))
             {
                 // Position is the only ordering signal left. That is fine for a single season
