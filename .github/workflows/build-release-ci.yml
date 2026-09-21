@@ -44,7 +44,10 @@ jobs:
             $releaseName = "Release $tagName - Stable"
           }
 
-          "IS_PRERELEASE=$isPreRelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          # PowerShell writes a boolean as "True", which the release action does not read
+          # as a boolean - so a -beta tag was published as a full release. Lowercase it.
+          $preReleaseFlag = $isPreRelease.ToString().ToLower()
+          "IS_PRERELEASE=$preReleaseFlag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "RELEASE_NAME=$releaseName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "TAG_NAME=$tagName"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
