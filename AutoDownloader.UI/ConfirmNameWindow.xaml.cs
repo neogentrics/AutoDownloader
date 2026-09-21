@@ -16,7 +16,7 @@ namespace AutoDownloader.UI
         /// <summary>
         /// Timer for the auto-confirm countdown.
         /// </summary>
-        private DispatcherTimer _timer;
+        private DispatcherTimer? _timer;
 
         /// <summary>
         /// The number of seconds remaining before auto-confirming.
@@ -88,7 +88,7 @@ namespace AutoDownloader.UI
         /// </summary>
         private void ConfirmButton_Click(object sender, RoutedEventArgs e)
         {
-            _timer.Stop();
+            _timer?.Stop();
 
             // Get the final text from the box (in case the user edited it).
             ShowName = ShowNameTextBox.Text;
@@ -107,7 +107,7 @@ namespace AutoDownloader.UI
         /// </summary>
         private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
-            _timer.Stop();
+            _timer?.Stop();
 
             // ** CRITICAL FIX **
             // Set DialogResult to false. This tells MainWindow's ShowDialog()

@@ -48,6 +48,32 @@ namespace AutoDownloader.Core // <-- CORRECT: This is a data model, it belongs i
         /// </summary>
         public string TvdbApiKey { get; set; } = "YOUR_TVDB_API_KEY_HERE";
 
+        /// <summary>
+        /// Where yt-dlp should read cookies from, for sites that gate content behind a login.
+        /// Empty (the default) means send no cookies at all.
+        /// Accepts either a browser name ("firefox", "chrome", "edge", "brave", ...) or the
+        /// full path to a Netscape-format cookies.txt file.
+        ///
+        /// This must default to empty: yt-dlp treats an unreadable cookie source as a FATAL
+        /// error and downloads nothing, so hardcoding a browser breaks every machine that
+        /// does not have that browser installed.
+        /// </summary>
+        public string CookieSource { get; set; } = string.Empty;
+
+        /// <summary>
+        /// If true, download a private copy of ffmpeg when none is found on PATH or beside
+        /// the application. ffmpeg is required to merge separate video/audio streams (which
+        /// the default "bestvideo+bestaudio" format produces), to embed metadata, and to
+        /// convert subtitles. Without it most downloads fail at the merge step.
+        /// </summary>
+        public bool AutoDownloadFfmpeg { get; set; } = true;
+
+        /// <summary>
+        /// If true, keep a yt-dlp download archive per series so already-downloaded episodes
+        /// are skipped on subsequent runs. This is what makes repeat/scheduled runs cheap.
+        /// </summary>
+        public bool UseDownloadArchive { get; set; } = true;
+
         // --- Advanced Controls (Future Use) ---
 
         /// <summary>

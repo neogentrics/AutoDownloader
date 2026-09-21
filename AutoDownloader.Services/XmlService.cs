@@ -46,8 +46,20 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
                 {
                     // File exists, try to load it.
                     doc = XDocument.Load(filePath);
-                    // Find the root element, or create a new one if the file is empty.
-                    root = doc.Element("SeriesData") ?? new XElement("SeriesData");
+
+                    // Find the root element. If the file has a DIFFERENT root, the bare
+                    // "new XElement" was never attached to the document, so every edit below
+                    // was applied to an orphan and silently discarded on save.
+                    var existingRoot = doc.Element("SeriesData");
+                    if (existingRoot != null)
+                    {
+                        root = existingRoot;
+                    }
+                    else
+                    {
+                        root = new XElement("SeriesData");
+                        doc = new XDocument(root);
+                    }
                 }
                 catch
                 {

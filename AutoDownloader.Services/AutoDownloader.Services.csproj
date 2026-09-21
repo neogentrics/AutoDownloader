@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -7,17 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AngleSharp" Version="1.3.0" />
-    <PackageReference Include="AngleSharp.Io" Version="1.0.0" />
-    <PackageReference Include="AngleSharp.Js" Version="0.15.0" />
-    <PackageReference Include="AngleSharp.Scripting.JavaScript" Version="0.5.1" />
-    <PackageReference Include="AngleSharp.Wrappers" Version="1.3.0" />
-    <PackageReference Include="AngleSharp.Xml" Version="1.0.0" />
-    <PackageReference Include="AngleSharp.XPath" Version="2.0.5" />
-    <PackageReference Include="Microsoft.Playwright" Version="1.55.0" />
-    <PackageReference Include="System.Net.Http" Version="4.3.4" />
-    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
+    <!-- Only AngleSharp.Dom and AngleSharp.Html.Parser are used, both of which live in
+         the base package. The Io/Js/Scripting/Wrappers/Xml/XPath satellites were unused;
+         AngleSharp.Scripting.JavaScript in particular is a .NET Framework package. -->
+    <PackageReference Include="AngleSharp" Version="1.8.2" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.62.0" />
     <PackageReference Include="TMDbLib" Version="2.3.0" />
+    <!-- Local rebuild targeting netstandard2.1; see vendor-packages/README.md -->
     <PackageReference Include="TvDbSharper" Version="4.0.11" />
   </ItemGroup>
 

@@ -1,5 +1,4 @@
 ﻿using AutoDownloader.Services; // <-- CORRECT: Using the .Services project
-using Microsoft.WindowsAPICodePack.Dialogs;
 using System;
 using System.IO;
 using System.Windows;
@@ -96,17 +95,16 @@ namespace AutoDownloader.UI // <-- CORRECT: This is a UI file
         /// </summary>
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
         {
-            // Use the WindowsAPICodePack to show a modern folder picker dialog.
-            var dialog = new CommonOpenFileDialog
+            // Built-in WPF folder picker (.NET 8+); replaces the WindowsAPICodePack dependency.
+            var dialog = new Microsoft.Win32.OpenFolderDialog
             {
-                IsFolderPicker = true,
                 InitialDirectory = OutputFolderTextBox.Text
             };
 
-            if (dialog.ShowDialog() == CommonFileDialogResult.Ok)
-                {
+            if (dialog.ShowDialog(this) == true)
+            {
                 // Set the text box to the folder path the user selected.
-                OutputFolderTextBox.Text = dialog.FileName;
+                OutputFolderTextBox.Text = dialog.FolderName;
             }
         }
     }
