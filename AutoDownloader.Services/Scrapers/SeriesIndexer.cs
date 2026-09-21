@@ -131,9 +131,24 @@ namespace AutoDownloader.Services.Scrapers
             }
             else
             {
-                // No numbering to go on. Fall back to URL-shape heuristics.
-                chosen = candidates.Where(c => LooksLikeEpisodeUrl(c.Url)).ToList();
-                OnLog?.Invoke($"SeriesIndexer: no episode numbering found; {chosen.Count} link(s) matched by URL shape.");
+                // No numbering to go on, so fall back to the shape of the links themselves.
+                //
+                // A keyword list was tried first and is too brittle: it recognised "/watch/"
+                // and "/episode" but not "/cartoon/", so a page whose episode links were
+                // perfectly ordinary anchors was reported as having none. Every site invents
+                // its own word for this.
+                //
+                // Structure is more reliable than vocabulary. A listing page links its items
+                // through one common path prefix and repeats it many times, whereas navigation
+                // and chrome are few and scattered, so the largest such group is almost always
+                // the content.
+                chosen = FindLargestLinkGroup(candidates, baseUri);
+
+                if (chosen.Count == 0)
+                {
+                    chosen = candidates.Where(c => LooksLikeEpisodeUrl(c.Url)).ToList();
+                    OnLog?.Invoke($"SeriesIndexer: no episode numbering found; {chosen.Count} link(s) matched by URL shape.");
+                }
             }
 
             // Keep only links belonging to THIS series.
@@ -300,6 +315,85 @@ namespace AutoDownloader.Services.Scrapers
                 }
             }
             return null;
+        }
+
+        /// <summary>
+        /// Returns the largest group of links sharing a first path segment, when that group is
+        /// big enough to be a content listing rather than a menu.
+        ///
+        /// For a page at /serie/the-pink-panther-show/ whose items live at /cartoon/..., this
+        /// finds the two dozen /cartoon/ links and ignores the handful of nav links, without
+        /// needing to know that this particular site calls them cartoons.
+        /// </summary>
+        private List<EpisodeLink> FindLargestLinkGroup(List<EpisodeLink> candidates, Uri baseUri)
+        {
+            var chosen = SelectLargestLinkGroup(candidates, baseUri.AbsolutePath, out string? segment);
+
+            if (chosen.Count > 0)
+            {
+                OnLog?.Invoke($"SeriesIndexer: {chosen.Count} link(s) share the path '/{segment}/', "
+                            + "which looks like this page's item listing.");
+            }
+
+            return chosen;
+        }
+
+        /// <summary>
+        /// The grouping decision, without any I/O or logging, so it can be tested directly.
+        /// </summary>
+        public static List<EpisodeLink> SelectLargestLinkGroup(
+            List<EpisodeLink> candidates, string seriesPath, out string? chosenSegment)
+        {
+            chosenSegment = null;
+
+            // Below this a "group" is just as likely to be a menu as a listing.
+            const int MinimumGroupSize = 3;
+
+            string? seriesSegment = FirstPathSegment(seriesPath);
+
+            var groups = candidates
+                .Select(c => new { Link = c, Segment = FirstPathSegmentOf(c.Url) })
+                .Where(x => x.Segment != null)
+                .GroupBy(x => x.Segment!, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new { Segment = g.Key, Links = g.Select(x => x.Link).ToList() })
+                .OrderByDescending(g => g.Links.Count)
+                .ToList();
+
+            foreach (var group in groups)
+            {
+                if (group.Links.Count < MinimumGroupSize) break;
+
+                // Links sharing the series page's own segment are usually other series, not
+                // this one's episodes - unless nothing else is on offer.
+                bool isSeriesSegment = seriesSegment != null
+                    && string.Equals(group.Segment, seriesSegment, StringComparison.OrdinalIgnoreCase);
+
+                if (isSeriesSegment && groups.Any(g => g.Links.Count >= MinimumGroupSize
+                                                       && !string.Equals(g.Segment, seriesSegment, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                chosenSegment = group.Segment;
+                return group.Links;
+            }
+
+            return new List<EpisodeLink>();
+        }
+
+        private static string? FirstPathSegmentOf(string url)
+        {
+            try { return FirstPathSegment(new Uri(url).AbsolutePath); }
+            catch { return null; }
+        }
+
+        private static string? FirstPathSegment(string absolutePath)
+        {
+            var segment = absolutePath
+                .Split('/')
+                .FirstOrDefault(p => p.Length > 0);
+
+            return string.IsNullOrWhiteSpace(segment) ? null : segment;
         }
 
         /// <summary>

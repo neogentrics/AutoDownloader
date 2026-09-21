@@ -175,6 +175,9 @@
                           ToolTip="Copies the path of this session's log file to the clipboard."/>
             </MenuItem>
             <MenuItem Header="_Tools">
+                <MenuItem Header="_Watch List..." Click="WatchList_Click"
+                          ToolTip="Series checked for new episodes. Shared with 'autodl --watch-run'."/>
+                <Separator/>
                 <MenuItem Header="_Supported Sites..." Click="SupportedSites_Click"
                           ToolTip="Which sites yt-dlp can extract from, read from the installed copy."/>
             </MenuItem>

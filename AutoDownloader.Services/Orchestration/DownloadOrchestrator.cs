@@ -710,9 +710,14 @@ namespace AutoDownloader.Services.Orchestration
 
                 _sourceUnsupported = true;
 
+                // Say only what was actually established. An earlier version asserted that
+                // the page built its list in JavaScript, which was a guess - and wrong at least
+                // once, where the links were ordinary anchors the indexer had failed to
+                // recognise. Reporting a cause that was never checked sends the next person
+                // looking in the wrong place.
                 Log($"--- {host} is not one of the ~1,750 sites yt-dlp has an extractor for, "
-                    + "its episode list is built by JavaScript rather than links, and it embeds no "
-                    + "player from a supported platform. There is nothing further to try here. ---",
+                    + "no episode links could be identified on the page, and it embeds no player "
+                    + "from a supported platform. There is nothing further to try here. ---",
                     JobLogLevel.Error);
 
                 Log("--- Sources that do work include YouTube, Vimeo, Dailymotion, the Internet "

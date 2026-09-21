@@ -717,6 +717,34 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
         }
 
         /// <summary>
+        /// Opens the watch list. The orchestrator is built on demand so a check uses the
+        /// current settings and a non-interactive prompt.
+        /// </summary>
+        private void WatchList_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new WatchListWindow(_settingsService, BuildOrchestrator) { Owner = this };
+
+            window.OnCheckLog += (message, level) =>
+                Dispatcher.BeginInvoke(() => AppendLog(message, BrushForLevel(level)));
+
+            window.ShowDialog();
+        }
+
+        /// <summary>
+        /// Builds an orchestrator with the current services, or null if they are not ready.
+        /// </summary>
+        private DownloadOrchestrator? BuildOrchestrator(IUserPrompt prompt)
+        {
+            if (_ytDlpService == null || _metadataService == null || _searchService == null) return null;
+
+            return new DownloadOrchestrator(
+                _metadataService, _searchService, _xmlService, _ytDlpService, prompt)
+            {
+                CookieSource = _settingsService.Settings.CookieSource
+            };
+        }
+
+        /// <summary>
         /// Shows which sites yt-dlp supports, so the answer is visible rather than guessed at.
         /// </summary>
         private void SupportedSites_Click(object sender, RoutedEventArgs e)
