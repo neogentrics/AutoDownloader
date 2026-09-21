@@ -62,6 +62,11 @@ namespace AutoDownloader.Services.Orchestration
             _ytDlpService = ytDlpService;
             _prompt = prompt;
 
+            // Surface metadata problems instead of letting a source fail silently. This is
+            // the visibility half of the TVDB fix: a database that contributes nothing should
+            // say why, not look identical to one that simply had no match.
+            _metadataService.OnDiagnostic += message => Log(message, JobLogLevel.Warning);
+
             // Re-raise file progress with the episode context the UI needs to show
             // "episode 3 of 12" alongside the bar.
             _ytDlpService.OnProgress += fileProgress =>
