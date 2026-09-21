@@ -1,4 +1,4 @@
-using AutoDownloader.Services;
+﻿using AutoDownloader.Services;
 
 namespace AutoDownloader.Tests
 {
@@ -73,6 +73,34 @@ namespace AutoDownloader.Tests
         {
             Assert.IsFalse(CookieSourceSpec.IsNone("firefox"));
             Assert.IsFalse(CookieSourceSpec.IsNone(@"D:\cookies.txt"));
+        }
+
+        /// <summary>
+        /// The Preferences dropdown stores an empty string for "None", but a person typing
+        /// --cookies on the command line writes "none", and yt-dlp then aborts with
+        /// "unsupported browser specified for cookies" - which reads like a bug in the app
+        /// rather than a value it could have understood.
+        /// </summary>
+        [TestMethod]
+        [DataRow("")]
+        [DataRow("   ")]
+        [DataRow("none")]
+        [DataRow("None")]
+        [DataRow("NONE")]
+        [DataRow(" off ")]
+        [DataRow("no")]
+        public void WaysOfSayingNoCookiesAreAllUnderstood(string value)
+        {
+            Assert.IsTrue(CookieSourceSpec.IsNone(value));
+        }
+
+        [TestMethod]
+        [DataRow("firefox")]
+        [DataRow("chrome")]
+        [DataRow(@"C:\cookies.txt")]
+        public void ARealCookieSourceIsNotMistakenForNone(string value)
+        {
+            Assert.IsFalse(CookieSourceSpec.IsNone(value));
         }
     }
 }

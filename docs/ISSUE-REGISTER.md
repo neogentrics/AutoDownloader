@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-071`**
+**Next free ID: `AD-073`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -60,6 +60,8 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-068 | - | Episode lists rendered from JSON are invisible to the indexer | bug | high |
 | AD-069 | - | A season page defaulting to its newest season is numbered as season 1 | bug | high |
 | AD-070 | - | Only two metadata databases, both needing keys, both weak on anime | feature | medium |
+| AD-071 | - | Pressing Stop once breaks every later download for the whole session | bug | critical |
+| AD-072 | - | A cookie source of "none" is passed to yt-dlp as a browser name | bug | low |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still

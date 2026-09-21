@@ -116,6 +116,24 @@ namespace AutoDownloader.Services
         /// True when no cookies should be sent at all. This is the default, and the only safe
         /// one: yt-dlp treats an unreadable cookie source as fatal and downloads nothing.
         /// </summary>
-        public static bool IsNone(string? value) => string.IsNullOrWhiteSpace(value);
+        /// <summary>
+        /// Whether no cookies were asked for.
+        ///
+        /// The Preferences dropdown stores an empty string for "None", but a person typing
+        /// --cookies on the command line naturally writes "none", and a settings file edited
+        /// by hand often says so too. yt-dlp treats that as a browser name and aborts with
+        /// "unsupported browser specified for cookies", which reads like a bug in the app
+        /// rather than a value it could simply have understood.
+        /// </summary>
+        public static bool IsNone(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return true;
+
+            string trimmed = value!.Trim();
+
+            return trimmed.Equals("none", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Equals("off", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Equals("no", StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

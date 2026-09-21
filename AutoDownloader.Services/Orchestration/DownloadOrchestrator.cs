@@ -1142,6 +1142,13 @@ namespace AutoDownloader.Services.Orchestration
                     continue;
                 }
 
+                // A stopped download is not a failed one, and there is nothing to retry.
+                if (outcome.Cancelled)
+                {
+                    Log("--- Stopped. ---", JobLogLevel.Error);
+                    break;
+                }
+
                 int exitCode = outcome.ExitCode;
 
                 // yt-dlp exits non-zero when a step after the download fails - writing

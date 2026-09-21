@@ -647,7 +647,13 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
             OnOutputReceived?.Invoke($"--- S{seasonNumber:00}E{episodeNumber:00}: {url} ---");
 
-            _cancellationTokenSource ??= new CancellationTokenSource();
+            // A fresh source for every download. This used to be a null-coalescing
+            // assignment, which meant StopDownload cancelled the source and then every later
+            // download in the session was handed that same cancelled source back - so one
+            // press of Stop permanently broke downloading until the app was restarted, with
+            // each episode failing instantly and blaming the user for it.
+            try { _cancellationTokenSource?.Dispose(); } catch { }
+            _cancellationTokenSource = new CancellationTokenSource();
 
             // Set when the downloader reports protected content, so the caller can skip the
             // media-capture fallback that cannot possibly succeed against an encrypted stream.
@@ -716,7 +722,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             catch (OperationCanceledException)
             {
                 OnOutputReceived?.Invoke("--- Stopped by the user. ---");
-                return EpisodeDownloadOutcome.Failed();
+                return EpisodeDownloadOutcome.Stopped();
             }
             catch (Exception ex)
             {
