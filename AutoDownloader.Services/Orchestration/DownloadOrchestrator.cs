@@ -43,6 +43,13 @@ namespace AutoDownloader.Services.Orchestration
         /// <summary>Progress of the current file and of the job as a whole.</summary>
         public event Action<JobProgress>? OnProgress;
 
+        /// <summary>
+        /// Set when the page turns out to be a site yt-dlp has no extractor for and nothing
+        /// embedded could be found. Handing the URL to yt-dlp again would fail identically,
+        /// so the caller skips that second attempt.
+        /// </summary>
+        private bool _sourceUnsupported;
+
         /// <summary>Tracks which episode progress readings belong to.</summary>
         private int _currentEpisodeIndex;
         private int _currentEpisodeCount;
@@ -331,6 +338,12 @@ namespace AutoDownloader.Services.Orchestration
                     result.EpisodesFailed = failed;
                     result.EpisodesProtected = protectedCount;
                 }
+                else if (_sourceUnsupported)
+                {
+                    // Already established that yt-dlp cannot read this site. Trying again
+                    // would produce the same error a second time and read like a bug.
+                    result.FailureReason = "The source site is not supported.";
+                }
                 else
                 {
                     Log("--- No episode list could be built; passing the URL to yt-dlp directly. ---", JobLogLevel.Warning);
@@ -510,6 +523,16 @@ namespace AutoDownloader.Services.Orchestration
             Status("Asking yt-dlp what this page contains...");
             Log("--- Probing the URL with yt-dlp... ---");
 
+            _sourceUnsupported = false;
+            bool probeSaidUnsupported = false;
+
+            void WatchForUnsupported(string line)
+            {
+                if (SupportedSiteChecker.IsUnsupportedUrlMessage(line)) probeSaidUnsupported = true;
+            }
+
+            _ytDlpService.OnOutputReceived += WatchForUnsupported;
+
             List<EpisodeLink> probed;
             try
             {
@@ -519,6 +542,10 @@ namespace AutoDownloader.Services.Orchestration
             {
                 Log($"Probe failed: {ex.Message}", JobLogLevel.Warning);
                 probed = new List<EpisodeLink>();
+            }
+            finally
+            {
+                _ytDlpService.OnOutputReceived -= WatchForUnsupported;
             }
 
             if (probed.Count > 1)
@@ -556,11 +583,82 @@ namespace AutoDownloader.Services.Orchestration
             if (found.Count == 0)
             {
                 Log("--- No episode links found on the page. ---", JobLogLevel.Warning);
+
+                // The page may not host the video at all - plenty of sites simply frame a
+                // player from somewhere yt-dlp already supports.
+                Log("--- Looking for embedded players from supported platforms... ---");
+
+                List<EmbeddedPlayer> embeds;
+                try
+                {
+                    embeds = await indexer.FindEmbeddedPlayersAsync(seriesUrl, renderJavaScript: true)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log($"Embed search failed: {ex.Message}", JobLogLevel.Warning);
+                    embeds = new List<EmbeddedPlayer>();
+                }
+
+                if (embeds.Count > 0)
+                {
+                    Log($"Found {embeds.Count} embedded video(s) on: "
+                        + string.Join(", ", embeds.Select(e => e.Platform).Distinct()) + ".",
+                        JobLogLevel.Success);
+
+                    for (int i = 0; i < embeds.Count; i++)
+                    {
+                        plan.Add(new EpisodeLink { Url = embeds[i].Url, Ordinal = i, LinkText = embeds[i].Platform });
+                    }
+
+                    return AssignEpisodeNumbers(plan, metadata);
+                }
+
+                await ExplainUnsupportedSourceAsync(seriesUrl, probeSaidUnsupported, cancellationToken)
+                    .ConfigureAwait(false);
+
                 return plan;
             }
 
             Log($"Indexed {found.Count} episode link(s).", JobLogLevel.Success);
             return AssignEpisodeNumbers(found, metadata);
+        }
+
+        /// <summary>
+        /// Says, once and clearly, why nothing could be downloaded from a site - instead of
+        /// handing the URL back to yt-dlp for a second identical failure.
+        /// </summary>
+        private async Task ExplainUnsupportedSourceAsync(
+            string seriesUrl, bool probeSaidUnsupported, CancellationToken cancellationToken)
+        {
+            bool likelySupported = true;
+
+            try
+            {
+                var checker = new SupportedSiteChecker(_ytDlpService.YtDlpPath);
+                checker.OnDiagnostic += message => OnDiagnostic?.Invoke(message);
+
+                likelySupported = await checker.IsLikelySupportedAsync(seriesUrl, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch { /* the explanation is a courtesy; never fail because of it */ }
+
+            if (probeSaidUnsupported || !likelySupported)
+            {
+                string host;
+                try { host = new Uri(seriesUrl).Host; } catch { host = seriesUrl; }
+
+                _sourceUnsupported = true;
+
+                Log($"--- {host} is not one of the ~1,750 sites yt-dlp has an extractor for, "
+                    + "its episode list is built by JavaScript rather than links, and it embeds no "
+                    + "player from a supported platform. There is nothing further to try here. ---",
+                    JobLogLevel.Error);
+
+                Log("--- Sources that do work include YouTube, Vimeo, Dailymotion, the Internet "
+                    + "Archive, and any page embedding a player from one of them. ---",
+                    JobLogLevel.Notice);
+            }
         }
 
         /// <summary>

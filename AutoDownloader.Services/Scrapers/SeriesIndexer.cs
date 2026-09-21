@@ -240,6 +240,27 @@ namespace AutoDownloader.Services.Scrapers
         }
 
         /// <summary>
+        /// Finds embedded players on the page that yt-dlp already supports.
+        ///
+        /// Used when the page itself is not a site yt-dlp knows: the video is frequently
+        /// hosted somewhere it does know, and the page is only framing it.
+        /// </summary>
+        public async Task<List<EmbeddedPlayer>> FindEmbeddedPlayersAsync(
+            string pageUrl, bool renderJavaScript = false)
+        {
+            string? html = renderJavaScript
+                ? await RenderWithPlaywrightAsync(pageUrl)
+                : await FetchAsync(pageUrl);
+
+            if (string.IsNullOrWhiteSpace(html)) return new List<EmbeddedPlayer>();
+
+            var finder = new EmbeddedPlayerFinder();
+            finder.OnDiagnostic += message => OnLog?.Invoke(message);
+
+            return finder.Find(html, pageUrl);
+        }
+
+        /// <summary>
         /// Reads a season and episode from a link, preferring a combined "S01E01" form because
         /// it is unambiguous. Falls back to an episode number alone.
         /// </summary>

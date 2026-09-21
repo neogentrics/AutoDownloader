@@ -46,6 +46,9 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// </summary>
         private readonly string _ytDlpPath;
 
+        /// <summary>The yt-dlp executable this service drives.</summary>
+        public string YtDlpPath => _ytDlpPath;
+
         /// <summary>
         /// The full file path to the aria2c.exe executable.
         /// Injected by MainWindow on startup.
