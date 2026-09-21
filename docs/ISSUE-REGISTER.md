@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-032`**
+**Next free ID: `AD-050`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -60,16 +60,39 @@ repaired. The deploy workflow has been removed; the Pages site itself is unpubli
 | AD-028 | [#51](https://github.com/neogentrics/AutoDownloader/issues/51) | GitHub Pages publishes the entire repository root | Moot - Pages retired |
 | AD-031 | [#53](https://github.com/neogentrics/AutoDownloader/issues/53) | Custom domain does not resolve to GitHub Pages | Retired in favour of recontowers.com |
 
-## Pre-existing issues
+## Earlier issues, brought onto the standard
 
-These predate the `AD-` system and are left with their original numbering. Where one overlaps
-a fixed item it is noted.
+These predate the `AD-` system. They were renamed and relabelled rather than closed, so the
+project's history stays legible. IDs were assigned in GitHub issue order.
 
-| # | Title | Note |
-| :--- | :--- | :--- |
-| [#20](https://github.com/neogentrics/AutoDownloader/issues/20) | FEATURE: Major Architectural Refactor (v2.0) | Largely delivered by AD-021; remaining UI work is AD-027. |
-| [#18](https://github.com/neogentrics/AutoDownloader/issues/18) | FEATURE: Integrate new TVDB NuGet package | Superseded by AD-023. |
-| [#17](https://github.com/neogentrics/AutoDownloader/issues/17) | TASK: Package forked TVDB library into a private NuGet package | Addressed by AD-015 (vendored into the repository instead). |
-| [#16](https://github.com/neogentrics/AutoDownloader/issues/16) | FEATURE: Wire up new Scraper Selection UI Flow | Reconsider: the pipeline now selects automatically. |
-| [#15](https://github.com/neogentrics/AutoDownloader/issues/15) | CRITICAL: Playlist Parsing | Addressed by AD-003 and the yt-dlp probe step. |
-| [#10](https://github.com/neogentrics/AutoDownloader/issues/10) | Feature: Support External Download Managers | Still open, unchanged. |
+| ID | # | Title | Type | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| AD-032 | [#1](https://github.com/neogentrics/AutoDownloader/issues/1) | Implement TMDB metadata integration | feature | Closed |
+| AD-033 | [#2](https://github.com/neogentrics/AutoDownloader/issues/2) | Resolve critical app freezing bug | bug | Closed |
+| AD-034 | [#3](https://github.com/neogentrics/AutoDownloader/issues/3) | Implement multi-link batch processing | feature | Closed |
+| AD-035 | [#4](https://github.com/neogentrics/AutoDownloader/issues/4) | Fix "NA" folder naming | bug | Closed |
+| AD-036 | [#5](https://github.com/neogentrics/AutoDownloader/issues/5) | UI polish: dark theme menu and welcome screen | task | Closed |
+| AD-037 | [#6](https://github.com/neogentrics/AutoDownloader/issues/6) | Content verification: missing episode check | feature | Closed |
+| AD-038 | [#7](https://github.com/neogentrics/AutoDownloader/issues/7) | Design and implement the Settings/Preferences UI | feature | Closed |
+| AD-039 | [#8](https://github.com/neogentrics/AutoDownloader/issues/8) | Playlist limit: the 20-item cap on some sites | bug | **Open** |
+| AD-040 | [#9](https://github.com/neogentrics/AutoDownloader/issues/9) | Refactor: implement native URL parsing | task | Closed |
+| AD-041 | [#10](https://github.com/neogentrics/AutoDownloader/issues/10) | Support external download managers | feature | **Open** |
+| AD-042 | [#11](https://github.com/neogentrics/AutoDownloader/issues/11) | Hardcoded search term for metadata lookup on a direct URL | bug | Closed |
+| AD-043 | [#13](https://github.com/neogentrics/AutoDownloader/issues/13) | App crash | bug | Closed |
+| AD-044 | [#14](https://github.com/neogentrics/AutoDownloader/issues/14) | URL parsing | bug | Closed |
+| AD-045 | [#15](https://github.com/neogentrics/AutoDownloader/issues/15) | Playlist parsing | bug | **Open** |
+| AD-046 | [#16](https://github.com/neogentrics/AutoDownloader/issues/16) | Wire up the scraper selection UI flow | feature | **Open** |
+| AD-047 | [#17](https://github.com/neogentrics/AutoDownloader/issues/17) | Package the forked TVDB library as a private NuGet package | task | **Open** |
+| AD-048 | [#18](https://github.com/neogentrics/AutoDownloader/issues/18) | Integrate a new TVDB NuGet package and replace TvDbSharper | task | **Open** |
+| AD-049 | [#20](https://github.com/neogentrics/AutoDownloader/issues/20) | Major architectural refactor (v2.0) | task | **Open** |
+
+### Where later work overlaps
+
+- **AD-035** (the original "NA" folder naming bug) and **AD-001** are the same symptom five
+  versions apart, from different causes. Worth remembering that this failure mode recurs.
+- **AD-045** is largely addressed by **AD-003** and the yt-dlp probe step, but is left open
+  until confirmed end to end.
+- **AD-047** is satisfied in substance by **AD-015**: the package is vendored into the
+  repository rather than published to a private feed.
+- **AD-048** is superseded by **AD-023**.
+- **AD-049** is substantially delivered by **AD-021**; what remains is **AD-027** and **AD-030**.
