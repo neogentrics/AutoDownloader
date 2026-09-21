@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services project
 {
@@ -56,6 +58,25 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         private readonly string _videoQualityFormat;
 
         /// <summary>
+        /// Full path to ffmpeg.exe, or empty when unavailable. Passed to yt-dlp via
+        /// --ffmpeg-location so it does not have to rely on PATH.
+        /// </summary>
+        private readonly string _ffmpegPath;
+
+        /// <summary>
+        /// Browser name or cookies.txt path for --cookies-from-browser / --cookies.
+        /// Empty means send no cookies, which is the only safe default: yt-dlp treats an
+        /// unreadable cookie source as fatal and aborts the whole download.
+        /// </summary>
+        private readonly string _cookieSource;
+
+        /// <summary>
+        /// When true, yt-dlp keeps a per-series archive file and skips episodes already
+        /// recorded in it.
+        /// </summary>
+        private readonly bool _useDownloadArchive;
+
+        /// <summary>
         /// A reference to the currently running yt-dlp.exe process.
         /// </summary>
         private Process? _process;
@@ -75,12 +96,25 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// <param name="ariaPath">Path to aria2c.exe</param>
         /// <param name="userAgent">User-agent string to use</param>
         /// <param name="videoQualityFormat">yt-dlp format string (e.g., "bestvideo+bestaudio/best")</param>
-        public YtDlpService(string ytDlpPath, string ariaPath, string userAgent, string videoQualityFormat)
+        /// <param name="ffmpegPath">Path to ffmpeg.exe, or empty if it could not be found</param>
+        /// <param name="cookieSource">Browser name or cookies.txt path; empty for no cookies</param>
+        /// <param name="useDownloadArchive">Skip episodes already recorded in the series archive</param>
+        public YtDlpService(
+            string ytDlpPath,
+            string ariaPath,
+            string userAgent,
+            string videoQualityFormat,
+            string ffmpegPath = "",
+            string cookieSource = "",
+            bool useDownloadArchive = true)
         {
             _ytDlpPath = ytDlpPath;
             _ariaPath = ariaPath;
             _userAgent = userAgent;
             _videoQualityFormat = videoQualityFormat;
+            _ffmpegPath = ffmpegPath ?? string.Empty;
+            _cookieSource = cookieSource ?? string.Empty;
+            _useDownloadArchive = useDownloadArchive;
         }
 
         // --- Public Methods ---
@@ -88,7 +122,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// <summary>
         /// Asynchronously launches the yt-dlp process to download a given URL.
         /// </summary>
-        /// <param name="metadata">The metadata object containing the URL and official title.</param>
+        /// <param name="metadata">The metadata object containing the URL(s) and official title.</param>
         /// <param name="outputFolder">The root folder for the show (e.g., ".../TV Shows/The Mandalorian").</param>
         public async Task DownloadVideoAsync(DownloadMetadata metadata, string outputFolder)
         {
@@ -119,18 +153,33 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
                 // ---2. Build yt-dlp Arguments ---
 
-                // Use the official title from metadata, but if it's null,
-                // fall back to a dynamic yt-dlp variable to find the best title.
-                string titleForFolder = metadata.OfficialTitle ?? "%(series, show, playlist_title, title, 'NA')s";
+                // The season number is OURS, not the site's. Two reasons:
+                //   * many sites expose no season metadata at all, and yt-dlp then emits the
+                //     literal text of the field chain into the path (e.g. "Season season2");
+                //   * when a site does expose one it often disagrees with TMDB/TVDB.
+                // Writing it as a literal also guarantees this folder matches the one the
+                // verification step later counts files in.
+                string seasonFolder = $"Season {metadata.NextSeasonNumber:00}";
+                string seasonToken = metadata.NextSeasonNumber.ToString("00");
 
-                // Use pure yt-dlp variables for season/episode padding
-                string seasonYtDlp = $"%(season_number|season|{metadata.NextSeasonNumber})02d";
-                string episodeYtDlp = "%(episode_number|episode|01)02d";
+                // Prefer the official title we already resolved. Only fall back to yt-dlp
+                // fields when we have none.
+                // NOTE: alternates are separated by commas with NO SPACES. A space makes
+                // yt-dlp treat the rest of the chain as part of a field name, so it silently
+                // skips straight to the default - which is how every file ended up named "NA".
+                string titleToken = !string.IsNullOrWhiteSpace(metadata.OfficialTitle)
+                    ? EscapeTemplateLiteral(metadata.OfficialTitle!)
+                    : "%(series,show,playlist_title,title)s";
 
-                // This is the final output template that defines the Plex-friendly file structure.
+                // Episode number must come from the site; playlist_index is the fallback for
+                // sites that expose ordering but not episode numbers. If neither exists the
+                // episode title still differentiates the files, so they cannot collide.
+                const string episodeToken = "%(episode_number,playlist_index)02d";
+                const string episodeTitleToken = "%(episode,title)s";
+
                 string outputTemplate = Path.Combine(outputFolder,
-                    $"Season {seasonYtDlp}", // -> .../Season01/
-                    $"{titleForFolder} - s{seasonYtDlp}e{episodeYtDlp} - %(episode)s.%(ext)s"); // -> Show - s01e01 - Episode Name.mp4
+                    seasonFolder,
+                    $"{titleToken} - S{seasonToken}E{episodeToken} - {episodeTitleToken}.%(ext)s");
 
                 // Build argument list using ArgumentList to avoid shell quoting issues
                 var startInfo = new ProcessStartInfo
@@ -147,7 +196,28 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 // Core flags
                 startInfo.ArgumentList.Add("--windows-filenames");
                 startInfo.ArgumentList.Add("--embed-metadata");
+                // Keep going when one episode in a season fails rather than aborting the batch.
                 startInfo.ArgumentList.Add("--ignore-errors");
+                // Never silently clobber an existing episode.
+                startInfo.ArgumentList.Add("--no-overwrites");
+
+                // Let yt-dlp use our provisioned ffmpeg rather than depending on PATH.
+                if (!string.IsNullOrWhiteSpace(_ffmpegPath) && File.Exists(_ffmpegPath))
+                {
+                    startInfo.ArgumentList.Add("--ffmpeg-location");
+                    startInfo.ArgumentList.Add(_ffmpegPath);
+                }
+                else
+                {
+                    OnOutputReceived?.Invoke("[WARN] ffmpeg was not found. Formats that need merging will fail.");
+                }
+
+                // Per-series archive: makes a repeat run skip what is already downloaded.
+                if (_useDownloadArchive)
+                {
+                    startInfo.ArgumentList.Add("--download-archive");
+                    startInfo.ArgumentList.Add(Path.Combine(outputFolder, "downloaded.txt"));
+                }
 
                 // Format
                 if (!string.IsNullOrWhiteSpace(_videoQualityFormat))
@@ -156,11 +226,13 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                     startInfo.ArgumentList.Add(_videoQualityFormat);
                 }
 
-                // Subtitles
-                startInfo.ArgumentList.Add("--all-subs");
+                // Subtitles. --sub-format only expresses a PREFERENCE; sites that serve VTT
+                // would yield nothing. --convert-subs actually performs the conversion
+                // (it needs ffmpeg, which is why --ffmpeg-location is set above).
+                startInfo.ArgumentList.Add("--write-subs");
                 startInfo.ArgumentList.Add("--sub-langs");
                 startInfo.ArgumentList.Add("all");
-                startInfo.ArgumentList.Add("--sub-format");
+                startInfo.ArgumentList.Add("--convert-subs");
                 startInfo.ArgumentList.Add("srt");
 
                 // Downloader args (single value)
@@ -169,18 +241,42 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 startInfo.ArgumentList.Add("--downloader-args");
                 startInfo.ArgumentList.Add($"aria2c:--max-connection-per-server=16 --split=16 --min-split-size=1M");
 
-                // User agent and cookies
+                // User agent
                 startInfo.ArgumentList.Add("--user-agent");
                 startInfo.ArgumentList.Add(_userAgent);
-                startInfo.ArgumentList.Add("--cookies-from-browser");
-                startInfo.ArgumentList.Add("firefox");
+
+                // Cookies are opt-in. yt-dlp treats an unreadable cookie source as FATAL, so
+                // hardcoding a browser here broke every machine without that browser installed.
+                if (!string.IsNullOrWhiteSpace(_cookieSource))
+                {
+                    if (File.Exists(_cookieSource))
+                    {
+                        startInfo.ArgumentList.Add("--cookies");
+                        startInfo.ArgumentList.Add(_cookieSource);
+                    }
+                    else
+                    {
+                        startInfo.ArgumentList.Add("--cookies-from-browser");
+                        startInfo.ArgumentList.Add(_cookieSource);
+                    }
+                }
 
                 // Output template
                 startInfo.ArgumentList.Add("-o");
                 startInfo.ArgumentList.Add(outputTemplate);
 
-                // URL (final argument)
-                startInfo.ArgumentList.Add(metadata.SourceUrl);
+                // URLs (final arguments). A season page can resolve to many playable links;
+                // passing only the first one downloaded exactly one episode.
+                var urls = metadata.SourceUrls != null && metadata.SourceUrls.Count > 0
+                    ? metadata.SourceUrls
+                    : new List<string> { metadata.SourceUrl };
+
+                foreach (var url in urls.Where(u => !string.IsNullOrWhiteSpace(u)))
+                {
+                    startInfo.ArgumentList.Add(url);
+                }
+
+                OnOutputReceived?.Invoke($"--- Passing {urls.Count} URL(s) to yt-dlp. ---");
 
                 // ---3. Configure Process ---
                 _process = new Process
@@ -301,6 +397,27 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                     _cancellationTokenSource = null;
                 }
             }
+        }
+
+        /// <summary>
+        /// Escapes a literal string for safe use inside a yt-dlp output template.
+        /// A '%' in a show title would otherwise start a field expression and corrupt the path.
+        /// Illegal filename characters are also replaced, since the title becomes a filename.
+        /// </summary>
+        private static string EscapeTemplateLiteral(string value)
+        {
+            var cleaned = new string(value.Where(c => !char.IsControl(c)).ToArray());
+
+            foreach (var c in Path.GetInvalidFileNameChars())
+            {
+                cleaned = cleaned.Replace(c, '_');
+            }
+
+            // Doubling a percent sign is how yt-dlp escapes a literal '%'.
+            cleaned = cleaned.Replace("%", "%%");
+
+            cleaned = cleaned.Trim();
+            return string.IsNullOrWhiteSpace(cleaned) ? "Unknown Show" : cleaned;
         }
 
         /// <summary>

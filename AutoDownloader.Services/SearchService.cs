@@ -70,7 +70,10 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
             ";
 
             // --- 3. Build the API Request ---
-            string apiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={_geminiApiKey}";
+            // The key goes in a header, not the query string, so it does not end up in
+            // proxy logs or crash reports. The dated preview model was also swapped for the
+            // stable alias, which does not get retired out from under the app.
+            const string apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
             var payload = new
             {
@@ -90,13 +93,21 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
             try
             {
                 var jsonPayload = JsonSerializer.Serialize(payload);
-                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
                 // Basic retry logic for API rate limiting
                 int maxRetries = 3;
                 for (int i = 0; i < maxRetries; i++)
                 {
-                    var response = await _httpClient.PostAsync(apiUrl, content);
+                    // The request content MUST be rebuilt per attempt. HttpClient disposes the
+                    // content stream after sending, so reusing a single instance made every
+                    // retry throw on a consumed stream - the backoff could never succeed.
+                    using var request = new HttpRequestMessage(HttpMethod.Post, apiUrl)
+                    {
+                        Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
+                    };
+                    request.Headers.Add("x-goog-api-key", _geminiApiKey);
+
+                    var response = await _httpClient.SendAsync(request);
 
                     if (response.IsSuccessStatusCode)
                     {
@@ -122,10 +133,15 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
                                 // The AI's response is *itself* a JSON string. We must parse *that* string.
                                 var innerJson = textElem.GetString() ?? "{}";
 
-                                // The AI sometimes wraps its JSON response in markdown. We must remove it.
-                                if (innerJson.StartsWith("```json"))
+                                // The AI often wraps its JSON in a markdown fence. Strip it by
+                                // locating the braces rather than by fixed offsets, which threw
+                                // whenever the fence was not exactly the expected length.
+                                innerJson = innerJson.Trim();
+                                int firstBrace = innerJson.IndexOf('{');
+                                int lastBrace = innerJson.LastIndexOf('}');
+                                if (firstBrace >= 0 && lastBrace > firstBrace)
                                 {
-                                    innerJson = innerJson.Substring(7, innerJson.Length - 10).Trim();
+                                    innerJson = innerJson.Substring(firstBrace, lastBrace - firstBrace + 1);
                                 }
 
                                 // Parse the *inner* JSON to get our final data

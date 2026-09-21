@@ -46,6 +46,13 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
         /// </summary>
         private const string ARIA2C_URL = "https://github.com/aria2/aria2/releases/latest/download/aria2-1.37.0-win-64bit-build1.zip";
 
+        /// <summary>
+        /// The ffmpeg build maintained by the yt-dlp project (shared build: smaller than the
+        /// static one and known-good against yt-dlp). ffmpeg is required for merging separate
+        /// video+audio streams, --embed-metadata, and --convert-subs.
+        /// </summary>
+        private const string FFMPEG_URL = "https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl-shared.zip";
+
         // --- Private Fields ---
 
         /// <summary>
@@ -60,6 +67,18 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
         /// </summary>
         private string _aria2cPath = "";
 
+        /// <summary>
+        /// The full path to ffmpeg.exe, or an empty string when ffmpeg is not available.
+        /// Empty is not fatal, but merging and subtitle conversion will fail without it.
+        /// </summary>
+        private string _ffmpegPath = "";
+
+        /// <summary>
+        /// When false, EnsureToolsAvailableAsync will not download ffmpeg; it will only
+        /// detect an existing copy. Set from SettingsModel.AutoDownloadFfmpeg.
+        /// </summary>
+        public bool AutoDownloadFfmpeg { get; set; } = true;
+
         // --- Public Methods ---
 
         /// <summary>
@@ -67,8 +86,8 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
         /// It ensures all required tools are present and ready to be used.
         /// It runs the checks for both tools in parallel to speed up app launch.
         /// </summary>
-        /// <returns>A tuple containing the file paths to yt-dlp.exe and aria2c.exe.</returns>
-        public async Task<(string YtDlpPath, string Aria2cPath)> EnsureToolsAvailableAsync()
+        /// <returns>The paths to yt-dlp.exe, aria2c.exe and ffmpeg.exe (ffmpeg may be empty).</returns>
+        public async Task<(string YtDlpPath, string Aria2cPath, string FfmpegPath)> EnsureToolsAvailableAsync()
         {
             // Get the application's root directory (e.g., ...\bin\Debug\net9.0-windows)
             string appRoot = AppContext.BaseDirectory;
@@ -77,14 +96,15 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
             _ytDlpPath = Path.Combine(appRoot, "yt-dlp.exe");
             _aria2cPath = Path.Combine(appRoot, "aria2c.exe");
 
-            // Run both checks at the same time to save time.
+            // Run the checks at the same time to save time.
             await Task.WhenAll(
                 EnsureYtDlpAsync(),
-                EnsureAria2cAsync()
+                EnsureAria2cAsync(),
+                EnsureFfmpegAsync()
             );
 
             // Return the paths to MainWindow, which will pass them to YtDlpService.
-            return (_ytDlpPath, _aria2cPath);
+            return (_ytDlpPath, _aria2cPath, _ffmpegPath);
         }
 
         // --- Private Helper Methods ---
@@ -185,6 +205,122 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
         }
 
         /// <summary>
+        /// Locates ffmpeg, downloading a private copy only if one cannot already be found.
+        /// Search order: beside the app -> on PATH -> download.
+        /// A failure here is logged but never fatal; yt-dlp still runs, it just cannot merge.
+        /// </summary>
+        private async Task EnsureFfmpegAsync()
+        {
+            string appRoot = AppContext.BaseDirectory;
+
+            // 1. Already sitting next to the application (including a previous download).
+            string localFfmpeg = Path.Combine(appRoot, "ffmpeg.exe");
+            if (File.Exists(localFfmpeg))
+            {
+                _ffmpegPath = localFfmpeg;
+                return;
+            }
+
+            // 2. Anywhere on PATH - respect a system install rather than duplicating ~90MB.
+            string? onPath = FindOnPath("ffmpeg.exe");
+            if (onPath != null)
+            {
+                _ffmpegPath = onPath;
+                OnToolLogReceived?.Invoke($"Using existing ffmpeg found on PATH: {onPath}");
+                return;
+            }
+
+            if (!AutoDownloadFfmpeg)
+            {
+                OnToolLogReceived?.Invoke("--- WARNING: ffmpeg was not found and automatic download is disabled. ---");
+                OnToolLogReceived?.Invoke("--- Downloads that need merging (bestvideo+bestaudio) will fail. ---");
+                return;
+            }
+
+            // 3. Download. This is a large one-time fetch, so say so rather than appearing to hang.
+            OnToolLogReceived?.Invoke("ffmpeg not found. Downloading (one-time, ~85 MB)...");
+            string zipPath = Path.Combine(appRoot, "ffmpeg.zip");
+
+            try
+            {
+                await DownloadFileAsync(FFMPEG_URL, zipPath);
+                OnToolLogReceived?.Invoke("ffmpeg archive downloaded. Extracting...");
+
+                using (var archive = ZipFile.OpenRead(zipPath))
+                {
+                    // The shared build needs its DLLs, so take everything under bin/ and
+                    // flatten it beside the application.
+                    var binEntries = archive.Entries
+                        .Where(e => e.FullName.Contains("/bin/", StringComparison.OrdinalIgnoreCase)
+                                    && !string.IsNullOrEmpty(e.Name))
+                        .ToList();
+
+                    if (binEntries.Count == 0)
+                    {
+                        throw new FileNotFoundException("Could not find a bin/ folder inside the ffmpeg archive.");
+                    }
+
+                    foreach (var entry in binEntries)
+                    {
+                        // ffplay is an interactive player; we never use it and it is ~160MB.
+                        if (entry.Name.Equals("ffplay.exe", StringComparison.OrdinalIgnoreCase)) continue;
+
+                        string target = Path.Combine(appRoot, entry.Name);
+                        entry.ExtractToFile(target, true);
+                    }
+                }
+
+                if (File.Exists(localFfmpeg))
+                {
+                    _ffmpegPath = localFfmpeg;
+                    OnToolLogReceived?.Invoke("ffmpeg extracted successfully.");
+                }
+                else
+                {
+                    OnToolLogReceived?.Invoke("--- ERROR: ffmpeg.exe was not present in the extracted archive. ---");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal: the app still works for single-stream downloads.
+                OnToolLogReceived?.Invoke($"--- ERROR: Failed to get ffmpeg: {ex.Message} ---");
+                OnToolLogReceived?.Invoke("--- Downloads that require merging will fail until ffmpeg is available. ---");
+            }
+            finally
+            {
+                if (File.Exists(zipPath))
+                {
+                    try { File.Delete(zipPath); } catch { }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns the full path to an executable found on PATH, or null if it is not there.
+        /// </summary>
+        private static string? FindOnPath(string exeName)
+        {
+            try
+            {
+                string? pathVar = Environment.GetEnvironmentVariable("PATH");
+                if (string.IsNullOrEmpty(pathVar)) return null;
+
+                foreach (var dir in pathVar.Split(Path.PathSeparator))
+                {
+                    if (string.IsNullOrWhiteSpace(dir)) continue;
+                    try
+                    {
+                        string candidate = Path.Combine(dir.Trim(), exeName);
+                        if (File.Exists(candidate)) return candidate;
+                    }
+                    catch { /* malformed PATH entry - skip it */ }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>
         /// A simple helper method to download a file from a URL and save it to a path.
         /// </summary>
         private async Task DownloadFileAsync(string url, string destinationPath)
@@ -210,9 +346,9 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
         /// A helper method to get the cached tool paths without re-running the check.
         /// This is used by MainWindow when reloading settings.
         /// </summary>
-        public (string YtDlpPath, string Aria2cPath) GetToolPaths()
+        public (string YtDlpPath, string Aria2cPath, string FfmpegPath) GetToolPaths()
         {
-            return (_ytDlpPath, _aria2cPath);
+            return (_ytDlpPath, _aria2cPath, _ffmpegPath);
         }
     }
 }

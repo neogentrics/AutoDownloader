@@ -76,7 +76,7 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  /// Searches TMDB for a TV show and returns its metadata.
  /// </summary>
  public async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>
- GetTmdbMetadataAsync(string showName)
+ GetTmdbMetadataAsync(string showName, int seasonNumber = 1)
  {
  if (!IsTmdbKeyValid) return null;
 
@@ -90,31 +90,26 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  TvShow fullShow = await _tmdbClient.GetTvShowAsync(firstResult.Id, TvShowMethods.ExternalIds | TvShowMethods.Credits);
  if (fullShow == null) return null;
 
- int targetSeasonNumber =1;
- var seasonOne = fullShow.Seasons?.FirstOrDefault(s => s.SeasonNumber == targetSeasonNumber);
+ // Look up the season the caller actually asked for. This was hardcoded to 1, so
+ // the URL parser could correctly detect "season-2" and the episode count and
+ // episode list would still come back describing season 1.
+ int targetSeasonNumber = seasonNumber > 0 ? seasonNumber : 1;
+ var targetSeason = fullShow.Seasons?.FirstOrDefault(s => s.SeasonNumber == targetSeasonNumber);
 
- int expectedCount =1;
+ if (targetSeason == null && targetSeasonNumber != 1)
+ {
+ // The show exists but not that season - fall back rather than reporting nothing.
+ targetSeasonNumber = 1;
+ targetSeason = fullShow.Seasons?.FirstOrDefault(s => s.SeasonNumber == 1);
+ }
 
- if (seasonOne != null)
+ int expectedCount =0;
+
+ if (targetSeason != null && targetSeason.EpisodeCount >0)
  {
- int? epCount = GetIntFromObject(seasonOne, "EpisodeCount", "episode_count", "episodecount");
- if (epCount.HasValue && epCount.Value >0)
- {
- expectedCount = epCount.Value;
- }
- else
- {
- try
- {
- var directVal = seasonOne.EpisodeCount;
- if (directVal != null)
- {
- int v = Convert.ToInt32(directVal);
- if (v >0) expectedCount = v;
- }
- }
- catch { }
- }
+ // TMDbLib exposes EpisodeCount as a plain int; the old reflection lookup and the
+ // "!= null" check on it were dead code (warning CS0472).
+ expectedCount = targetSeason.EpisodeCount;
  }
 
  // Attempt to cache episodes from TMDB season details
@@ -130,6 +125,9 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  }).ToList();
 
  EpisodeCache.StoreEpisodes(firstResult.Id, targetSeasonNumber, episodes);
+
+ // Season summaries are sometimes stale; the episode list is authoritative.
+ if (expectedCount ==0 && episodes.Count >0) expectedCount = episodes.Count;
  }
  }
  catch { /* ignore */ }
@@ -148,7 +146,7 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
  /// It intentionally avoids compile-time dependencies on specific response wrapper types.
  /// </summary>
  public async Task<(string OfficialTitle, int SeriesId, int TargetSeasonNumber, int ExpectedEpisodeCount)?>
- GetTvdbMetadataAsync(string showName)
+ GetTvdbMetadataAsync(string showName, int seasonNumber = 1)
  {
  if (!IsTvdbKeyValid) return null;
  if (_tvdbClient == null) return null;
@@ -227,12 +225,19 @@ namespace AutoDownloader.Services // CORRECT: Namespace for the Services project
 
  object? seasonsCollection = GetPropertyValue(seasonsResponse, "Data", "data", "Seasons", "seasons") ?? seasonsResponse;
 
- int targetSeasonNumber =1;
- int expectedCount =1;
+ int targetSeasonNumber = seasonNumber > 0 ? seasonNumber : 1;
+ int expectedCount =0;
 
  object? seasonOne = FindSeasonByNumberAndType(seasonsCollection, targetSeasonNumber, "Aired");
  if (seasonOne == null)
  seasonOne = FindSeasonByNumber(seasonsCollection, targetSeasonNumber);
+
+ if (seasonOne == null && targetSeasonNumber != 1)
+ {
+ targetSeasonNumber = 1;
+ seasonOne = FindSeasonByNumberAndType(seasonsCollection, 1, "Aired")
+ ?? FindSeasonByNumber(seasonsCollection, 1);
+ }
 
  if (seasonOne != null)
  {

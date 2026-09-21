@@ -39,6 +39,13 @@
         public string SourceUrl { get; set; } = string.Empty;
 
         /// <summary>
+        /// All playable URLs discovered for this job. A season page often resolves to many
+        /// episode links; every one of them is handed to yt-dlp. When this is empty,
+        /// SourceUrl is used on its own.
+        /// </summary>
+        public List<string> SourceUrls { get; set; } = new List<string>();
+
+        /// <summary>
         /// A list of episodes (episode number + title) for the targeted season.
         /// Filled by MetadataService when available (e.g., from TMDB).
         /// </summary>

@@ -47,6 +47,14 @@ namespace AutoDownloader.UI
         private bool _isMultiLinkMode = false;
 
         /// <summary>
+        /// Set when the user presses Stop. The batch loop used to infer cancellation from
+        /// StopDownloadButton.Visibility, which meant any item that failed early (metadata not
+        /// found, search failed) left Stop visible and aborted the remaining items with a
+        /// bogus "cancelled by user" message.
+        /// </summary>
+        private bool _cancellationRequested = false;
+
+        /// <summary>
         /// The authoritative version number for the application.
         /// </summary>
         private const string CurrentVersion = "v1.10.0-beta";
@@ -90,9 +98,11 @@ namespace AutoDownloader.UI
             _ = InitializeAsyncServices();
 
             // Subscribe to developer logger events
+            // BeginInvoke, not Invoke: this fires from yt-dlp's output thread for every line
+            // of a chatty download, and a blocking marshal per line stalls the UI thread.
             DeveloperLogger.OnLogReceived += (line) =>
             {
-                Dispatcher.Invoke(() =>
+                Dispatcher.BeginInvoke(() =>
                 {
                     if (DeveloperLogTextBox != null)
                     {
@@ -108,8 +118,27 @@ namespace AutoDownloader.UI
         /// </summary>
         private async Task InitializeAsyncServices()
         {
+            // Everything in here is wrapped: this method is fire-and-forgotten, so an
+            // unhandled exception (no network on first run, GitHub unreachable) used to be
+            // swallowed silently and leave the UI locked on "Initializing tools..." forever.
+            try
+            {
+                await InitializeAsyncServicesCore();
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"--- [FATAL] Startup failed: {ex.Message} ---", Brushes.Red);
+                AppendLog("--- The app is usable, but downloads will not work until this is resolved. ---", Brushes.Orange);
+                DeveloperLogger.Append($"InitializeAsyncServices failed: {ex}");
+                StatusTextBlock.Text = "Startup failed - see log.";
+                SetUiLock(false); // never leave the UI stuck locked
+            }
+        }
+
+        private async Task InitializeAsyncServicesCore()
+        {
             SetUiLock(true); // Lock the UI
-            StatusTextBlock.Text = "Initializing tools (yt-dlp, aria2c)...";
+            StatusTextBlock.Text = "Initializing tools (yt-dlp, aria2c, ffmpeg)...";
 
             // Wire up ToolManager logging (must be done before EnsureToolsAvailableAsync)
             _toolManagerService.OnToolLogReceived += (logLine) =>
@@ -123,8 +152,9 @@ namespace AutoDownloader.UI
                 DeveloperLogger.Append(logLine);
             };
 
-            //1. Download/Verify yt-dlp and aria2c.
-            var (ytDlpPath, ariaPath) = await _toolManagerService.EnsureToolsAvailableAsync();
+            //1. Download/Verify yt-dlp, aria2c and ffmpeg.
+            _toolManagerService.AutoDownloadFfmpeg = _settingsService.Settings.AutoDownloadFfmpeg;
+            var (ytDlpPath, ariaPath, ffmpegPath) = await _toolManagerService.EnsureToolsAvailableAsync();
             StatusTextBlock.Text = "Tools ready. Initializing API services...";
 
             //2. Initialize API-dependent services with keys from settings.
@@ -151,7 +181,10 @@ namespace AutoDownloader.UI
                 ytDlpPath,
                 ariaPath,
                 ToolManagerService.FIREFOX_USER_AGENT,
-                _settingsService.Settings.PreferredVideoQuality
+                _settingsService.Settings.PreferredVideoQuality,
+                ffmpegPath,
+                _settingsService.Settings.CookieSource,
+                _settingsService.Settings.UseDownloadArchive
             );
 
             //4. Wire up the event handlers for the download service.
@@ -173,9 +206,10 @@ namespace AutoDownloader.UI
 
             _ytDlpService.OnDownloadComplete += (exitCode) =>
             {
-                Dispatcher.Invoke(() =>
+                // Report status only. Unlocking here released the UI in the middle of a batch;
+                // the batch loop owns the lock now.
+                Dispatcher.BeginInvoke(() =>
                 {
-                    SetUiLock(false);
                     StatusTextBlock.Text = exitCode ==0 ? "Download complete" : "Download failed or stopped";
                 });
             };
@@ -211,6 +245,10 @@ namespace AutoDownloader.UI
             string finalOutputFolder = baseOutputFolder;
             string searchTarget = searchTerm;
 
+            // The Anime/TV Shows/Playlists choice used to be computed and then thrown away,
+            // because phase 2 unconditionally rebuilt the path under "TV Shows".
+            string categoryFolder = "TV Shows";
+
             DownloadMetadata metadataToPass = new DownloadMetadata { SourceUrl = finalUrl };
 
             // --- PHASE1: Determine the Final Download URL ---
@@ -230,9 +268,9 @@ namespace AutoDownloader.UI
                     }
                     finalUrl = url;
                     metadataToPass.SourceUrl = url;
-                    string category = type.Contains("Anime") ? "Anime TV Shows" :
+                    categoryFolder = type.Contains("Anime") ? "Anime TV Shows" :
                                         type.Contains("TV Show") ? "TV Shows" : "Playlists";
-                    finalOutputFolder = Path.Combine(baseOutputFolder, category);
+                    finalOutputFolder = Path.Combine(baseOutputFolder, categoryFolder);
                     Directory.CreateDirectory(finalOutputFolder);
                 }
                 catch (Exception ex)
@@ -258,7 +296,15 @@ namespace AutoDownloader.UI
                     AppendLog($"Detected Season: {parsedSeason.Value} from URL.", Brushes.Yellow);
                 }
 
-                // Try site-specific scraping to find playable episode URLs (AngleSharp). If found, prefer first playable link as source.
+                // Site-specific scraping, for hosts yt-dlp cannot handle on its own.
+                //
+                // Two changes from the previous behaviour:
+                //   * only hosts with a DEDICATED scraper are scraped. Everything else goes
+                //     straight to yt-dlp, which has real extractors for Tubi/Pluto/YouTube and
+                //     expands their playlists properly.
+                //   * ALL discovered links are kept. Taking only playables[0] reduced an entire
+                //     season to one episode - and when the first regex hit was an advert or a
+                //     trailer, to the wrong file entirely.
                 try
                 {
                     var scraper = ScraperFactory.GetScraperForUrl(searchTerm);
@@ -267,19 +313,19 @@ namespace AutoDownloader.UI
                         var playables = await scraper.GetPlayableUrlsAsync(searchTerm);
                         if (playables != null && playables.Count >0)
                         {
-                            // Prefer first playable URL
+                            metadataToPass.SourceUrls = playables;
                             metadataToPass.SourceUrl = playables[0];
-                            AppendLog($"Scraper found {playables.Count} playable link(s). Using first: {playables[0]}", Brushes.Yellow);
+                            AppendLog($"Scraper found {playables.Count} playable link(s); all will be downloaded.", Brushes.Yellow);
                         }
                         else
                         {
-                            AppendLog("Scraper did not find playable links (site may be JS-protected). Falling back to original URL.", Brushes.Orange);
+                            AppendLog("Scraper found no playable links. Letting yt-dlp handle the original URL.", Brushes.Orange);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    AppendLog($"Scraper error: {ex.Message}. Falling back to original URL.", Brushes.Orange);
+                    AppendLog($"Scraper error: {ex.Message}. Letting yt-dlp handle the original URL.", Brushes.Orange);
                 }
             }
 
@@ -305,6 +351,15 @@ namespace AutoDownloader.UI
                 _metadataService.IsTvdbKeyValid
             )
             { Owner = this };
+
+            // Only show the dialog when there is actually a choice to make. Calling ShowDialog
+            // on a window that closed itself in its constructor threw InvalidOperationException.
+            if (!selectDbDialog.HasUsableSource)
+            {
+                AppendLog("--- No metadata API key configured. Set one in Edit -> Preferences. ---", Brushes.Red);
+                return;
+            }
+
             selectDbDialog.ShowDialog();
             DatabaseSource dbChoice = selectDbDialog.SelectedSource;
 
@@ -313,13 +368,13 @@ namespace AutoDownloader.UI
 
             if (dbChoice == DatabaseSource.TMDB)
             {
-                AppendLog($"--- Searching TMDB for: '{confirmedSearchTarget}' ---", Brushes.Aqua);
-                metadataResult = await _metadataService.GetTmdbMetadataAsync(confirmedSearchTarget);
+                AppendLog($"--- Searching TMDB for: '{confirmedSearchTarget}' (season {metadataToPass.NextSeasonNumber}) ---", Brushes.Aqua);
+                metadataResult = await _metadataService.GetTmdbMetadataAsync(confirmedSearchTarget, metadataToPass.NextSeasonNumber);
             }
             else if (dbChoice == DatabaseSource.TVDB)
             {
-                AppendLog($"--- Searching TVDB for: '{confirmedSearchTarget}' ---", Brushes.Aqua);
-                metadataResult = await _metadataService.GetTvdbMetadataAsync(confirmedSearchTarget);
+                AppendLog($"--- Searching TVDB for: '{confirmedSearchTarget}' (season {metadataToPass.NextSeasonNumber}) ---", Brushes.Aqua);
+                metadataResult = await _metadataService.GetTvdbMetadataAsync(confirmedSearchTarget, metadataToPass.NextSeasonNumber);
             }
             else
             {
@@ -351,9 +406,12 @@ namespace AutoDownloader.UI
                 metadataToPass.SeriesId = seriesId;
                 metadataToPass.ExpectedEpisodeCount = expectedCount;
 
-                // Create final output folder (e.g., ".../TV Shows/The Mandalorian")
-                //var safeTitle = SanitizeFileName(metadataToPass.OfficialTitle ?? "Unknown Show");
-                finalOutputFolder = Path.Combine(baseOutputFolder, "TV Shows", metadataToPass.OfficialTitle);
+                // Create final output folder (e.g., ".../TV Shows/The Mandalorian").
+                // SanitizeFileName exists and was documented as shipped, but its only call site
+                // was commented out - so a title like "Star Wars: The Clone Wars" threw straight
+                // out of Directory.CreateDirectory.
+                var safeTitle = SanitizeFileName(metadataToPass.OfficialTitle ?? "Unknown Show");
+                finalOutputFolder = Path.Combine(baseOutputFolder, categoryFolder, safeTitle);
                 Directory.CreateDirectory(finalOutputFolder);
 
                 // Attempt to fetch episode list for this season and attach to metadata
@@ -389,6 +447,8 @@ namespace AutoDownloader.UI
 
             // --- PHASE3: Download and Verification Logic ---
 
+            // Must use exactly the same expression YtDlpService writes into its output
+            // template, or this counts files in a folder that was never created.
             string finalSeasonFolder = Path.Combine(finalOutputFolder, $"Season {metadataToPass.NextSeasonNumber:00}");
 
             // Count files *before* download
@@ -529,6 +589,7 @@ namespace AutoDownloader.UI
         /// </summary>
         private void StopDownloadButton_Click(object sender, RoutedEventArgs e)
         {
+            _cancellationRequested = true;
             _ytDlpService?.StopDownload();
             StatusTextBlock.Text = "Stopping download...";
         }
@@ -586,12 +647,15 @@ namespace AutoDownloader.UI
 
             //2. Re-initialize YtDlpService with the (potentially new) video quality setting.
             // We use GetToolPaths() to avoid re-downloading tools.
-            var (ytDlpPath, ariaPath) = _toolManagerService.GetToolPaths();
+            var (ytDlpPath, ariaPath, ffmpegPath) = _toolManagerService.GetToolPaths();
             _ytDlpService = new YtDlpService(
                ytDlpPath,
                ariaPath,
                ToolManagerService.FIREFOX_USER_AGENT,
-               _settingsService.Settings.PreferredVideoQuality
+               _settingsService.Settings.PreferredVideoQuality,
+               ffmpegPath,
+               _settingsService.Settings.CookieSource,
+               _settingsService.Settings.UseDownloadArchive
            );
 
             //3. Re-wire events for the new service instance.
@@ -674,6 +738,7 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
         private async void StartDownloadButton_Click(object sender, RoutedEventArgs e)
         {
             SetUiLock(true);
+            _cancellationRequested = false;
             OutputLogTextBox.Document.Blocks.Clear(); // Clear the log
             StatusTextBlock.Text = "Starting...";
 
@@ -706,16 +771,15 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
                 if (string.IsNullOrWhiteSpace(term)) continue;
 
                 AppendLog($"\n--- Processing Item: {term} ---", Brushes.Aqua);
+
+                // Keep the UI locked for the whole batch. Previously each completed download
+                // unlocked it mid-batch, which let a second click start a concurrent run.
+                SetUiLock(true);
+
                 await ProcessSingleDownloadAsync(term);
 
-                // Check if user cancelled after each download
-                if (StopDownloadButton.Visibility == Visibility.Collapsed)
+                if (_cancellationRequested)
                 {
-                    // The UI was unlocked by a completed or failed download
-                }
-                else
-                {
-                    // If the Stop button is still visible, the user manually hit Stop.
                     AppendLog("--- Batch operation cancelled by user. ---", Brushes.Red);
                     SetUiLock(false);
                     return;

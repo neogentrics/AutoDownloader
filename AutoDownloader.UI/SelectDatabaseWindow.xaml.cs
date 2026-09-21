@@ -21,7 +21,7 @@ namespace AutoDownloader.UI
         /// <summary>
         /// Timer for the auto-select countdown.
         /// </summary>
-        private DispatcherTimer _timer;
+        private DispatcherTimer? _timer;
 
         /// <summary>
         /// Countdown in seconds. You can change this value.
@@ -36,6 +36,12 @@ namespace AutoDownloader.UI
         /// Defaults to Canceled in case the user closes the window.
         /// </summary>
         public DatabaseSource SelectedSource { get; private set; } = DatabaseSource.Canceled;
+
+        /// <summary>
+        /// False when the user has no usable metadata API key, in which case there is nothing
+        /// to choose between and the caller must NOT call ShowDialog.
+        /// </summary>
+        public bool HasUsableSource { get; }
 
         // --- Constructor ---
 
@@ -55,13 +61,17 @@ namespace AutoDownloader.UI
             TmdbButton.IsEnabled = isTmdbValid;
             TvdbButton.IsEnabled = isTvdbValid;
 
-            // ** CRITICAL FIX **
-            // If the user has no valid keys at all, don't even show the window.
-            // Just set the result to Canceled and close immediately.
-            if (!isTmdbValid && !isTvdbValid)
+            // If the user has no valid keys at all there is nothing to choose between.
+            //
+            // This used to call this.Close() right here. Closing a window that has never been
+            // shown puts it in the closed state, and the caller's subsequent ShowDialog() then
+            // threw InvalidOperationException ("Cannot ... call ShowDialog after a Window has
+            // closed") straight out of an async void handler, killing the app on first run.
+            // Instead we report the situation and let the caller skip the dialog entirely.
+            HasUsableSource = isTmdbValid || isTvdbValid;
+            if (!HasUsableSource)
             {
                 SelectedSource = DatabaseSource.Canceled;
-                this.Close();
             }
         }
 
@@ -89,18 +99,18 @@ namespace AutoDownloader.UI
 
             if (_countdown <= 0)
             {
-                // ** CRITICAL FIX **
-                // Time's up. Check if the TMDB button is usable.
-                // If it is, "click" it.
+                // Time's up. Prefer TMDB, then TVDB, then give up.
                 if (TmdbButton.IsEnabled)
                 {
                     TmdbButton_Click(this, new RoutedEventArgs());
                 }
+                else if (TvdbButton.IsEnabled)
+                {
+                    TvdbButton_Click(this, new RoutedEventArgs());
+                }
                 else
                 {
-                    // If TMDB is disabled (no key), and the timer runs out,
-                    // just cancel the operation.
-                    _timer.Stop();
+                    _timer?.Stop();
                     SelectedSource = DatabaseSource.Canceled;
                     this.Close();
                 }
@@ -112,7 +122,7 @@ namespace AutoDownloader.UI
         /// </summary>
         private void TmdbButton_Click(object sender, RoutedEventArgs e)
         {
-            _timer.Stop();
+            _timer?.Stop();
             SelectedSource = DatabaseSource.TMDB;
             this.Close();
         }
@@ -122,7 +132,7 @@ namespace AutoDownloader.UI
         /// </summary>
         private void TvdbButton_Click(object sender, RoutedEventArgs e)
         {
-            _timer.Stop();
+            _timer?.Stop();
             SelectedSource = DatabaseSource.TVDB;
             this.Close();
         }
