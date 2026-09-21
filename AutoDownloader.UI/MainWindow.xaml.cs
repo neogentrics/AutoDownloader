@@ -569,6 +569,25 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
         /// <summary>
         /// Toggles between single-link (TextBox) and multi-link (RichTextBox) mode.
         /// </summary>
+        /// <summary>
+        /// The hint shown in the multi-link box. It is the box's Text rather than a
+        /// watermark, so it must be recognised and ignored wherever that text is read -
+        /// otherwise the app goes looking for a show by that name.
+        /// </summary>
+        private const string MultiUrlPlaceholder = "Enter one URL or search term per line.";
+
+        /// <summary>
+        /// Clears the hint the first time the box is used, so it does not have to be
+        /// deleted by hand before typing.
+        /// </summary>
+        private void MultiUrlTextBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            if (MultiUrlTextBox.Text.Trim() == MultiUrlPlaceholder)
+            {
+                MultiUrlTextBox.Clear();
+            }
+        }
+
         private void MultiLinkToggle_Click(object sender, RoutedEventArgs e)
         {
             _isMultiLinkMode = !_isMultiLinkMode;
@@ -579,6 +598,7 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
                 UrlTextBox.Visibility = Visibility.Collapsed;
                 MultiUrlTextBox.Visibility = Visibility.Visible;
                 MultiLinkToggle.Content = "Toggle Single-Link";
+                MultiUrlTextBox.Focus();
                 AppendLog("--- Multi-Link Mode Activated. ---", Brushes.Yellow);
             }
             else
@@ -609,6 +629,7 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
                 searchTerms = MultiUrlTextBox.Text
                     .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                     .Select(s => s.Trim())
+                    .Where(s => s.Length > 0 && s != MultiUrlPlaceholder)
                     .ToList();
             }
             else

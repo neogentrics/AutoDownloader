@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-062`**
+**Next free ID: `AD-066`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -51,6 +51,10 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-059 | - | Episode links are found by keyword, so listings that do not use those words are missed | bug | high |
 | AD-060 | - | A listing spanning several pages yields only the first page of episodes | bug | high |
 | AD-061 | - | An episode already on disk is skipped silently, with no way to replace it | feature | high |
+| AD-062 | - | Episode titles assigned by page position, so files are confidently misnamed | bug | critical |
+| AD-063 | - | Session logs kept by count, so a day of use erased the run you wanted | bug | medium |
+| AD-064 | - | Confirm-show dialog auto-answers in 20s, even while you are reading it | bug | high |
+| AD-065 | - | Multi-link hint text is parsed as a search term | bug | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still

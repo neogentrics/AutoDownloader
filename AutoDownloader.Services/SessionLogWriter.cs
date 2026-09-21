@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,7 +22,24 @@ namespace AutoDownloader.Services
         private static string? _path;
 
         /// <summary>How many past session logs to keep before pruning the oldest.</summary>
-        private const int KeepSessions = 20;
+        /// <summary>
+        /// Logs are kept by age rather than by count, so "what happened last month" is still
+        /// answerable after a busy week. Twenty sessions was under a day of real use.
+        /// </summary>
+        private const int KeepDays = 30;
+
+        /// <summary>
+        /// A backstop, not the usual limit. Real sessions run a few KB to a few hundred KB,
+        /// so thirty days of ordinary use lands nowhere near this; it exists only to stop a
+        /// runaway log filling the disk.
+        /// </summary>
+        private const long MaxTotalBytes = 200L * 1024 * 1024;
+
+        /// <summary>
+        /// Never prune below this, however old. The last few runs are the ones somebody is
+        /// actually about to ask about.
+        /// </summary>
+        private const int AlwaysKeep = 5;
 
         /// <summary>The file this session is being written to, or null before Start().</summary>
         public static string? CurrentPath
@@ -133,6 +150,51 @@ namespace AutoDownloader.Services
             }
         }
 
+        /// <summary>A log file, reduced to what the retention rules care about.</summary>
+        public readonly struct LogFileInfo
+        {
+            public LogFileInfo(string path, long length, DateTime lastWriteUtc)
+            {
+                Path = path;
+                Length = length;
+                LastWriteUtc = lastWriteUtc;
+            }
+
+            public string Path { get; }
+            public long Length { get; }
+            public DateTime LastWriteUtc { get; }
+        }
+
+        /// <summary>
+        /// Decides which logs have expired. Separated from the deleting so the rules can be
+        /// tested without a test that has to be trusted not to delete the wrong thing.
+        ///
+        /// Files are considered newest first, so whatever survives is always a contiguous
+        /// run of the most recent sessions.
+        /// </summary>
+        public static List<string> SelectExpiredLogs(IEnumerable<LogFileInfo> logs, DateTime nowUtc)
+        {
+            var ordered = logs.OrderByDescending(f => f.LastWriteUtc).ToList();
+            var cutoff = nowUtc.AddDays(-KeepDays);
+            var expired = new List<string>();
+
+            long runningTotal = 0;
+
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                runningTotal += ordered[i].Length;
+
+                if (i < AlwaysKeep) continue;
+
+                if (ordered[i].LastWriteUtc < cutoff || runningTotal > MaxTotalBytes)
+                {
+                    expired.Add(ordered[i].Path);
+                }
+            }
+
+            return expired;
+        }
+
         /// <summary>
         /// Keeps the folder from growing without limit.
         /// </summary>
@@ -140,15 +202,15 @@ namespace AutoDownloader.Services
         {
             try
             {
-                var logs = new DirectoryInfo(LogFolder)
-                    .GetFiles("session-*.log")
-                    .OrderByDescending(f => f.LastWriteTimeUtc)
-                    .Skip(KeepSessions)
-                    .ToList();
+                var logs = new DirectoryInfo(LogFolder).GetFiles("session-*.log");
 
-                foreach (var old in logs)
+                var doomed = SelectExpiredLogs(
+                    logs.Select(f => new LogFileInfo(f.FullName, f.Length, f.LastWriteTimeUtc)),
+                    DateTime.UtcNow);
+
+                foreach (var path in doomed)
                 {
-                    try { old.Delete(); } catch { }
+                    try { File.Delete(path); } catch { }
                 }
             }
             catch { }

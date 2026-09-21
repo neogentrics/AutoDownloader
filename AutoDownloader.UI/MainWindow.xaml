@@ -252,6 +252,7 @@
                              VerticalScrollBarVisibility="Auto"
                              MinHeight="100"
                              Visibility="Collapsed" 
+                             GotFocus="MultiUrlTextBox_GotFocus"
                              Text="Enter one URL or search term per line." />
                 </StackPanel>
 

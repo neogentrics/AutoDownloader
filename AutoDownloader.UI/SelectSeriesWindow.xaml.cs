@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,8 +19,14 @@ namespace AutoDownloader.UI
     /// </summary>
     public partial class SelectSeriesWindow : Window
     {
-        private DispatcherTimer? _timer;
-        private int _countdown = 20;
+        private AutoAnswerTimer? _timer;
+
+        /// <summary>
+        /// Long enough to actually compare two versions of a show and check their years,
+        /// which 20 seconds was not. It also stops at the first sign of a person, so the
+        /// number only matters to a run nobody is watching.
+        /// </summary>
+        private const int AutoAnswerSeconds = 60;
 
         /// <summary>The chosen show, or null if the user cancelled.</summary>
         public SeriesCandidate? SelectedSeries { get; private set; }
@@ -52,20 +58,15 @@ namespace AutoDownloader.UI
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _timer.Tick += Timer_Tick;
+            _timer = new AutoAnswerTimer(
+                this,
+                AutoAnswerSeconds,
+                remaining => ChooseButton.Content = remaining < 0
+                    ? "Use This Show"
+                    : $"Use This Show ({remaining})",
+                () => ChooseButton_Click(this, new RoutedEventArgs()));
+
             _timer.Start();
-        }
-
-        private void Timer_Tick(object? sender, EventArgs e)
-        {
-            _countdown--;
-            ChooseButton.Content = $"Use This Show ({_countdown})";
-
-            if (_countdown <= 0)
-            {
-                ChooseButton_Click(this, new RoutedEventArgs());
-            }
         }
 
         private void ChooseButton_Click(object sender, RoutedEventArgs e)

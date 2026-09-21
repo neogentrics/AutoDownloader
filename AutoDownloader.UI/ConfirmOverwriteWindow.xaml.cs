@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using System;
 using System.IO;
 using System.Windows;
@@ -19,8 +19,13 @@ namespace AutoDownloader.UI
     /// </summary>
     public partial class ConfirmOverwriteWindow : Window
     {
-        private DispatcherTimer? _timer;
-        private int _countdown = 30;
+        private AutoAnswerTimer? _timer;
+
+        /// <summary>
+        /// Stops at the first key, click or scroll, so this only governs a run nobody is
+        /// watching - where the answer it gives itself is Keep.
+        /// </summary>
+        private const int AutoAnswerSeconds = 60;
 
         public OverwriteDecision Decision { get; private set; } = OverwriteDecision.Skip;
 
@@ -40,17 +45,13 @@ namespace AutoDownloader.UI
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _timer.Tick += Timer_Tick;
+            _timer = new AutoAnswerTimer(
+                this,
+                AutoAnswerSeconds,
+                remaining => KeepButton.Content = remaining < 0 ? "Keep" : $"Keep ({remaining})",
+                () => Keep_Click(this, new RoutedEventArgs()));
+
             _timer.Start();
-        }
-
-        private void Timer_Tick(object? sender, EventArgs e)
-        {
-            _countdown--;
-            KeepButton.Content = $"Keep ({_countdown})";
-
-            if (_countdown <= 0) Keep_Click(this, new RoutedEventArgs());
         }
 
         private void Finish(OverwriteDecision decision)
