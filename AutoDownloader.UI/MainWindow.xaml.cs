@@ -717,6 +717,22 @@ Thank you for using AutoDownloader. For issues or feature requests, open an issu
         }
 
         /// <summary>
+        /// Shows which sites yt-dlp supports, so the answer is visible rather than guessed at.
+        /// </summary>
+        private void SupportedSites_Click(object sender, RoutedEventArgs e)
+        {
+            var (ytDlpPath, _, _) = _toolManagerService.GetToolPaths();
+
+            if (string.IsNullOrWhiteSpace(ytDlpPath))
+            {
+                AppendLog("yt-dlp is still being set up; try again in a moment.", Brushes.Orange);
+                return;
+            }
+
+            new SupportedSitesWindow(ytDlpPath) { Owner = this }.ShowDialog();
+        }
+
+        /// <summary>
         /// Opens the folder holding the automatic session logs.
         /// </summary>
         private void OpenLogFolder_Click(object sender, RoutedEventArgs e)

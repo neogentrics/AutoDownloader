@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -34,6 +34,12 @@ namespace AutoDownloader.Services
         /// </summary>
         private static readonly HashSet<string> NonSpecific =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "generic", "genericquotedhtml", "html5" };
+
+        /// <summary>
+        /// Line separator, named rather than written as an escape so that editing this file
+        /// with tools that mangle backslashes cannot silently break it.
+        /// </summary>
+        private static readonly char NewLine = (char)10;
 
         public SupportedSiteChecker(string ytDlpPath)
         {
@@ -160,6 +166,53 @@ namespace AutoDownloader.Services
             {
                 _loadLock.Release();
             }
+        }
+
+        /// <summary>
+        /// The full list of site names yt-dlp can extract from, sorted for display.
+        ///
+        /// Read from yt-dlp itself rather than maintained here, so it cannot drift: the list
+        /// is whatever the currently installed yt-dlp actually supports.
+        /// </summary>
+        public async Task<List<string>> GetAllSiteNamesAsync(CancellationToken cancellationToken = default)
+        {
+            var names = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath)) return names;
+
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = _ytDlpPath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8
+                };
+                startInfo.ArgumentList.Add("--list-extractors");
+
+                using var process = new Process { StartInfo = startInfo };
+                process.Start();
+
+                string output = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+                names = output
+                    .Split(NewLine)
+                    .Select(l => l.Trim())
+                    .Where(l => l.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                OnDiagnostic?.Invoke($"Could not list supported sites: {ex.Message}");
+            }
+
+            return names;
         }
 
         /// <summary>

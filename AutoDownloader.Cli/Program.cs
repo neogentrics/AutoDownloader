@@ -56,6 +56,13 @@ namespace AutoDownloader.Cli
                 return await ConvertAsync(options).ConfigureAwait(false);
             }
 
+            if (options.WatchList || !string.IsNullOrWhiteSpace(options.WatchAdd)
+                || !string.IsNullOrWhiteSpace(options.WatchRemove))
+            {
+                return ManageWatchList(options);
+            }
+
+
             using var cancellation = new CancellationTokenSource();
 
             // Ctrl+C asks the job to stop rather than killing the process outright, so the
@@ -70,6 +77,13 @@ namespace AutoDownloader.Cli
 
             try
             {
+                // Checked here rather than earlier so a watch run gets the same Ctrl+C
+                // handling as an ordinary download.
+                if (options.WatchRun)
+                {
+                    return await RunWatchListAsync(options, cancellation.Token).ConfigureAwait(false);
+                }
+
                 return await RunAsync(options, cancellation.Token);
             }
             catch (OperationCanceledException)
@@ -214,6 +228,224 @@ namespace AutoDownloader.Cli
             if (result.FilesAdded == 0 && result.EpisodesSucceeded == 0) return ExitNothingDownloaded;
 
             return ExitCompleted;
+        }
+
+        /// <summary>
+        /// Adds, removes or prints watch-list entries. No downloading.
+        /// </summary>
+        private static int ManageWatchList(CommandLineOptions options)
+        {
+            var watchList = new WatchListService();
+            watchList.OnDiagnostic += Console.Error.WriteLine;
+
+            if (!string.IsNullOrWhiteSpace(options.WatchAdd))
+            {
+                var entry = watchList.Add(options.WatchAdd!, options.ShowName, options.Season, options.OutputFolder);
+                Console.WriteLine($"Watching [{entry.Id}] {entry.Url}"
+                                + (entry.Season.HasValue ? $" (season {entry.Season})" : ""));
+                Console.WriteLine("Run 'autodl --watch-run' to check it, or put that on a schedule.");
+                return ExitCompleted;
+            }
+
+            if (!string.IsNullOrWhiteSpace(options.WatchRemove))
+            {
+                if (watchList.Remove(options.WatchRemove!))
+                {
+                    Console.WriteLine($"Removed {options.WatchRemove}.");
+                    return ExitCompleted;
+                }
+
+                Console.Error.WriteLine($"No watch-list entry matches '{options.WatchRemove}'.");
+                return ExitBadArguments;
+            }
+
+            var entries = watchList.Entries;
+
+            if (options.Json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(entries, new JsonSerializerOptions { WriteIndented = true }));
+                return ExitCompleted;
+            }
+
+            if (entries.Count == 0)
+            {
+                Console.WriteLine("Nothing is being watched yet. Add something with --watch-add <url>.");
+                return ExitCompleted;
+            }
+
+            Console.WriteLine($"{entries.Count} entr{(entries.Count == 1 ? "y" : "ies")} in {watchList.FilePath}:");
+            Console.WriteLine();
+
+            foreach (var entry in entries)
+            {
+                string when = entry.LastCheckedUtc.HasValue
+                    ? entry.LastCheckedUtc.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                    : "never";
+
+                Console.WriteLine($"  [{entry.Id}] {entry.Display}{(entry.Enabled ? "" : "  (disabled)")}");
+                Console.WriteLine($"        {entry.Url}");
+                Console.WriteLine($"        season {(entry.Season?.ToString() ?? "auto")}"
+                                + $" | last checked {when}"
+                                + $" | {entry.LastEpisodeCount} episode(s)"
+                                + (entry.ConsecutiveFailures > 0 ? $" | {entry.ConsecutiveFailures} failed check(s)" : ""));
+
+                if (!string.IsNullOrWhiteSpace(entry.LastResult))
+                {
+                    Console.WriteLine($"        {entry.LastResult}");
+                }
+
+                Console.WriteLine();
+            }
+
+            return ExitCompleted;
+        }
+
+        /// <summary>
+        /// Checks every watched series and downloads whatever is new.
+        ///
+        /// The yt-dlp download archive does the real work here: an episode already recorded is
+        /// skipped, so a repeat run costs a metadata lookup and a page index rather than a
+        /// re-download. That is what makes this cheap enough to schedule.
+        /// </summary>
+        private static async Task<int> RunWatchListAsync(CommandLineOptions options, CancellationToken cancellationToken)
+        {
+            var watchList = new WatchListService();
+            watchList.OnDiagnostic += Console.Error.WriteLine;
+
+            var due = watchList.GetDueEntries();
+
+            if (due.Count == 0)
+            {
+                if (!options.Quiet) Console.WriteLine("Nothing is being watched.");
+                return ExitCompleted;
+            }
+
+            var settingsService = new SettingsService();
+            var settings = settingsService.Settings;
+
+            var toolManager = new ToolManagerService
+            {
+                AutoDownloadFfmpeg = !options.NoFfmpeg && settings.AutoDownloadFfmpeg
+            };
+
+            var (ytDlpPath, ariaPath, ffmpegPath) = await toolManager.EnsureToolsAvailableAsync().ConfigureAwait(false);
+
+            var metadataService = new MetadataService(settings.TmdbApiKey, settings.TvdbApiKey);
+
+            if (!metadataService.IsTmdbKeyValid && !metadataService.IsTvdbKeyValid)
+            {
+                Console.Error.WriteLine("No TMDB or TVDB API key is configured, so episodes cannot be named.");
+                return ExitBadArguments;
+            }
+
+            var summaries = new List<object>();
+            int totalNew = 0;
+            int failures = 0;
+
+            if (!options.Quiet && !options.Json)
+            {
+                Console.WriteLine($"Checking {due.Count} watched series...");
+                Console.WriteLine();
+            }
+
+            foreach (var entry in due)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                if (!options.Quiet && !options.Json) Console.WriteLine($"[{entry.Id}] {entry.Display}");
+
+                var ytDlpService = new YtDlpService(
+                    ytDlpPath, ariaPath, ToolManagerService.FIREFOX_USER_AGENT,
+                    options.Quality ?? settings.PreferredVideoQuality,
+                    ffmpegPath,
+                    options.CookieSource ?? settings.CookieSource,
+                    !options.NoArchive && settings.UseDownloadArchive,
+                    settings.FormatPreference);
+
+                var orchestrator = new DownloadOrchestrator(
+                    metadataService,
+                    new SearchService(settings.GeminiApiKey),
+                    new XmlService(),
+                    ytDlpService,
+                    new AutoConfirmPrompt())
+                {
+                    CookieSource = options.CookieSource ?? settings.CookieSource
+                };
+
+                orchestrator.OnLog += (_, e) =>
+                {
+                    SessionLogWriter.Append($"[{entry.Id}] {e.Message}");
+                    if (e.Level == JobLogLevel.Error && !options.Quiet) Console.Error.WriteLine("  " + e.Message);
+                };
+                orchestrator.OnDiagnostic += SessionLogWriter.Append;
+
+                DownloadJobResult result;
+
+                try
+                {
+                    // A stored show name matters for URLs that contain none, such as a playlist.
+                    string target = string.IsNullOrWhiteSpace(entry.ShowName) ? entry.Url : entry.Url;
+
+                    result = await orchestrator.RunAsync(
+                        target,
+                        entry.OutputFolder ?? options.OutputFolder ?? settings.DefaultOutputFolder,
+                        cancellationToken,
+                        entry.Season).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"  [{entry.Id}] failed: {ex.Message}");
+                    watchList.RecordCheck(entry, false, entry.LastEpisodeCount, ex.Message, null);
+                    failures++;
+                    continue;
+                }
+
+                bool succeeded = result.Completed && !result.Cancelled;
+                totalNew += result.FilesAdded;
+                if (!succeeded) failures++;
+
+                string outcome = result.FilesAdded > 0
+                    ? $"{result.FilesAdded} new episode(s)"
+                    : succeeded ? "nothing new" : (result.FailureReason ?? "failed");
+
+                watchList.RecordCheck(entry, succeeded, result.FilesPresentAfter, outcome, result.OfficialTitle);
+
+                if (!options.Quiet && !options.Json) Console.WriteLine($"  {outcome}");
+
+                summaries.Add(new
+                {
+                    id = entry.Id,
+                    title = result.OfficialTitle ?? entry.Display,
+                    url = entry.Url,
+                    newEpisodes = result.FilesAdded,
+                    present = result.FilesPresentAfter,
+                    offered = result.EpisodesOffered,
+                    succeeded,
+                    reason = result.FailureReason
+                });
+            }
+
+            if (options.Json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    checkedCount = summaries.Count,
+                    newEpisodes = totalNew,
+                    failures,
+                    entries = summaries
+                }, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            else if (!options.Quiet)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Checked {summaries.Count}, {totalNew} new episode(s), {failures} failed.");
+            }
+
+            SessionLogWriter.NoteRunFinished($"watch-run: {summaries.Count} checked, {totalNew} new, {failures} failed");
+
+            // Nothing new is a perfectly good outcome for a scheduled run, so only real
+            // failures are worth a non-zero exit.
+            return failures > 0 ? ExitFailed : ExitCompleted;
         }
 
         /// <summary>

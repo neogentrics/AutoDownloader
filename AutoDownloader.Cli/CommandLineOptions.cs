@@ -40,6 +40,21 @@ namespace AutoDownloader.Cli
         /// <summary>Suppress progress and per-line logging; only report the outcome.</summary>
         public bool Quiet { get; set; }
 
+        /// <summary>Add this URL to the watch list instead of downloading now.</summary>
+        public string? WatchAdd { get; set; }
+
+        /// <summary>Remove an entry by id or URL.</summary>
+        public string? WatchRemove { get; set; }
+
+        /// <summary>Print the watch list.</summary>
+        public bool WatchList { get; set; }
+
+        /// <summary>Check every enabled entry and fetch anything new.</summary>
+        public bool WatchRun { get; set; }
+
+        /// <summary>A name to look up, when the URL alone does not give a usable one.</summary>
+        public string? ShowName { get; set; }
+
         /// <summary>Convert existing files in this folder instead of downloading.</summary>
         public string? ConvertFolder { get; set; }
 
@@ -141,6 +156,29 @@ namespace AutoDownloader.Cli
                         if (options.HasError) return options;
                         break;
 
+                    case "--watch-add":
+                        options.WatchAdd = TakeValue(arg);
+                        if (options.HasError) return options;
+                        break;
+
+                    case "--watch-remove":
+                        options.WatchRemove = TakeValue(arg);
+                        if (options.HasError) return options;
+                        break;
+
+                    case "--watch-list":
+                        options.WatchList = true;
+                        break;
+
+                    case "--watch-run":
+                        options.WatchRun = true;
+                        break;
+
+                    case "--show-name":
+                        options.ShowName = TakeValue(arg);
+                        if (options.HasError) return options;
+                        break;
+
                     case "--convert":
                         options.ConvertFolder = TakeValue(arg);
                         if (options.HasError) return options;
@@ -189,9 +227,14 @@ namespace AutoDownloader.Cli
                 return options;
             }
 
-            // --convert is a separate job that needs no download target.
-            if (!options.Help && !options.Version
-                && string.IsNullOrWhiteSpace(options.ConvertFolder)
+            // These are separate jobs that need no download target.
+            bool isOtherJob = !string.IsNullOrWhiteSpace(options.ConvertFolder)
+                              || !string.IsNullOrWhiteSpace(options.WatchAdd)
+                              || !string.IsNullOrWhiteSpace(options.WatchRemove)
+                              || options.WatchList
+                              || options.WatchRun;
+
+            if (!options.Help && !options.Version && !isOtherJob
                 && string.IsNullOrWhiteSpace(options.Target))
             {
                 options.Error = "No URL or search term given. Try --help.";
@@ -218,6 +261,17 @@ OPTIONS
       --no-ffmpeg              Do not download ffmpeg if it is missing.
       --json                   Print a JSON summary on stdout instead of prose.
       --quiet                  Only report the outcome, with no progress output.
+WATCH LIST
+      --watch-add <url>        Track a series and fetch new episodes on later runs.
+                               Combine with --season, --out and --show-name.
+      --watch-list             Show what is being watched.
+      --watch-remove <id|url>  Stop watching an entry.
+      --watch-run              Check every entry and download anything new. This is
+                               the command to put on a schedule.
+      --show-name <name>       The name to look up, for URLs that do not contain one
+                               (a playlist, for instance).
+
+OTHER
       --convert <folder>       Convert existing files to a widely playable MP4 instead
                                of downloading. Remuxes where the codecs already allow
                                it (seconds, lossless) and only re-encodes when needed.
@@ -242,6 +296,8 @@ EXIT CODES
   130 cancelled (Ctrl+C)
 
 EXAMPLES
+  autodl --watch-add ""https://example.com/series/some-show"" --season 2
+  autodl --watch-run --json --quiet
   autodl ""https://example.com/series/some-show/season-2""
   autodl ""https://example.com/series/some-show"" --season 3 --out ""D:\Media""
   autodl ""The Mandalorian"" --json --quiet
