@@ -1259,7 +1259,14 @@ namespace AutoDownloader.Services.Orchestration
 
                 if (urls.Count == 0)
                 {
-                    Log("--- No media requests were observed on that page. ---", JobLogLevel.Warning);
+                    // Say which of the two it is. "No media requests" reads like the page had
+                    // no video on it, when the usual cause is that the scanner is a separate
+                    // browser with no session - so a page behind a login never starts its
+                    // player, and there is nothing to observe.
+                    Log("--- No media requests were observed on that page. The page scanner runs "
+                        + "its own browser and is not signed in to anything, so a page behind a "
+                        + "login will look empty to it even when the video plays for you. ---",
+                        JobLogLevel.Warning);
                     return null;
                 }
 
