@@ -60,7 +60,7 @@ namespace AutoDownloader.UI
         /// <summary>
         /// The authoritative version number for the application.
         /// </summary>
-        private const string CurrentVersion = "v1.10.0-beta";
+        private static string CurrentVersion => AppInfo.Version;
 
         // --- Constructor & Initializers ---
 
@@ -71,6 +71,12 @@ namespace AutoDownloader.UI
         {
             InitializeComponent();
             this.Title = $"AutoDownloader {CurrentVersion} - (For Personal Use Only)";
+
+            // Keep the welcome banner in step with the real version.
+            if (WelcomeVersionRun != null)
+            {
+                WelcomeVersionRun.Text = $"Welcome to AutoDownloader {CurrentVersion}!";
+            }
             this.PreviewKeyDown += MainWindow_PreviewKeyDown;
 
             // ---1. Initialize Synchronous Services (Order matters!) ---
@@ -251,7 +257,10 @@ namespace AutoDownloader.UI
                 _searchService,
                 _xmlService,
                 _ytDlpService,
-                new WpfUserPrompt(this));
+                new WpfUserPrompt(this))
+            {
+                CookieSource = _settingsService.Settings.CookieSource
+            };
 
             orchestrator.OnLog += (_, e) => Dispatcher.Invoke(() => AppendLog(e.Message, BrushForLevel(e.Level)));
             orchestrator.OnStatusChanged += text => Dispatcher.BeginInvoke(() => StatusTextBlock.Text = text);

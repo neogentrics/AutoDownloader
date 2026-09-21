@@ -1,4 +1,4 @@
-using AutoDownloader.Services;
+﻿using AutoDownloader.Services;
 using AutoDownloader.Services.Orchestration;
 using System;
 using System.Text.Json;
@@ -17,7 +17,7 @@ namespace AutoDownloader.Cli
     /// </summary>
     public static class Program
     {
-        private const string Version = "v1.11.0-beta";
+        private static string Version => AutoDownloader.Core.AppInfo.Version;
 
         // Exit codes, chosen so a scheduler or n8n can branch on the outcome.
         private const int ExitCompleted = 0;
@@ -136,7 +136,10 @@ namespace AutoDownloader.Cli
                 new SearchService(settings.GeminiApiKey),
                 new XmlService(),
                 ytDlpService,
-                new AutoConfirmPrompt());
+                new AutoConfirmPrompt())
+            {
+                CookieSource = cookieSource
+            };
 
             // ---------------------------------------------------------------- output
             var renderer = new ConsoleProgressRenderer(options.Quiet || options.Json);

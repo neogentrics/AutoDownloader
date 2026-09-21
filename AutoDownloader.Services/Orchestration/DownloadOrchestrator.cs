@@ -26,6 +26,9 @@ namespace AutoDownloader.Services.Orchestration
         private readonly XmlService _xmlService;
         private readonly YtDlpService _ytDlpService;
         private readonly IUserPrompt _prompt;
+
+        /// <summary>The cookie source in force, checked once before downloading.</summary>
+        public string? CookieSource { get; set; }
         private readonly UrlMetadataParser _urlParser = new UrlMetadataParser();
 
         /// <summary>Progress and diagnostics intended for the user-facing log.</summary>
@@ -269,6 +272,14 @@ namespace AutoDownloader.Services.Orchestration
             // ---------------------------------------------------------------- 3. Plan
             List<EpisodeLink> episodeLinks =
                 await BuildEpisodePlanAsync(finalUrl, metadata, cancellationToken).ConfigureAwait(false);
+
+            // Check the cookie source once, here, rather than discovering the problem one
+            // episode at a time after the downloads have already started.
+            string? cookieWarning = CookieSourceSpec.GetPreflightWarning(CookieSource);
+            if (cookieWarning != null)
+            {
+                Log($"--- COOKIE WARNING: {cookieWarning} ---", JobLogLevel.Error);
+            }
 
             string seasonFolder = Path.Combine(finalOutputFolder, $"Season {metadata.NextSeasonNumber:00}");
             int filesBefore = CountVideoFiles(seasonFolder);
