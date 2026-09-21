@@ -1,4 +1,4 @@
-namespace AutoDownloader.Core
+﻿namespace AutoDownloader.Core
 {
     /// <summary>
     /// One episode-page link discovered on a series or season page, in the order it appeared.
@@ -25,6 +25,15 @@ namespace AutoDownloader.Core
         /// Null means "unknown", in which case ordinal position is used instead.
         /// </summary>
         public int? DetectedEpisodeNumber { get; set; }
+
+        /// <summary>
+        /// Season number parsed from the link, when the site puts one there (for example
+        /// ".../s01-e01-final-exam"). Null means unknown.
+        ///
+        /// This matters for listing pages that cover every season at once: without it, five
+        /// seasons of links all get filed as season 1.
+        /// </summary>
+        public int? DetectedSeasonNumber { get; set; }
 
         /// <summary>
         /// Zero-based position of this link within the page, preserved from document order.

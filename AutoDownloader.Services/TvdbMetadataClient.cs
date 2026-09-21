@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -80,7 +80,7 @@ namespace AutoDownloader.Services
         /// so via OnDiagnostic when the cause was an error rather than an empty result.
         /// </summary>
         public async Task<(int SeriesId, string Name)?> SearchSeriesAsync(
-            string showName, CancellationToken cancellationToken = default)
+            string showName, int? preferredYear = null, CancellationToken cancellationToken = default)
         {
             if (!await EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false)) return null;
 
@@ -97,7 +97,17 @@ namespace AutoDownloader.Services
                     return null;
                 }
 
+                // When the caller has already established which show is meant, match on the
+                // year rather than taking whatever ranks first.
                 var first = results[0];
+
+                if (preferredYear.HasValue)
+                {
+                    var byYear = results.FirstOrDefault(r =>
+                        int.TryParse(r.Year, out int y) && y == preferredYear.Value);
+
+                    if (byYear != null) first = byYear;
+                }
 
                 if (!TryParseSeriesId(first.Id, out int seriesId))
                 {
@@ -114,6 +124,48 @@ namespace AutoDownloader.Services
                 OnDiagnostic?.Invoke($"TVDB search for '{showName}' failed: {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Returns several possible matches, so the caller can tell a show apart from its
+        /// reboot rather than being handed whichever happens to rank first.
+        /// </summary>
+        public async Task<List<SeriesCandidate>> SearchCandidatesAsync(
+            string showName, CancellationToken cancellationToken = default)
+        {
+            var candidates = new List<SeriesCandidate>();
+
+            if (!await EnsureLoggedInAsync(cancellationToken).ConfigureAwait(false)) return candidates;
+
+            try
+            {
+                var response = await _client.Search(
+                    new SearchOptionalParams { Query = showName, Type = "series" },
+                    cancellationToken).ConfigureAwait(false);
+
+                foreach (var result in response?.Data ?? Array.Empty<SearchResultDto>())
+                {
+                    if (!TryParseSeriesId(result.Id, out int id)) continue;
+
+                    int? year = null;
+                    if (int.TryParse(result.Year, out int parsedYear) && parsedYear > 1800) year = parsedYear;
+
+                    candidates.Add(new SeriesCandidate
+                    {
+                        Id = id,
+                        Title = string.IsNullOrWhiteSpace(result.Name) ? showName : result.Name,
+                        Year = year,
+                        Overview = result.Overview,
+                        Source = "TVDB"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                OnDiagnostic?.Invoke($"TVDB search for '{showName}' failed: {ex.Message}");
+            }
+
+            return candidates;
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-﻿using AutoDownloader.Core; // <-- CORRECT: For DownloadMetadata
+﻿using AutoDownloader.Core; // <-- CORRECT: For DownloadMetadata and EpisodeLink
 using System;
 using System.Diagnostics;
 using System.Text;
@@ -404,9 +404,9 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// page ourselves.
         /// </summary>
         /// <returns>The entry URLs yt-dlp found, in order. Empty when it understood nothing.</returns>
-        public async Task<List<string>> ProbeEntriesAsync(string url)
+        public async Task<List<EpisodeLink>> ProbeEntriesAsync(string url)
         {
-            var entries = new List<string>();
+            var entries = new List<EpisodeLink>();
 
             if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath)) return entries;
 
@@ -470,14 +470,47 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                         if (string.IsNullOrWhiteSpace(entryUrl)
                             && entry.TryGetProperty("webpage_url", out var w)) entryUrl = w.GetString();
 
-                        if (!string.IsNullOrWhiteSpace(entryUrl)) entries.Add(entryUrl!);
+                        if (string.IsNullOrWhiteSpace(entryUrl)) continue;
+
+                        var link = new EpisodeLink { Url = entryUrl!, Ordinal = entries.Count };
+
+                        // Playlist entries often carry their own title, and sometimes explicit
+                        // season/episode numbers. Both beat guessing from position.
+                        if (entry.TryGetProperty("title", out var t)) link.LinkText = t.GetString();
+
+                        if (entry.TryGetProperty("season_number", out var sn)
+                            && sn.ValueKind == JsonValueKind.Number)
+                        {
+                            link.DetectedSeasonNumber = sn.GetInt32();
+                        }
+
+                        if (entry.TryGetProperty("episode_number", out var en)
+                            && en.ValueKind == JsonValueKind.Number)
+                        {
+                            link.DetectedEpisodeNumber = en.GetInt32();
+                        }
+
+                        // Nothing explicit - fall back to reading the title and the URL.
+                        if (!link.DetectedEpisodeNumber.HasValue)
+                        {
+                            var (season, episode) = Scrapers.SeriesIndexer
+                                .DetectSeasonAndEpisode(link.LinkText, link.Url);
+
+                            link.DetectedSeasonNumber ??= season;
+                            link.DetectedEpisodeNumber = episode;
+                        }
+
+                        entries.Add(link);
                     }
                 }
                 else if (root.TryGetProperty("webpage_url", out var single))
                 {
                     // A single playable video rather than a playlist.
                     var only = single.GetString();
-                    if (!string.IsNullOrWhiteSpace(only)) entries.Add(only!);
+                    if (!string.IsNullOrWhiteSpace(only))
+                    {
+                        entries.Add(new EpisodeLink { Url = only!, Ordinal = 0 });
+                    }
                 }
             }
             catch (Exception ex)
