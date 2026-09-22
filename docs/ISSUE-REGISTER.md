@@ -83,6 +83,9 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-091 | - | A second show stops the batch halfway to ask which seasons | bug | high |
 | AD-092 | - | No application icon; it launches with the default | task | low |
 | AD-093 | - | Quality is chosen from presets that cannot know what a source offers | feature | high |
+| AD-094 | - | Episode numbers ran straight through the series instead of restarting each season | bug | high |
+| AD-095 | - | An episode listed under two seasons was planned and downloaded twice | bug | medium |
+| AD-096 | - | The download archive skipped episodes whose files were gone, and counted them as successes | bug | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
@@ -166,6 +169,31 @@ rather than by id, fetch the segments directly, and join them. That is a substan
 of work with real failure modes, not an extension of the current path.
 
 Sites without stitched adverts - Food Network, YouTube - are unaffected and work today.
+
+### The five-season run that reported nineteen successes and left four files
+
+A live run of Alex vs America stopped with `19 succeeded, 0 failed` while the folder held
+four new episodes. Three separate defects, plus one thing that was never in the build:
+
+- **AD-094.** The listing numbers its tiles straight through the whole series - 1 to 65
+  across five seasons - so season two was filed as S02E11 to S02E20. Reading those numbers
+  was the right fix for AD-077 and the wrong one here. Numbering now restarts at one in each
+  season, but only where the numbering really is continuous: a page that already numbers per
+  season is left alone, since renumbering it would be the thing that broke it.
+- **AD-095.** The season-two listing repeats Alex vs Shellfish, which season one also
+  carried, so the same video was planned under two numbers. Links are now deduplicated by
+  URL before anything is filtered or numbered, earliest season keeping it.
+- **AD-096.** `downloaded.txt` records what was downloaded, not what is still on disk. Six
+  episodes deleted between runs were skipped as "already recorded" and counted as
+  successes - which is how the totals and the content verification disagreed. The archive is
+  now bypassed whenever the expected file is absent.
+
+The run also produced 3 GB files at roughly 10 Mbps. That was not a defect: the binary was
+built at 01:14:51 and the quality picker landed at 01:20:01, so it was never in that build,
+and the saved `FormatPreference` was still `best` from the day before. Nothing had been
+asked to make the files smaller. The picker's failure path wrote only to `OnDiagnostic`,
+which never reaches the session log, so a probe that failed would have been invisible; it
+now logs.
 
 ### Where later work overlaps
 

@@ -1074,6 +1074,80 @@ namespace AutoDownloader.Services.Orchestration
         }
 
         /// <summary>
+        /// Drops links pointing at a URL already seen, keeping the first.
+        ///
+        /// A season listing can repeat an episode the previous season also carried - Food
+        /// Network lists Alex vs Shellfish under both season one and season two - and the
+        /// same video then gets planned twice under two different numbers. Earliest wins,
+        /// which after ordering means the lowest season keeps it.
+        /// </summary>
+        private List<EpisodeLink> WithoutDuplicateUrls(List<EpisodeLink> links)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var kept = new List<EpisodeLink>(links.Count);
+
+            foreach (var link in links)
+            {
+                if (!string.IsNullOrWhiteSpace(link.Url) && !seen.Add(link.Url.Trim())) continue;
+
+                kept.Add(link);
+            }
+
+            int dropped = links.Count - kept.Count;
+
+            if (dropped > 0)
+            {
+                Log($"--- {dropped} link(s) pointed at a video already in the list and were "
+                    + "dropped. ---", JobLogLevel.Notice);
+            }
+
+            return kept;
+        }
+
+        /// <summary>
+        /// Restarts episode numbering at one for each season.
+        ///
+        /// A listing commonly numbers its tiles straight through the whole show - 1 to 65
+        /// across five seasons - and reading those numbers literally files season two as
+        /// S02E11 through S02E20 rather than S02E01 through S02E10. Plex, and anyone
+        /// looking at the folder, expects the latter.
+        ///
+        /// Only applied when the numbering really is continuous: if a season already starts
+        /// at one then the page numbers per season and there is nothing to correct.
+        /// </summary>
+        private void RenumberWithinSeasons(List<EpisodeLink> links)
+        {
+            var seasons = links
+                .Where(l => l.DetectedSeasonNumber.HasValue)
+                .GroupBy(l => l.DetectedSeasonNumber!.Value)
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            if (seasons.Count < 2) return;
+
+            // Continuous numbering shows up as every season after the first starting above
+            // one. A single season starting at one is enough to say the page numbers per
+            // season, and then renumbering would be the thing that broke it.
+            bool alreadyPerSeason = seasons.Any(g =>
+                g.Min(l => l.DetectedEpisodeNumber ?? int.MaxValue) == 1 && g.Key != seasons[0].Key);
+
+            if (alreadyPerSeason) return;
+
+            foreach (var season in seasons)
+            {
+                int number = 1;
+
+                foreach (var link in season.OrderBy(l => l.DetectedEpisodeNumber ?? int.MaxValue))
+                {
+                    link.DetectedEpisodeNumber = number++;
+                }
+            }
+
+            Log("--- The page numbers its episodes straight through the series, so they have "
+                + "been renumbered to start at 1 in each season. ---", JobLogLevel.Notice);
+        }
+
+        /// <summary>
         /// The key the quality choice is remembered under.
         ///
         /// Deliberately not the show's name: this is one decision about how much disk the
@@ -1104,7 +1178,12 @@ namespace AutoDownloader.Services.Orchestration
                 var worthwhile = FormatOption.Worthwhile(formats);
 
                 // One rung is not a choice, and no rungs means the source did not say.
-                if (worthwhile.Count < 2) return;
+                if (worthwhile.Count < 2)
+                {
+                    Log("--- The source publishes no quality choice, so the Format preference "
+                        + "applies. ---");
+                    return;
+                }
 
                 Log($"--- This source offers {worthwhile.Count} qualities, "
                     + $"from {worthwhile.Last().SizeDisplay} to {worthwhile.First().SizeDisplay} "
@@ -1124,7 +1203,8 @@ namespace AutoDownloader.Services.Orchestration
             {
                 // Not being able to offer the choice is no reason to stop: the configured
                 // preference still applies, exactly as it did before this existed.
-                OnDiagnostic?.Invoke($"Could not read the quality list: {ex.Message}");
+                Log($"--- Could not read the quality list, so the Format preference still "
+                    + $"applies: {ex.Message} ---", JobLogLevel.Warning);
             }
         }
 
@@ -1135,6 +1215,8 @@ namespace AutoDownloader.Services.Orchestration
         /// </summary>
         public List<EpisodeLink> AssignEpisodeNumbers(List<EpisodeLink> links, DownloadMetadata metadata)
         {
+            links = WithoutDuplicateUrls(links);
+
             int targetSeason = metadata.NextSeasonNumber;
 
             // When the links say which season they belong to, keep only the one asked for.
@@ -1157,10 +1239,14 @@ namespace AutoDownloader.Services.Orchestration
                     Log($"--- Keeping {wanted.Count} link(s) across season(s) "
                         + $"{string.Join(", ", metadata.SelectedSeasons)}. ---", JobLogLevel.Notice);
 
-                    return wanted
+                    var ordered = wanted
                         .OrderBy(l => l.DetectedSeasonNumber ?? int.MaxValue)
                         .ThenBy(l => l.DetectedEpisodeNumber ?? int.MaxValue)
                         .ToList();
+
+                    RenumberWithinSeasons(ordered);
+
+                    return ordered;
                 }
             }
 
@@ -1431,7 +1517,13 @@ namespace AutoDownloader.Services.Orchestration
                     episodeTitle,
                     outputFolder,
                     referer: null,
-                    forceOverwrite: forceOverwrite).ConfigureAwait(false);
+                    forceOverwrite: forceOverwrite,
+
+                    // The archive records what was downloaded, not what is still there. A
+                    // file deleted since - or never written because a run was stopped - would
+                    // otherwise be skipped for ever and counted as a success, which is how a
+                    // run reported nineteen episodes with four on disk.
+                    bypassArchive: existing == null).ConfigureAwait(false);
 
                 // Protected content is encrypted at source. Watching the page's network
                 // traffic cannot recover it, so skip the fallback rather than spending

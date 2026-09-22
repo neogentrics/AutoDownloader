@@ -3,10 +3,11 @@
   <!-- One place to set the version. Previously the title bar, the welcome text and the CLI
        each carried their own hardcoded string and disagreed with each other. -->
   <PropertyGroup>
-    <!-- 2.1.0: features since 2.0.0 - the season picker, a switchable theme, and a page
-         scanner that can use the signed-in session - plus a run of bug fixes. Backwards
-         compatible throughout, so the minor number moves rather than the major one. -->
-    <VersionPrefix>2.1.0</VersionPrefix>
+    <!-- 2.1.1: three fixes to multi-season runs - numbering that ran straight through the
+         series instead of restarting each season, an episode listed under two seasons being
+         planned twice, and the download archive skipping episodes whose files were gone and
+         then counting them as successes. -->
+    <VersionPrefix>2.1.1</VersionPrefix>
     <VersionSuffix></VersionSuffix>
     <Product>AutoDownloader</Product>
     <Company>Neo Gentrics</Company>
