@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-087`**
+**Next free ID: `AD-088`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -76,6 +76,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-084 | - | An advert is downloaded and reported as the episode | bug | critical |
 | AD-085 | - | The download archive keys every captured stream as "dash", skipping all later episodes | bug | critical |
 | AD-086 | - | Streams with adverts stitched in cannot be downloaded whole | feature | high |
+| AD-087 | - | Every season selected is filed under one season number with one season's titles | bug | critical |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still

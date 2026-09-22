@@ -1126,12 +1126,61 @@ namespace AutoDownloader.Services.Orchestration
             string outputFolder,
             CancellationToken cancellationToken)
         {
-            var titlesByNumber = metadata.Episodes
-                .Where(e => e.EpisodeNumber > 0)
-                .GroupBy(e => e.EpisodeNumber)
-                .ToDictionary(g => g.Key, g => g.First().EpisodeTitle);
-
             string showTitle = metadata.OfficialTitle ?? "Unknown Show";
+
+            // Titles per season, not one set for all of them.
+            //
+            // The season picker hands back links from several seasons, each stamped with the
+            // season it was read under - and this loop used to ignore that and file everything
+            // under one number. Five seasons would have arrived as S01E01 upwards in a single
+            // folder, wearing season one's episode titles.
+            var titlesBySeason = new Dictionary<int, Dictionary<int, string?>>();
+
+            Dictionary<int, string?> TitlesFor(int season)
+            {
+                return titlesBySeason.TryGetValue(season, out var found)
+                    ? found
+                    : new Dictionary<int, string?>();
+            }
+
+            foreach (var season in links
+                .Select(l => l.DetectedSeasonNumber ?? metadata.NextSeasonNumber)
+                .Distinct()
+                .OrderBy(n => n))
+            {
+                // The season already looked up is in hand; the rest need fetching.
+                if (season == metadata.NextSeasonNumber && metadata.Episodes.Count > 0)
+                {
+                    titlesBySeason[season] = metadata.Episodes
+                        .Where(e => e.EpisodeNumber > 0)
+                        .GroupBy(e => e.EpisodeNumber)
+                        .ToDictionary(g => g.Key, g => g.First().EpisodeTitle);
+                    continue;
+                }
+
+                try
+                {
+                    var merged = await _metadataService
+                        .GetMergedMetadataAsync(showTitle, season)
+                        .ConfigureAwait(false);
+
+                    titlesBySeason[season] = merged?.Episodes
+                        .Where(e => e.EpisodeNumber > 0)
+                        .GroupBy(e => e.EpisodeNumber)
+                        .ToDictionary(g => g.Key, g => g.First().EpisodeTitle)
+                        ?? new Dictionary<int, string?>();
+
+                    Log($"Season {season}: {titlesBySeason[season].Count} title(s) known.",
+                        JobLogLevel.Notice);
+                }
+                catch (Exception ex)
+                {
+                    // Better a numbered file than one wearing another season's title.
+                    titlesBySeason[season] = new Dictionary<int, string?>();
+                    Log($"--- Could not read titles for season {season}: {ex.Message} ---",
+                        JobLogLevel.Warning);
+                }
+            }
             int succeeded = 0;
             int failed = 0;
             int protectedCount = 0;
@@ -1147,7 +1196,12 @@ namespace AutoDownloader.Services.Orchestration
 
                 var link = links[i];
                 int episodeNumber = link.DetectedEpisodeNumber ?? (i + 1);
-                titlesByNumber.TryGetValue(episodeNumber, out string? episodeTitle);
+
+                // The season the link was actually read under, not whichever one the job
+                // started with.
+                int seasonNumber = link.DetectedSeasonNumber ?? metadata.NextSeasonNumber;
+
+                TitlesFor(seasonNumber).TryGetValue(episodeNumber, out string? episodeTitle);
 
                 // The databases cover a season's episodes but rarely its extras, so a page
                 // listing specials alongside them would file those as bare numbers. The link
@@ -1161,7 +1215,7 @@ namespace AutoDownloader.Services.Orchestration
 
                 _currentEpisodeIndex = i + 1;
                 _currentEpisodeCount = links.Count;
-                _currentEpisodeLabel = $"S{metadata.NextSeasonNumber:00}E{episodeNumber:00}";
+                _currentEpisodeLabel = $"S{seasonNumber:00}E{episodeNumber:00}";
 
                 // Ask before replacing anything already on disk. Previously an existing file
                 // was skipped silently, which is a sensible default and a poor answer when the
@@ -1169,7 +1223,7 @@ namespace AutoDownloader.Services.Orchestration
                 bool forceOverwrite = false;
 
                 var existing = YtDlpService.FindExistingEpisode(
-                    showTitle, metadata.NextSeasonNumber, episodeNumber, episodeTitle, outputFolder);
+                    showTitle, seasonNumber, episodeNumber, episodeTitle, outputFolder);
 
                 if (existing != null)
                 {
@@ -1223,7 +1277,7 @@ namespace AutoDownloader.Services.Orchestration
                 var outcome = await _ytDlpService.DownloadEpisodeAsync(
                     link.Url,
                     showTitle,
-                    metadata.NextSeasonNumber,
+                    seasonNumber,
                     episodeNumber,
                     episodeTitle,
                     outputFolder,
@@ -1262,7 +1316,7 @@ namespace AutoDownloader.Services.Orchestration
                 if (exitCode != 0 && !cancellationToken.IsCancellationRequested)
                 {
                     var produced = YtDlpService.FindExistingEpisode(
-                        showTitle, metadata.NextSeasonNumber, episodeNumber, episodeTitle, outputFolder);
+                        showTitle, seasonNumber, episodeNumber, episodeTitle, outputFolder);
 
                     // It has to be a file this run produced. An untouched file left over from
                     // an earlier run says nothing about whether this attempt worked.
@@ -1298,7 +1352,7 @@ namespace AutoDownloader.Services.Orchestration
                         var retry = await _ytDlpService.DownloadEpisodeAsync(
                             captured!,
                             showTitle,
-                            metadata.NextSeasonNumber,
+                            seasonNumber,
                             episodeNumber,
                             episodeTitle,
                             outputFolder,
