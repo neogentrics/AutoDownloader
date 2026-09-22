@@ -889,8 +889,14 @@ namespace AutoDownloader.Services.Orchestration
                         rendered = await indexer.IndexSeasonsAsync(seriesUrl, wanted.ToList())
                             .ConfigureAwait(false);
 
-                        // A season came from the chooser, so it is known rather than guessed.
-                        if (rendered.Count > 0) metadata.SeasonWasSpecified = true;
+                        // A season came from the chooser, so it is known rather than guessed -
+                        // and every season chosen is recorded, not just the first, or the
+                        // filter below keeps one and discards the rest.
+                        if (rendered.Count > 0)
+                        {
+                            metadata.SeasonWasSpecified = true;
+                            metadata.SelectedSeasons = wanted.ToList();
+                        }
                     }
                     else
                     {
@@ -1014,6 +1020,28 @@ namespace AutoDownloader.Services.Orchestration
             // A listing that covers every season at once would otherwise be flattened into
             // the target season - five seasons of a show arriving as S01E01 to S01E65.
             var withSeason = links.Where(l => l.DetectedSeasonNumber.HasValue).ToList();
+
+            // More than one season was asked for, so there is nothing to filter down to.
+            // Keeping only targetSeason here is what turned sixty-five indexed episodes into
+            // ten: the picker gathered all five seasons and this threw four of them away.
+            if (metadata.SelectedSeasons.Count > 1 && withSeason.Count > 0)
+            {
+                var wanted = links
+                    .Where(l => l.DetectedSeasonNumber.HasValue
+                                && metadata.SelectedSeasons.Contains(l.DetectedSeasonNumber.Value))
+                    .ToList();
+
+                if (wanted.Count > 0)
+                {
+                    Log($"--- Keeping {wanted.Count} link(s) across season(s) "
+                        + $"{string.Join(", ", metadata.SelectedSeasons)}. ---", JobLogLevel.Notice);
+
+                    return wanted
+                        .OrderBy(l => l.DetectedSeasonNumber ?? int.MaxValue)
+                        .ThenBy(l => l.DetectedEpisodeNumber ?? int.MaxValue)
+                        .ToList();
+                }
+            }
 
             if (withSeason.Count > 0)
             {

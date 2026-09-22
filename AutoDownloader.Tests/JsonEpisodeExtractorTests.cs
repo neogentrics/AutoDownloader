@@ -171,6 +171,74 @@ namespace AutoDownloader.Tests
             Assert.IsTrue(result.All(l => l.DetectedSeasonNumber == 2));
         }
 
+        /// <summary>
+        /// The case that broke a live run: the picker gathered five seasons, and the season
+        /// filter then kept one and discarded the other four. Sixty-five episodes indexed,
+        /// ten downloaded.
+        /// </summary>
+        [TestMethod]
+        public void EverySelectedSeasonIsKept()
+        {
+            var metadata = new DownloadMetadata
+            {
+                NextSeasonNumber = 1,
+                SeasonWasSpecified = true,
+                SelectedSeasons = new List<int> { 1, 2, 3 },
+            };
+
+            var links = new List<EpisodeLink>
+            {
+                Ep(1, 1, "a"), Ep(1, 2, "b"),
+                Ep(2, 1, "c"), Ep(2, 2, "d"),
+                Ep(3, 1, "e"),
+            };
+
+            var result = Orchestrator().AssignEpisodeNumbers(links, metadata);
+
+            Assert.AreEqual(5, result.Count, "every chosen season should survive");
+            CollectionAssert.AreEquivalent(
+                new[] { 1, 2, 3 },
+                result.Select(l => l.DetectedSeasonNumber!.Value).Distinct().ToArray());
+        }
+
+        [TestMethod]
+        public void SelectedSeasonsComeBackInOrder()
+        {
+            // Ordered so a multi-season run downloads season 1 before season 3, which is
+            // also what makes the progress count read sensibly.
+            var metadata = new DownloadMetadata
+            {
+                NextSeasonNumber = 1,
+                SelectedSeasons = new List<int> { 1, 2 },
+            };
+
+            var links = new List<EpisodeLink> { Ep(2, 1, "c"), Ep(1, 2, "b"), Ep(1, 1, "a") };
+
+            var result = Orchestrator().AssignEpisodeNumbers(links, metadata);
+
+            CollectionAssert.AreEqual(
+                new[] { (1, 1), (1, 2), (2, 1) },
+                result.Select(l => (l.DetectedSeasonNumber!.Value, l.DetectedEpisodeNumber!.Value)).ToArray());
+        }
+
+        [TestMethod]
+        public void AskingForOneSeasonStillFiltersToIt()
+        {
+            // A single choice must behave as before: the other seasons on the page go.
+            var metadata = new DownloadMetadata
+            {
+                NextSeasonNumber = 2,
+                SelectedSeasons = new List<int> { 2 },
+            };
+
+            var links = new List<EpisodeLink> { Ep(1, 1, "a"), Ep(2, 1, "b"), Ep(2, 2, "c") };
+
+            var result = Orchestrator().AssignEpisodeNumbers(links, metadata);
+
+            Assert.AreEqual(2, result.Count);
+            Assert.IsTrue(result.All(l => l.DetectedSeasonNumber == 2));
+        }
+
         [TestMethod]
         public void TheDominantSeasonWins_WhenThePageMixesThem()
         {

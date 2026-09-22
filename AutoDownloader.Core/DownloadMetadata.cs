@@ -36,6 +36,15 @@
         public bool SeasonWasSpecified { get; set; }
 
         /// <summary>
+        /// The seasons the user actually chose, when a page offered a choice.
+        ///
+        /// Distinct from NextSeasonNumber, which is a single season and cannot express
+        /// "all five". Without this the season filter keeps whichever one the job started
+        /// with and silently discards the rest - sixty-five episodes indexed, ten kept.
+        /// </summary>
+        public List<int> SelectedSeasons { get; set; } = new List<int>();
+
+        /// <summary>
         /// The official number of episodes for the 'NextSeasonNumber'.
         /// This is used by the Content Verification step in MainWindow.
         /// </summary>
