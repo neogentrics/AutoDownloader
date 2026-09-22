@@ -428,6 +428,74 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// page ourselves.
         /// </summary>
         /// <returns>The entry URLs yt-dlp found, in order. Empty when it understood nothing.</returns>
+        /// <summary>
+        /// How long a stream runs, in seconds, or null when it cannot be read.
+        ///
+        /// Exists to tell an advert from an episode. A player loads its pre-roll first, so
+        /// the first manifest the capture sees is routinely a thirty-second car commercial -
+        /// which downloads perfectly and is entirely the wrong video. Duration is the honest
+        /// way to tell them apart, and it does not depend on knowing anything about the site.
+        /// </summary>
+        public async Task<double?> ProbeDurationAsync(string url, string? referer = null)
+        {
+            if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath)) return null;
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _ytDlpPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+
+            startInfo.ArgumentList.Add("--simulate");
+            startInfo.ArgumentList.Add("--no-warnings");
+            startInfo.ArgumentList.Add("--print");
+            startInfo.ArgumentList.Add("%(duration)s");
+            startInfo.ArgumentList.Add("--user-agent");
+            startInfo.ArgumentList.Add(_userAgent);
+
+            if (!string.IsNullOrWhiteSpace(referer))
+            {
+                startInfo.ArgumentList.Add("--referer");
+                startInfo.ArgumentList.Add(referer!);
+            }
+
+            AddCookieArguments(startInfo);
+            startInfo.ArgumentList.Add(url);
+
+            try
+            {
+                using var process = new Process { StartInfo = startInfo };
+                process.Start();
+
+                string output = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                _ = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync().ConfigureAwait(false);
+
+                foreach (var line in output.Split((char)10))
+                {
+                    if (double.TryParse(line.Trim(),
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out double seconds)
+                        && seconds > 0)
+                    {
+                        return seconds;
+                    }
+                }
+            }
+            catch
+            {
+                // A duration that cannot be read simply does not participate in the choice.
+            }
+
+            return null;
+        }
+
         public async Task<List<EpisodeLink>> ProbeEntriesAsync(string url)
         {
             var entries = new List<EpisodeLink>();
@@ -608,7 +676,8 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
             string? episodeTitle,
             string outputFolder,
             string? referer = null,
-            bool forceOverwrite = false)
+            bool forceOverwrite = false,
+            bool bypassArchive = false)
         {
             if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath))
             {
@@ -631,7 +700,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
             try { Directory.CreateDirectory(Path.Combine(outputFolder, seasonFolder)); } catch { }
 
-            var startInfo = BuildCommonStartInfo(outputFolder, forceOverwrite);
+            var startInfo = BuildCommonStartInfo(outputFolder, forceOverwrite, bypassArchive);
 
             // A stream URL captured from a player is usually only served to requests carrying
             // the originating page as referer.
@@ -743,7 +812,14 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// <summary>
         /// The flags shared by every yt-dlp invocation that actually downloads something.
         /// </summary>
-        private ProcessStartInfo BuildCommonStartInfo(string outputFolder, bool forceOverwrite = false)
+        /// <param name="bypassArchive">
+        /// Skip the download archive without forcing an overwrite. Needed for a captured
+        /// stream: the generic extractor calls every DASH manifest "dash", so the archive
+        /// records one id for all of them and every later episode looks already downloaded.
+        /// Conflating this with forceOverwrite would replace files the user asked to keep.
+        /// </param>
+        private ProcessStartInfo BuildCommonStartInfo(
+            string outputFolder, bool forceOverwrite = false, bool bypassArchive = false)
         {
             var startInfo = new ProcessStartInfo
             {
@@ -770,7 +846,7 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
 
             // Skipped when overwriting deliberately: an episode already recorded in the
             // archive would be passed over before the file was even looked at.
-            if (_useDownloadArchive && !forceOverwrite)
+            if (_useDownloadArchive && !forceOverwrite && !bypassArchive)
             {
                 startInfo.ArgumentList.Add("--download-archive");
                 startInfo.ArgumentList.Add(Path.Combine(outputFolder, "downloaded.txt"));

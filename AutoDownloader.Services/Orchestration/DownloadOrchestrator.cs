@@ -104,6 +104,13 @@ namespace AutoDownloader.Services.Orchestration
 
         private void LogCookieDiagnostic(string message) => Log(message, JobLogLevel.Notice);
 
+        /// <summary>
+        /// Under this many seconds a stream is an advert, not an episode. Generous on
+        /// purpose: the point is to notice that everything on offer is too short, not to
+        /// rule out a genuinely brief programme.
+        /// </summary>
+        private const int AdvertSeconds = 120;
+
         /// <summary>Tracks which episode progress readings belong to.</summary>
         private int _currentEpisodeIndex;
         private int _currentEpisodeCount;
@@ -1295,7 +1302,9 @@ namespace AutoDownloader.Services.Orchestration
                             episodeNumber,
                             episodeTitle,
                             outputFolder,
-                            referer: link.Url).ConfigureAwait(false);
+                            referer: link.Url,
+                            forceOverwrite: forceOverwrite,
+                            bypassArchive: true).ConfigureAwait(false);
 
                         if (retry.DrmProtected)
                         {
@@ -1340,6 +1349,65 @@ namespace AutoDownloader.Services.Orchestration
         /// Loads an episode page in a headless browser and returns the best media URL observed
         /// in its network traffic, or null if none appeared.
         /// </summary>
+        /// <summary>
+        /// Of the streams a page requested, the one that is actually the programme.
+        ///
+        /// A player loads its pre-roll first, so the first manifest observed is routinely an
+        /// advert - which downloads perfectly and is the wrong video entirely. A real run
+        /// produced a thirty-second car commercial named as episode one.
+        ///
+        /// Length is what separates them, and it needs nothing site-specific: an advert runs
+        /// well under two minutes and an episode does not. Anything whose duration cannot be
+        /// read keeps its place in the order rather than being discarded, so a site that
+        /// reports no duration behaves as it did before.
+        /// </summary>
+        private async Task<string?> ChooseLongestStreamAsync(List<string> candidates, string pageUrl)
+        {
+            string? best = null;
+            double bestContent = 0;
+            ManifestInspector.ManifestFacts? bestFacts = null;
+
+            foreach (var candidate in candidates)
+            {
+                var facts = await ManifestInspector
+                    .InspectAsync(candidate, pageUrl, ToolManagerService.FIREFOX_USER_AGENT)
+                    .ConfigureAwait(false);
+
+                if (facts == null) continue;
+
+                OnDiagnostic?.Invoke($"Manifest: {facts.TotalSeconds / 60:0.0} min across "
+                    + $"{facts.PeriodSeconds.Count} period(s), {facts.ContentSeconds / 60:0.0} min of content.");
+
+                // A manifest that is one piece is worth more than a longer one chopped up,
+                // because only the former downloads as a whole.
+                bool better = facts.ContentSeconds > bestContent
+                              || (bestFacts != null && bestFacts.HasStitchedAdverts && facts.IsSinglePeriod);
+
+                if (better)
+                {
+                    best = candidate;
+                    bestContent = facts.ContentSeconds;
+                    bestFacts = facts;
+                }
+            }
+
+            if (best == null) return candidates.FirstOrDefault();
+
+            if (bestFacts != null && bestFacts.HasStitchedAdverts)
+            {
+                Log($"--- WARNING: this stream has adverts stitched into it - "
+                    + $"{bestFacts.ContentPeriods.Count()} pieces of programme ({bestFacts.ContentSeconds / 60:0.0} min) "
+                    + $"broken up by {bestFacts.AdvertPeriods.Count()} advert breaks "
+                    + $"({bestFacts.AdvertSecondsTotal / 60:0.0} min). ---", JobLogLevel.Warning);
+
+                Log("--- The downloader takes one piece at a time, so what arrives will be a "
+                    + "fragment of the episode - often an advert - rather than the whole thing. "
+                    + "Downloading it anyway so the file is there to look at. ---", JobLogLevel.Warning);
+            }
+
+            return best;
+        }
+
         private async Task<string?> CaptureMediaUrlAsync(string pageUrl)
         {
             try
@@ -1370,7 +1438,8 @@ namespace AutoDownloader.Services.Orchestration
                 }
 
                 OnDiagnostic?.Invoke($"MediaUrlExtractor: {urls.Count} candidate(s) for {pageUrl}");
-                return urls[0];
+
+                return await ChooseLongestStreamAsync(urls, pageUrl).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
