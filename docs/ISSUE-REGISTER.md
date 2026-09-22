@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-089`**
+**Next free ID: `AD-091`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -78,6 +78,8 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-086 | - | Streams with adverts stitched in cannot be downloaded whole | feature | high |
 | AD-087 | - | Every season selected is filed under one season number with one season's titles | bug | critical |
 | AD-088 | - | Choosing several seasons downloads only one; the rest are indexed then discarded | bug | critical |
+| AD-089 | - | Only uncapped quality offered, so a 42-minute episode lands at 3 GB | feature | high |
+| AD-090 | - | Dropdown items set a black foreground in code, which no theme can override | bug | medium |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still

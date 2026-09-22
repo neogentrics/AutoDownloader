@@ -1,4 +1,4 @@
-using AutoDownloader.Services;
+﻿using AutoDownloader.Services;
 
 namespace AutoDownloader.Tests
 {
@@ -133,6 +133,62 @@ namespace AutoDownloader.Tests
         {
             // Retrying these without aria2c would waste time and change nothing.
             Assert.IsFalse(YtDlpService.IsExternalDownloaderFailure(line));
+        }
+
+        /// <summary>
+        /// A broadcaster commonly publishes the same picture at several bitrates. Food
+        /// Network offers 1920x1080 at 4.3, 6.6 and 10.3 Mbps, and "best" takes the top rung -
+        /// which made a 42-minute episode 3.02 GB when the same resolution and codec was
+        /// available at 1.27 GB.
+        /// </summary>
+        [TestMethod]
+        public void BalancedKeepsTheResolutionAndDropsTheBitrate()
+        {
+            string selector = VideoFormatPreference.Resolve(VideoFormatPreference.Balanced, null);
+
+            StringAssert.Contains(selector, "height<=1080");
+            StringAssert.Contains(selector, "tbr<=5000");
+        }
+
+        [TestMethod]
+        public void SmallerCapsTheResolutionInstead()
+        {
+            string selector = VideoFormatPreference.Resolve(VideoFormatPreference.Smaller, null);
+
+            StringAssert.Contains(selector, "height<=720");
+        }
+
+        [TestMethod]
+        public void BestIsStillUncapped()
+        {
+            // Whoever chooses it means it, so nothing is imposed on them.
+            string selector = VideoFormatPreference.Resolve(VideoFormatPreference.BestQuality, null);
+
+            Assert.IsFalse(selector.Contains("height<="));
+            Assert.IsFalse(selector.Contains("tbr<="));
+        }
+
+        [TestMethod]
+        [DataRow(VideoFormatPreference.Balanced)]
+        [DataRow(VideoFormatPreference.Smaller)]
+        public void EveryCappedPreferenceFallsBackToSomething(string preference)
+        {
+            // A source with no rung in the wanted range must still download rather than fail
+            // for want of a preferred bitrate.
+            string selector = VideoFormatPreference.Resolve(preference, null);
+
+            StringAssert.EndsWith(selector, "/best");
+        }
+
+        [TestMethod]
+        [DataRow(VideoFormatPreference.Balanced)]
+        [DataRow(VideoFormatPreference.Smaller)]
+        [DataRow(VideoFormatPreference.Compatible)]
+        [DataRow(VideoFormatPreference.BestQuality)]
+        public void NoPreferenceResolvesToNothing(string preference)
+        {
+            Assert.IsFalse(string.IsNullOrWhiteSpace(
+                VideoFormatPreference.Resolve(preference, null)));
         }
     }
 }

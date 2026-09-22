@@ -94,16 +94,17 @@ namespace AutoDownloader.UI // <-- CORRECT: This is a UI file
 
             foreach (var (label, value) in new[]
                      {
-                         ("Most compatible - H.264/AAC in MP4 (recommended)", VideoFormatPreference.Compatible),
-                         ("Best quality - any codec, may produce WebM/AV1", VideoFormatPreference.BestQuality),
+                         ("Balanced - 1080p without the top bitrate (recommended)", VideoFormatPreference.Balanced),
+                         ("Most compatible - H.264/AAC in MP4", VideoFormatPreference.Compatible),
+                         ("Best quality - largest files, any codec", VideoFormatPreference.BestQuality),
+                         ("Smaller - 720p", VideoFormatPreference.Smaller),
                          ("Custom format string", VideoFormatPreference.Custom),
                      })
             {
                 FormatPreferenceComboBox.Items.Add(new ComboBoxItem
                 {
                     Content = label,
-                    Tag = value,
-                    Foreground = Brushes.Black
+                    Tag = value
                 });
             }
 
@@ -143,8 +144,7 @@ namespace AutoDownloader.UI // <-- CORRECT: This is a UI file
                 CookieSourceComboBox.Items.Add(new ComboBoxItem
                 {
                     Content = label,
-                    Tag = value,
-                    Foreground = Brushes.Black
+                    Tag = value
                 });
             }
 
@@ -184,7 +184,6 @@ namespace AutoDownloader.UI // <-- CORRECT: This is a UI file
             {
                 Content = stored,
                 Tag = stored,
-                Foreground = Brushes.Black
             };
 
             CookieSourceComboBox.Items.Insert(CookieSourceComboBox.Items.Count - 1, custom);

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace AutoDownloader.Services
 {
@@ -26,6 +26,12 @@ namespace AutoDownloader.Services
         /// <summary>Use the format string the user wrote themselves.</summary>
         public const string Custom = "custom";
 
+        /// <summary>Full resolution, without paying for the top bitrate rung.</summary>
+        public const string Balanced = "balanced";
+
+        /// <summary>720p, for when space matters more than detail.</summary>
+        public const string Smaller = "smaller";
+
         /// <summary>
         /// Prefers H.264 + AAC, falling back to any MP4, then to anything at all - so an
         /// unusual source still downloads rather than failing for want of a preferred codec.
@@ -34,6 +40,29 @@ namespace AutoDownloader.Services
             "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[ext=mp4]/bestvideo+bestaudio/best";
 
         private const string BestSelector = "bestvideo+bestaudio/best";
+
+        /// <summary>
+        /// 1080p, but not at any price.
+        ///
+        /// A broadcaster commonly publishes the same 1920x1080 picture at several bitrates -
+        /// Food Network offers it at 4.3, 6.6 and 10.3 Mbps. "Best" takes the top rung, which
+        /// turned a 42-minute episode into 3.02 GB; the 4.3 Mbps rung is the same resolution
+        /// and the same H.264 codec at 1.27 GB. The cap sits above 4.3 and below 6.6 so the
+        /// efficient rung is chosen where one exists.
+        ///
+        /// Falls back through progressively looser conditions so an unusual source still
+        /// downloads rather than failing for want of a rung in the right range.
+        /// </summary>
+        private const string BalancedSelector =
+            "bestvideo[vcodec^=avc1][height<=1080][tbr<=5000]+bestaudio[acodec^=mp4a]"
+            + "/bestvideo[height<=1080][tbr<=5000]+bestaudio"
+            + "/bestvideo[height<=1080]+bestaudio"
+            + "/best[height<=1080]/best";
+
+        private const string SmallerSelector =
+            "bestvideo[vcodec^=avc1][height<=720]+bestaudio[acodec^=mp4a]"
+            + "/bestvideo[height<=720]+bestaudio"
+            + "/best[height<=720]/best";
 
         /// <summary>
         /// Returns the yt-dlp -f argument for a preference.
@@ -46,6 +75,12 @@ namespace AutoDownloader.Services
             {
                 case BestQuality:
                     return BestSelector;
+
+                case Balanced:
+                    return BalancedSelector;
+
+                case Smaller:
+                    return SmallerSelector;
 
                 case Custom:
                     return string.IsNullOrWhiteSpace(customFormat) ? CompatibleSelector : customFormat.Trim();
