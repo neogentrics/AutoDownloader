@@ -516,6 +516,9 @@ namespace AutoDownloader.Services.Orchestration
             /// <summary>Set when the item could not be identified; it is still downloadable.</summary>
             public string? Problem { get; set; }
 
+            /// <summary>The seasons chosen for this item, when its page offered a choice.</summary>
+            public List<int> Seasons { get; set; } = new List<int>();
+
             public string Display => ResolvedTitle == null
                 ? SearchTerm
                 : Year.HasValue ? $"{ResolvedTitle} ({Year})" : ResolvedTitle;
@@ -602,7 +605,65 @@ namespace AutoDownloader.Services.Orchestration
 
             resolution.ResolvedTitle = resolved.MatchedName ?? confirmed;
             resolution.Year = resolved.Year;
+
+            await ResolveSeasonsAsync(searchTerm, resolved.Merged, resolution, cancellationToken)
+                .ConfigureAwait(false);
+
             return resolution;
+        }
+
+        /// <summary>
+        /// Asks which seasons are wanted while the rest of the batch is still being
+        /// identified, rather than when this item's turn comes round.
+        ///
+        /// Without this a second show stops the run halfway and waits for an answer - which
+        /// defeats the point of asking everything up front, since the whole reason for the
+        /// identify pass is that a batch can be started and left alone.
+        ///
+        /// The answer is recorded against the show's official title, which is the same key
+        /// the download pass uses, so that pass finds it already answered.
+        /// </summary>
+        private async Task ResolveSeasonsAsync(
+            string searchTerm,
+            MergedSeriesMetadata merged,
+            IdentityResolution resolution,
+            CancellationToken cancellationToken)
+        {
+            // Only a real page has a season chooser; a bare search term has nothing to read.
+            if (!searchTerm.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return;
+
+            try
+            {
+                var indexer = new SeriesIndexer
+                {
+                    Cookies = await GetPageCookiesAsync(cancellationToken).ConfigureAwait(false),
+                };
+
+                var seasons = await indexer.DiscoverSeasonsAsync(searchTerm).ConfigureAwait(false);
+
+                // One season, or none on offer, is not a choice worth interrupting anyone for.
+                if (seasons.Count <= 1) return;
+
+                int showing = seasons.Contains(resolution.Season) ? resolution.Season : seasons[0];
+
+                var wanted = await _prompt.ChooseSeasonsAsync(
+                        merged.OfficialTitle, seasons, showing, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (wanted == null)
+                {
+                    resolution.Cancelled = true;
+                    return;
+                }
+
+                resolution.Seasons = wanted.ToList();
+            }
+            catch (Exception ex)
+            {
+                // Failing to ask early is not fatal: the download pass asks again, which is
+                // merely the behaviour this method exists to improve on.
+                OnDiagnostic?.Invoke($"Could not read the season list up front: {ex.Message}");
+            }
         }
 
         private async Task<(MergedSeriesMetadata? Merged, int? Year, string? MatchedName, bool Cancelled)>
