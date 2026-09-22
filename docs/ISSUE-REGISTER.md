@@ -127,6 +127,39 @@ project's history stays legible. IDs were assigned in GitHub issue order.
 | AD-048 | [#18](https://github.com/neogentrics/AutoDownloader/issues/18) | Integrate a new TVDB NuGet package and replace TvDbSharper | task | Closed |
 | AD-049 | [#20](https://github.com/neogentrics/AutoDownloader/issues/20) | Major architectural refactor (v2.0) | task | **Open** |
 
+### AD-086: what has already been ruled out
+
+Streams with adverts stitched in are delivered as many DASH periods on one timeline. Five
+routes were tried against a real Discovery+ episode and none of them work:
+
+1. **yt-dlp, left alone.** Downloads a single period, and the first one it can use is an
+   advert. This is what produced a 30-second car commercial named as episode one.
+2. **yt-dlp, selecting formats by id.** Ids like `v0-1` and `v6-1` share a suffix while
+   belonging to different periods; the suffix disambiguates a repeated representation and is
+   not a period index. Fragment counts (27/27/27/18) do not scale with the period durations
+   (442/304/266/248s), so the mapping is not recoverable this way.
+3. **The advert-free manifest the site also serves.** `757b0d_fallback.mpd` really is the
+   four content periods with no advert breaks - but yt-dlp extracts no formats from it at
+   all, under every selector tried.
+4. **ffmpeg against the manifest directly.** Reports 7.4 minutes: the first period only,
+   the same limitation as yt-dlp.
+5. **Grouping formats by the asset id in their fragment paths.** The asset directory
+   (`v/1_91d3c4/v0/i.mp4`) does identify a period, but video and audio of the same period
+   have *different* asset ids, so the two cannot be paired this way. The attempt found six
+   single-media groups against four content periods.
+
+Two further obstacles apply to any approach: the manifests are session-bound and
+short-lived, and the advert insertion differs between fetches - the same episode reported
+eleven advert periods on one request and twelve on the next - so pieces gathered across
+separate requests are not guaranteed to line up.
+
+What remains is a purpose-built multi-period DASH downloader: resolve each period's
+SegmentTemplate from a single manifest fetch, pair video and audio by timeline position
+rather than by id, fetch the segments directly, and join them. That is a substantial piece
+of work with real failure modes, not an extension of the current path.
+
+Sites without stitched adverts - Food Network, YouTube - are unaffected and work today.
+
 ### Where later work overlaps
 
 - **AD-035** (the original "NA" folder naming bug) and **AD-001** are the same symptom five
