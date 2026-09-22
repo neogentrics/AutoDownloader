@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,10 +21,17 @@ namespace AutoDownloader.Services
     public static class EpisodeTitleMatcher
     {
         /// <summary>
-        /// Below this share of links matched, the titles are assumed not to be comparable at
-        /// all - a foreign-language listing, or slugs that are not titles - and position is
-        /// used instead. Matching a handful of links and guessing the rest would interleave
-        /// two different numbering schemes, which is worse than one consistent guess.
+        /// Below this share matched, the titles are assumed not to be comparable at all - a
+        /// foreign-language listing, or slugs that are not titles - and position is used
+        /// instead. Matching a handful and guessing the rest would interleave two different
+        /// numbering schemes, which is worse than one consistent guess.
+        ///
+        /// Measured against whichever is smaller, the links or the database episodes, not
+        /// against the links alone. A listing carrying eight episodes and eight alternate
+        /// cuts can never match more than half its links however well it is read, and
+        /// judging it on that put a season of Alex vs America back on positional numbering -
+        /// which is what the matching exists to replace. A source carrying three episodes of
+        /// a twenty-six episode season has the same problem from the other direction.
         /// </summary>
         private const double MinimumMatchRatio = 0.5;
 
@@ -40,6 +47,13 @@ namespace AutoDownloader.Services
 
             /// <summary>Links whose title matched nothing in the database.</summary>
             public List<EpisodeLink> Unmatched { get; set; } = new List<EpisodeLink>();
+
+            /// <summary>
+            /// Links whose title matched nothing, but whose place in the listing identified
+            /// them: they sit between two recognised episodes with exactly one number free
+            /// between those episodes.
+            /// </summary>
+            public int PlacedByPosition { get; set; }
         }
 
         /// <summary>
@@ -165,7 +179,9 @@ namespace AutoDownloader.Services
 
             result.Matched = assignments.Count;
 
-            if (result.Matched == 0 || (double)result.Matched / links.Count < MinimumMatchRatio)
+            int comparable = Math.Min(links.Count, episodes.Count);
+
+            if (result.Matched == 0 || (double)result.Matched / comparable < MinimumMatchRatio)
             {
                 return result;
             }
@@ -175,16 +191,71 @@ namespace AutoDownloader.Services
                 pair.Key.DetectedEpisodeNumber = pair.Value;
             }
 
-            // Anything unmatched is given a number above every real episode, so it sorts to
-            // the end and cannot silently displace an episode that was matched.
+            // A title the databases spell differently will not match: a site calling an
+            // episode "Alex vs TOC Winners" against "Alex vs Tournament of Champions
+            // Winners", or "Alex vs Ultimate Fruits" against "Alex vs Fruit". Where such a
+            // link sits between two episodes that DID match, and a number is free between
+            // them, that number is what it is - the listing itself is the evidence.
+            //
+            // Everything still unplaced goes above every real episode, so extras and
+            // alternate cuts sort to the end and cannot displace an episode.
+            var free = episodes
+                .Select(e => e.EpisodeNumber)
+                .Where(n => !takenNumbers.Contains(n))
+                .OrderBy(n => n)
+                .ToList();
+
             int next = Math.Max(
                 episodes.Max(e => e.EpisodeNumber),
                 takenNumbers.Count == 0 ? 0 : takenNumbers.Max()) + 1;
 
-            foreach (var link in result.Unmatched)
+            var appended = new List<EpisodeLink>();
+
+            for (int i = 0; i < links.Count; i++)
             {
-                link.DetectedEpisodeNumber = next++;
+                var link = links[i];
+                if (assignments.ContainsKey(link)) continue;
+
+                int before = 0;
+                for (int j = i - 1; j >= 0; j--)
+                {
+                    if (assignments.TryGetValue(links[j], out int earlier)) { before = earlier; break; }
+                }
+
+                int after = int.MaxValue;
+                for (int j = i + 1; j < links.Count; j++)
+                {
+                    if (assignments.TryGetValue(links[j], out int later)) { after = later; break; }
+                }
+
+                // A link must be bracketed from above by an episode that matched. Past the
+                // last recognised episode is exactly where a listing keeps its extras - a
+                // later season's shorts, alternate cuts - and a free trailing number would
+                // swallow them. Nothing anchors them there, so they are appended instead.
+                var fits = after == int.MaxValue
+                    ? new List<int>()
+                    : free.Where(n => n > before && n < after).ToList();
+
+                // Only when the gap holds exactly one candidate. Two free numbers between the
+                // same pair of anchors is a guess, and a guess here misnames a file.
+                if (fits.Count == 1)
+                {
+                    int slot = fits[0];
+
+                    free.Remove(slot);
+                    link.DetectedEpisodeNumber = slot;
+                    assignments[link] = slot;
+                    takenNumbers.Add(slot);
+                    result.PlacedByPosition++;
+                }
+                else
+                {
+                    link.DetectedEpisodeNumber = next++;
+                    appended.Add(link);
+                }
             }
+
+            result.Unmatched = appended;
 
             result.Applied = true;
             return result;

@@ -89,6 +89,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-097 | - | Verification counted one season folder against every season's episodes | bug | medium |
 | AD-098 | - | The source-is-short check compared the whole plan against one season's count | bug | medium |
 | AD-099 | - | Titles assigned by position, so an episode the source lacks shifted every title after it | bug | high |
+| AD-100 | - | Strict title matching rejected differently-spelled titles and cut-heavy listings | bug | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
@@ -226,6 +227,26 @@ of the nine files carried the wrong episode's name.
   season's expected count, which on a five-season run printed "this source lists 61
   episode(s) but the databases expect 5 for season 1". It now reports season by season, and
   the season that really was short is named.
+
+**AD-100, found while checking the fix against the other four seasons.** Matching on the
+title alone was too strict in two ways, and would have made seasons 4 and 5 worse than
+position had:
+
+- A database spells an episode differently from the site: `alex-vs-ultimate-fruits` against
+  "Alex vs Fruit", `alex-vs-toc-winners` against "Alex vs Tournament of Champions Winners".
+  Neither matched, and both would have been pushed past the real episodes. Where such a link
+  sits between two episodes that did match and exactly one number is free between them, that
+  number is what it is - the listing itself is the evidence. Two free numbers is a guess, so
+  it is not taken, and a link past the last recognised episode has nothing anchoring it
+  above, which is exactly where a listing keeps its extras.
+- The trust threshold was measured against the link count. Season 5 carries eight episodes
+  and eight alternate cuts, so it can never match more than half its links however well it
+  is read - six of sixteen is 37%, and the season went back to positional numbering. It is
+  now measured against whichever is smaller, the links or the database episodes.
+
+Checked against all five seasons of the real run afterwards: every season resolves
+correctly, and the two episodes Food Network genuinely does not carry - S03E04 Alex vs
+Southern Comfort and S05E08 Alex vs Pastry - are reported rather than papered over.
 
 Worth remembering: the first answer here - "the source is short, not a defect" - was wrong,
 and looked right because the file count matched the link count. Both numbers were consistent
