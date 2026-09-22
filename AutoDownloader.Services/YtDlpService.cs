@@ -81,6 +81,12 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         private readonly string _cookieSource;
 
         /// <summary>
+        /// A format selector chosen for this run, which outranks the saved preference.
+        /// Null leaves Preferences in charge.
+        /// </summary>
+        public string? QualityOverride { get; set; }
+
+        /// <summary>
         /// When true, yt-dlp keeps a per-series archive file and skips episodes already
         /// recorded in it.
         /// </summary>
@@ -243,7 +249,9 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 }
 
                 // Format
-                string formatSelector = VideoFormatPreference.Resolve(_formatPreference, _videoQualityFormat);
+                string formatSelector = string.IsNullOrWhiteSpace(QualityOverride)
+                    ? VideoFormatPreference.Resolve(_formatPreference, _videoQualityFormat)
+                    : QualityOverride!;
 
                 if (!string.IsNullOrWhiteSpace(formatSelector))
                 {
@@ -428,6 +436,143 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
         /// page ourselves.
         /// </summary>
         /// <returns>The entry URLs yt-dlp found, in order. Empty when it understood nothing.</returns>
+        /// <summary>
+        /// The quality ladder a source publishes for one video.
+        ///
+        /// Probed from a single episode and applied to the whole show: a packager mints the
+        /// same ladder for every episode of a series, so asking once is enough and asking
+        /// per episode would add a round trip to each one.
+        /// </summary>
+        public async Task<List<FormatOption>> ProbeFormatsAsync(
+            string url, string? referer = null, CancellationToken cancellationToken = default)
+        {
+            var options = new List<FormatOption>();
+
+            if (string.IsNullOrWhiteSpace(_ytDlpPath) || !File.Exists(_ytDlpPath)) return options;
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _ytDlpPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+
+            startInfo.ArgumentList.Add("--simulate");
+            startInfo.ArgumentList.Add("--no-warnings");
+            startInfo.ArgumentList.Add("-J");
+            startInfo.ArgumentList.Add("--user-agent");
+            startInfo.ArgumentList.Add(_userAgent);
+
+            if (!string.IsNullOrWhiteSpace(referer))
+            {
+                startInfo.ArgumentList.Add("--referer");
+                startInfo.ArgumentList.Add(referer!);
+            }
+
+            AddCookieArguments(startInfo);
+            startInfo.ArgumentList.Add(url);
+
+            try
+            {
+                using var process = new Process { StartInfo = startInfo };
+                process.Start();
+
+                string json = await process.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                _ = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+                if (string.IsNullOrWhiteSpace(json)) return options;
+
+                using var document = System.Text.Json.JsonDocument.Parse(json);
+
+                if (!document.RootElement.TryGetProperty("formats", out var formats)
+                    || formats.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    return options;
+                }
+
+                // A fragmented stream reports no file size, because nothing has counted the
+                // fragments yet. yt-dlp's own listing derives the "~1.27GiB" it shows from
+                // bitrate and duration, and so does this - otherwise every rung reads "size
+                // unknown", which is the one thing the chooser exists to tell you.
+                double durationSeconds = Number(document.RootElement, "duration");
+
+                foreach (var format in formats.EnumerateArray())
+                {
+                    string id = Text(format, "format_id");
+                    if (id.Length == 0 || id.StartsWith("images", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    options.Add(new FormatOption
+                    {
+                        FormatId = id,
+                        Width = Int(format, "width"),
+                        Height = Int(format, "height"),
+                        Bitrate = Number(format, "tbr"),
+                        EstimatedBytes = EstimateBytes(format, durationSeconds),
+                        VideoCodec = Text(format, "vcodec"),
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // A ladder that cannot be read simply is not offered as a choice.
+                OnOutputReceived?.Invoke($"[formats] Could not read the quality list: {ex.Message}");
+            }
+
+            return options;
+        }
+
+        /// <summary>
+        /// The size a rung would come to: whatever the source states, or bitrate times
+        /// duration when it states nothing. Zero when neither is available, which the
+        /// display renders as unknown rather than as a confident wrong number.
+        /// </summary>
+        private static long EstimateBytes(System.Text.Json.JsonElement format, double durationSeconds)
+        {
+            if (Long(format, "filesize") is long exact && exact > 0) return exact;
+            if (Long(format, "filesize_approx") is long approx && approx > 0) return approx;
+
+            double bitrate = Number(format, "tbr");
+            if (bitrate <= 0 || durationSeconds <= 0) return 0;
+
+            // tbr is kilobits per second; bytes are what the file manager will show.
+            return (long)(bitrate * 1000 * durationSeconds / 8);
+        }
+
+        private static string Text(System.Text.Json.JsonElement element, string name) =>
+            element.TryGetProperty(name, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.String
+                ? value.GetString() ?? string.Empty
+                : string.Empty;
+
+        private static int Int(System.Text.Json.JsonElement element, string name) =>
+            element.TryGetProperty(name, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.Number
+            && value.TryGetInt32(out int parsed)
+                ? parsed
+                : 0;
+
+        private static double Number(System.Text.Json.JsonElement element, string name) =>
+            element.TryGetProperty(name, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.Number
+                ? value.GetDouble()
+                : 0;
+
+        private static long? Long(System.Text.Json.JsonElement element, string name) =>
+            element.TryGetProperty(name, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.Number
+            && value.TryGetInt64(out long parsed)
+                ? parsed
+                : null;
+
         /// <summary>
         /// How long a stream runs, in seconds, or null when it cannot be read.
         ///
@@ -852,7 +997,9 @@ namespace AutoDownloader.Services // <-- CORRECT: Namespace for the Services pro
                 startInfo.ArgumentList.Add(Path.Combine(outputFolder, "downloaded.txt"));
             }
 
-            string formatSelector = VideoFormatPreference.Resolve(_formatPreference, _videoQualityFormat);
+            string formatSelector = string.IsNullOrWhiteSpace(QualityOverride)
+                    ? VideoFormatPreference.Resolve(_formatPreference, _videoQualityFormat)
+                    : QualityOverride!;
 
             if (!string.IsNullOrWhiteSpace(formatSelector))
             {

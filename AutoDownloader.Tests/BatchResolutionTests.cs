@@ -45,6 +45,17 @@ namespace AutoDownloader.Tests
                 return Task.FromResult(OverwriteAnswer);
             }
 
+            public int QualityAsks;
+            public string? QualityAnswer;
+
+            public Task<string?> ChooseQualityAsync(
+                string showTitle, IReadOnlyList<FormatOption> options,
+                CancellationToken ct = default)
+            {
+                QualityAsks++;
+                return Task.FromResult(QualityAnswer);
+            }
+
             public int SeasonAsks;
             public IReadOnlyList<int>? SeasonAnswer;
 
@@ -207,6 +218,36 @@ namespace AutoDownloader.Tests
 
             Assert.AreEqual(2, inner.SeasonAsks);
             CollectionAssert.AreEqual(new[] { 2 }, again!.ToArray());
+        }
+
+        [TestMethod]
+        public async Task TheQualityChoiceIsOnlyAskedOnce()
+        {
+            var (inner, prompt) = Build();
+            inner.QualityAnswer = "bestvideo[height<=1080][tbr<=4528]+bestaudio";
+
+            var options = new[] { new FormatOption { Height = 1080, Width = 1920, Bitrate = 4312 } };
+
+            var first = await prompt.ChooseQualityAsync("Alex vs America", options);
+            var second = await prompt.ChooseQualityAsync("Alex vs America", options);
+
+            Assert.AreEqual(1, inner.QualityAsks);
+            Assert.AreEqual(first, second);
+        }
+
+        [TestMethod]
+        public async Task KeepingTheSettingIsRememberedToo()
+        {
+            // Null means "leave Preferences alone". That is an answer, and asking again would
+            // be asking the same question about the same show once per episode.
+            var (inner, prompt) = Build();
+            inner.QualityAnswer = null;
+
+            await prompt.ChooseQualityAsync("A Show", new FormatOption[0]);
+            var again = await prompt.ChooseQualityAsync("A Show", new FormatOption[0]);
+
+            Assert.AreEqual(1, inner.QualityAsks);
+            Assert.IsNull(again);
         }
 
         [TestMethod]

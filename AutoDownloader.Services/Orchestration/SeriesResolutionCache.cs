@@ -82,6 +82,23 @@ namespace AutoDownloader.Services.Orchestration
             _seasons[Normalise(key)] = value;
         }
 
+        private readonly ConcurrentDictionary<string, string> _quality =
+            new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Recorded even when the answer was "keep the configured preference", so a show is
+        /// asked about once rather than once per episode. The empty string carries that.
+        /// </summary>
+        public bool TryGetQuality(string key, out string? value)
+        {
+            bool found = _quality.TryGetValue(Normalise(key), out var stored);
+            value = string.IsNullOrEmpty(stored) ? null : stored;
+            return found;
+        }
+
+        public void RememberQuality(string key, string? value) =>
+            _quality[Normalise(key)] = value ?? string.Empty;
+
         private static string Normalise(string key) => (key ?? string.Empty).Trim();
     }
 }

@@ -73,6 +73,23 @@ namespace AutoDownloader.Services.Orchestration
             return chosen;
         }
 
+        public async Task<string?> ChooseQualityAsync(
+            string showTitle,
+            IReadOnlyList<FormatOption> options,
+            CancellationToken cancellationToken = default)
+        {
+            if (_cache.TryGetQuality(showTitle, out var remembered)) return remembered;
+
+            string? chosen = await _inner
+                .ChooseQualityAsync(showTitle, options, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Cached either way: "leave it alone" is an answer, and asking again would be
+            // asking the same question about the same show.
+            _cache.RememberQuality(showTitle, chosen);
+            return chosen;
+        }
+
         public async Task<OverwriteDecision> ConfirmOverwriteAsync(
             ExistingEpisode existing, CancellationToken cancellationToken = default)
         {

@@ -64,6 +64,18 @@ namespace AutoDownloader.Services.Orchestration
             IReadOnlyList<int> available,
             int showing,
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Offers the quality rungs a source actually publishes, with their real sizes.
+        /// </summary>
+        /// <returns>
+        /// A yt-dlp format selector, or null to keep whatever Preferences already says -
+        /// which is also the answer when nobody is there to choose.
+        /// </returns>
+        Task<string?> ChooseQualityAsync(
+            string showTitle,
+            IReadOnlyList<FormatOption> options,
+            CancellationToken cancellationToken = default);
     }
 
     /// <summary>
@@ -107,5 +119,15 @@ namespace AutoDownloader.Services.Orchestration
             int showing,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<int>?>(new[] { showing });
+
+        /// <summary>
+        /// Keeps the configured preference. An unattended run has no business quietly
+        /// choosing a different file size from the one its settings ask for.
+        /// </summary>
+        public Task<string?> ChooseQualityAsync(
+            string showTitle,
+            IReadOnlyList<FormatOption> options,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
     }
 }

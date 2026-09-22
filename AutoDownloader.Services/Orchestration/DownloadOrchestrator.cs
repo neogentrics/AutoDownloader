@@ -1023,7 +1023,12 @@ namespace AutoDownloader.Services.Orchestration
             }
 
             Log($"Indexed {found.Count} episode link(s).", JobLogLevel.Success);
-            return AssignEpisodeNumbers(found, metadata);
+
+            var planned = AssignEpisodeNumbers(found, metadata);
+
+            await ChooseQualityAsync(planned, metadata, cancellationToken).ConfigureAwait(false);
+
+            return planned;
         }
 
         /// <summary>
@@ -1065,6 +1070,61 @@ namespace AutoDownloader.Services.Orchestration
                 Log("--- Sources that do work include YouTube, Vimeo, Dailymotion, the Internet "
                     + "Archive, and any page embedding a player from one of them. ---",
                     JobLogLevel.Notice);
+            }
+        }
+
+        /// <summary>
+        /// The key the quality choice is remembered under.
+        ///
+        /// Deliberately not the show's name: this is one decision about how much disk the
+        /// run should cost, and asking it again for the second show in a batch would be
+        /// asking the same question twice.
+        /// </summary>
+        private const string QualityChoiceKey = "(quality for this run)";
+
+        /// <summary>
+        /// Offers the quality rungs the source publishes, once the episode list is known so
+        /// the cost of the whole run can be shown rather than the cost of one episode.
+        ///
+        /// Probed from the first episode and applied to the rest: a packager mints the same
+        /// ladder for every episode of a series, and probing each one would add a round trip
+        /// per episode to answer a question already answered.
+        /// </summary>
+        private async Task ChooseQualityAsync(
+            List<EpisodeLink> links, DownloadMetadata metadata, CancellationToken cancellationToken)
+        {
+            if (links.Count == 0) return;
+
+            try
+            {
+                var formats = await _ytDlpService
+                    .ProbeFormatsAsync(links[0].Url, metadata.SourceUrl, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var worthwhile = FormatOption.Worthwhile(formats);
+
+                // One rung is not a choice, and no rungs means the source did not say.
+                if (worthwhile.Count < 2) return;
+
+                Log($"--- This source offers {worthwhile.Count} qualities, "
+                    + $"from {worthwhile.Last().SizeDisplay} to {worthwhile.First().SizeDisplay} "
+                    + "per episode. ---", JobLogLevel.Notice);
+
+                string? chosen = await _prompt
+                    .ChooseQualityAsync(QualityChoiceKey, worthwhile, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (string.IsNullOrWhiteSpace(chosen)) return;
+
+                _ytDlpService.QualityOverride = chosen;
+
+                Log("--- Using the chosen quality for this run. ---", JobLogLevel.Notice);
+            }
+            catch (Exception ex)
+            {
+                // Not being able to offer the choice is no reason to stop: the configured
+                // preference still applies, exactly as it did before this existed.
+                OnDiagnostic?.Invoke($"Could not read the quality list: {ex.Message}");
             }
         }
 

@@ -68,6 +68,25 @@ namespace AutoDownloader.UI
             }).Task;
         }
 
+        public Task<string?> ChooseQualityAsync(
+            string showTitle,
+            IReadOnlyList<FormatOption> options,
+            CancellationToken cancellationToken = default)
+        {
+            return _owner.Dispatcher.InvokeAsync(() =>
+            {
+                var dialog = new SelectQualityWindow(showTitle, options, EpisodeCount) { Owner = _owner };
+                dialog.ShowDialog();
+                return dialog.SelectedFormat;
+            }).Task;
+        }
+
+        /// <summary>
+        /// How many episodes the run will fetch, so the dialog can say what the whole thing
+        /// costs rather than only what one episode does. Zero when it is not known yet.
+        /// </summary>
+        public int EpisodeCount { get; set; }
+
         public Task<OverwriteDecision> ConfirmOverwriteAsync(
             ExistingEpisode existing, CancellationToken cancellationToken = default)
         {

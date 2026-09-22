@@ -3,7 +3,7 @@
 The allocation table for `AD-` identifiers. See [ISSUE-CONVENTIONS.md](ISSUE-CONVENTIONS.md)
 for the format and labelling rules.
 
-**Next free ID: `AD-093`**
+**Next free ID: `AD-094`**
 
 `#` links to the GitHub issue. The `AD-` ID and the GitHub number are deliberately different:
 the GitHub number is assigned by GitHub and this repository's numbering already started
@@ -82,6 +82,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-090 | - | Dropdown items set a black foreground in code, which no theme can override | bug | medium |
 | AD-091 | - | A second show stops the batch halfway to ask which seasons | bug | high |
 | AD-092 | - | No application icon; it launches with the default | task | low |
+| AD-093 | - | Quality is chosen from presets that cannot know what a source offers | feature | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still

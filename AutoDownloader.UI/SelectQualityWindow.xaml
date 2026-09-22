@@ -1,0 +1,91 @@
+<Window x:Class="AutoDownloader.UI.SelectQualityWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Which quality?" Height="480" Width="560"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        FontFamily="Segoe UI"
+        Background="{DynamicResource Surface}"
+        Loaded="Window_Loaded">
+
+    <Window.Resources>
+        <Style x:Key="ChoiceButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,7"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" CornerRadius="5" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.85"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="18">
+
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock x:Name="HeadingTextBlock" Foreground="{DynamicResource TextPrimary}"
+                       FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
+
+            <TextBlock x:Name="SubheadingTextBlock" Foreground="{DynamicResource TextMuted}"
+                       FontSize="12" TextWrapping="Wrap" Margin="0,8,0,12"/>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+            <TextBlock x:Name="TotalTextBlock" Foreground="{DynamicResource TextMuted}"
+                       FontSize="12" Margin="0,0,0,10" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="UseButton" Content="Use this" Width="110"
+                        Style="{StaticResource ChoiceButtonStyle}" Background="#FF28A745"
+                        Click="Use_Click"/>
+                <Button Content="Keep my setting" Width="140"
+                        Style="{StaticResource ChoiceButtonStyle}"
+                        Background="{DynamicResource SurfaceInput}"
+                        Click="KeepSetting_Click"
+                        ToolTip="Leaves the Format preference in Preferences in charge."/>
+            </StackPanel>
+        </StackPanel>
+
+        <Border Background="{DynamicResource SurfaceRaised}" CornerRadius="5" Padding="4">
+            <ListBox x:Name="OptionsListBox"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Foreground="{DynamicResource TextPrimary}"
+                     SelectionChanged="OptionsListBox_SelectionChanged"
+                     MouseDoubleClick="OptionsListBox_MouseDoubleClick">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="4,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding QualityLabel}" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="1" Text="{Binding ResolutionLabel}"
+                                       Foreground="{DynamicResource TextMuted}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding SizeDisplay}" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="3" Foreground="{DynamicResource TextMuted}">
+                                <Run Text="{Binding Bitrate, StringFormat={}{0:0} kbps, Mode=OneWay}"/>
+                            </TextBlock>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+    </DockPanel>
+</Window>
