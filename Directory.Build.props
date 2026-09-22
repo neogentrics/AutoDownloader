@@ -3,11 +3,10 @@
   <!-- One place to set the version. Previously the title bar, the welcome text and the CLI
        each carried their own hardcoded string and disagreed with each other. -->
   <PropertyGroup>
-    <!-- 2.1.1: three fixes to multi-season runs - numbering that ran straight through the
-         series instead of restarting each season, an episode listed under two seasons being
-         planned twice, and the download archive skipping episodes whose files were gone and
-         then counting them as successes. -->
-    <VersionPrefix>2.1.1</VersionPrefix>
+    <!-- 2.1.2: episodes are numbered by the title the link carries rather than by position,
+         so a season the source is missing an episode from no longer shifts every title after
+         it; and the source-is-short check now reports season by season. -->
+    <VersionPrefix>2.1.2</VersionPrefix>
     <VersionSuffix></VersionSuffix>
     <Product>AutoDownloader</Product>
     <Company>Neo Gentrics</Company>

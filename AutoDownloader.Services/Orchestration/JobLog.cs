@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace AutoDownloader.Services.Orchestration
 {
@@ -83,6 +84,16 @@ namespace AutoDownloader.Services.Orchestration
         /// rather than a limit of the source.
         /// </summary>
         public int EpisodesOffered { get; set; }
+
+        /// <summary>
+        /// Episode count the databases expect, per season this run touched.
+        ///
+        /// A run spanning five seasons cannot be described by one number. Comparing the whole
+        /// plan against a single season's expected count produced "this source lists 61
+        /// episode(s) but the databases expect 5 for season 1", which is nonsense and hid a
+        /// season that really was short.
+        /// </summary>
+        public Dictionary<int, int> ExpectedBySeason { get; } = new Dictionary<int, int>();
 
         /// <summary>The folder the series was written to.</summary>
         public string? OutputFolder { get; set; }

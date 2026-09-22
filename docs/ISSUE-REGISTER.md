@@ -87,6 +87,8 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-095 | - | An episode listed under two seasons was planned and downloaded twice | bug | medium |
 | AD-096 | - | The download archive skipped episodes whose files were gone, and counted them as successes | bug | high |
 | AD-097 | - | Verification counted one season folder against every season's episodes | bug | medium |
+| AD-098 | - | The source-is-short check compared the whole plan against one season's count | bug | medium |
+| AD-099 | - | Titles assigned by position, so an episode the source lacks shifted every title after it | bug | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
@@ -201,6 +203,33 @@ and the saved `FormatPreference` was still `best` from the day before. Nothing h
 asked to make the files smaller. The picker's failure path wrote only to `OnDiagnostic`,
 which never reaches the session log, so a probe that failed would have been invisible; it
 now logs.
+
+### Season 3 was not short - it was mislabelled
+
+Chasing why season 3 of Alex vs America held 9 files where the databases list 10 turned up
+something worse than a missing episode.
+
+Food Network does not carry Alex vs Southern Comfort, season 3 episode 4. Episode numbers
+were taken from each link's position in the listing, so every episode after the gap moved
+up one: Alex vs Salmon was written as E04 wearing the title "Alex vs Southern Comfort", and
+Alex vs California - the real E10 - was filed as E09 under the name "Alex vs Potatoes". Six
+of the nine files carried the wrong episode's name.
+
+- **AD-099.** The links say what they are; the slug `alex-vs-california` is the episode
+  title. `EpisodeTitleMatcher` already existed to use that, but it ran only when *no* link
+  carried a number - and Food Network numbers its tiles, so it never ran. Numbers are now
+  matched to the database episode whose title the link carries, season by season, and a gap
+  in the source stays a gap. Links matching no database episode - alternate cuts, which the
+  databases do not list - are numbered after the last real episode so they cannot displace
+  one. The log names the missing episodes outright.
+- **AD-098.** The source-is-short check compared every link in the plan against a single
+  season's expected count, which on a five-season run printed "this source lists 61
+  episode(s) but the databases expect 5 for season 1". It now reports season by season, and
+  the season that really was short is named.
+
+Worth remembering: the first answer here - "the source is short, not a defect" - was wrong,
+and looked right because the file count matched the link count. Both numbers were consistent
+and both described the wrong thing.
 
 ### Where later work overlaps
 

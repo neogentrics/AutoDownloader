@@ -441,7 +441,8 @@ namespace AutoDownloader.Services.Orchestration
                 if (episodeLinks.Count > 0)
                 {
                     var (succeeded, failed, protectedCount, alreadyPresent) = await DownloadEpisodesAsync(
-                        episodeLinks, metadata, finalOutputFolder, cancellationToken).ConfigureAwait(false);
+                        episodeLinks, metadata, finalOutputFolder, cancellationToken,
+                        result.ExpectedBySeason).ConfigureAwait(false);
 
                     result.EpisodesSucceeded = succeeded;
                     result.EpisodesFailed = failed;
@@ -477,7 +478,7 @@ namespace AutoDownloader.Services.Orchestration
             result.FilesAdded = filesAfter - filesBefore;
             result.EpisodesOffered = episodeLinks.Count;
 
-            ReportVerification(result, metadata.NextSeasonNumber);
+            ReportVerification(result, metadata.NextSeasonNumber, episodeLinks, finalOutputFolder);
 
             result.Completed = true;
             result.Cancelled = cancellationToken.IsCancellationRequested;
@@ -754,7 +755,11 @@ namespace AutoDownloader.Services.Orchestration
         /// complete download of everything available report seventeen episodes "missing",
         /// which reads as the app failing rather than the source being incomplete.
         /// </summary>
-        private void ReportVerification(DownloadJobResult result, int seasonNumber)
+        private void ReportVerification(
+            DownloadJobResult result,
+            int seasonNumber,
+            List<EpisodeLink> links,
+            string showFolder)
         {
             int offered = result.EpisodesOffered;
             int expected = result.ExpectedEpisodeCount;
@@ -785,19 +790,9 @@ namespace AutoDownloader.Services.Orchestration
                 }
 
                 // Say separately whether the source itself is short of the full season, so a
-                // gap in the source is not mistaken for a gap in the download.
-                if (expected > offered)
-                {
-                    Log($"--- NOTE: the databases list {expected} episode(s) for season {seasonNumber}, "
-                        + $"so this source carries {expected - offered} fewer. That is a limit of the "
-                        + "source, not a failed download. ---", JobLogLevel.Notice);
-                }
-                else if (expected > 0 && offered > expected)
-                {
-                    Log($"--- NOTE: this source lists {offered} episode(s) but the databases expect "
-                        + $"{expected} for season {seasonNumber}; it may include specials or "
-                        + "another season. ---", JobLogLevel.Notice);
-                }
+                // gap in the source is not mistaken for a gap in the download. Season by
+                // season: one number cannot describe a run spanning five of them.
+                ReportSeasonShortfalls(result, links, showFolder, seasonNumber, expected, offered);
 
                 return;
             }
@@ -828,6 +823,140 @@ namespace AutoDownloader.Services.Orchestration
         /// <summary>
         /// Counts finished video files in a season folder.
         /// </summary>
+        /// <summary>
+        /// Gives each link the number of the database episode whose title it carries, season
+        /// by season, instead of its position in the listing.
+        ///
+        /// Position only works when the source carries the whole season. Food Network does
+        /// not list Alex vs Southern Comfort, season 3 episode 4, so numbering by position
+        /// wrote that title onto Alex vs Salmon and shifted the five episodes after it - and
+        /// Alex vs California, the real episode 10, was filed as episode 9 under the name
+        /// Alex vs Potatoes. Matching on the title the link itself carries leaves the gap
+        /// where it belongs and names every file correctly.
+        ///
+        /// Links matching no database episode - alternate cuts and extras, which the
+        /// databases do not list - keep their order and are numbered after the last real
+        /// episode, so they cannot displace one.
+        /// </summary>
+        public void AlignNumbersToDatabase(
+            List<EpisodeLink> links,
+            Dictionary<int, Dictionary<int, string?>> titlesBySeason,
+            DownloadMetadata metadata)
+        {
+            foreach (int season in titlesBySeason.Keys.OrderBy(n => n))
+            {
+                var episodes = titlesBySeason[season]
+                    .Where(kv => kv.Key > 0 && !string.IsNullOrWhiteSpace(kv.Value))
+                    .Select(kv => new DownloadEpisode { EpisodeNumber = kv.Key, EpisodeTitle = kv.Value })
+                    .OrderBy(e => e.EpisodeNumber)
+                    .ToList();
+
+                if (episodes.Count == 0) continue;
+
+                var seasonLinks = links
+                    .Where(l => (l.DetectedSeasonNumber ?? metadata.NextSeasonNumber) == season)
+                    .ToList();
+
+                if (seasonLinks.Count == 0) continue;
+
+                var match = EpisodeTitleMatcher.Apply(seasonLinks, episodes);
+
+                // Too few matched to trust it, so the numbering already in hand stands.
+                if (!match.Applied) continue;
+
+                Log($"--- Season {season}: matched {match.Matched} of {match.Total} link(s) to "
+                    + "episodes by the title they carry. ---", JobLogLevel.Notice);
+
+                var gaps = episodes
+                    .Select(e => e.EpisodeNumber)
+                    .Where(n => !seasonLinks.Any(l => l.DetectedEpisodeNumber == n))
+                    .ToList();
+
+                if (gaps.Count > 0)
+                {
+                    Log($"--- Season {season}: this source does not carry "
+                        + string.Join(", ", gaps.Select(n => $"E{n:00}"))
+                        + ". Those numbers are left empty rather than shifting the episodes "
+                        + "after them. ---", JobLogLevel.Warning);
+                }
+            }
+
+            links.Sort((a, b) =>
+            {
+                int bySeason = (a.DetectedSeasonNumber ?? 0).CompareTo(b.DetectedSeasonNumber ?? 0);
+
+                return bySeason != 0
+                    ? bySeason
+                    : (a.DetectedEpisodeNumber ?? 0).CompareTo(b.DetectedEpisodeNumber ?? 0);
+            });
+        }
+
+        /// <summary>
+        /// Says, for each season, whether the source carries fewer episodes than the
+        /// databases list - or more.
+        ///
+        /// Comparing the whole plan against one season's expected count produced "this source
+        /// lists 61 episode(s) but the databases expect 5 for season 1" on a five-season run.
+        /// That is nonsense, and it hid a season that really was one episode short.
+        /// </summary>
+        public void ReportSeasonShortfalls(
+            DownloadJobResult result,
+            List<EpisodeLink> links,
+            string showFolder,
+            int fallbackSeason,
+            int expectedOverall,
+            int offeredOverall)
+        {
+            var offeredBySeason = links
+                .GroupBy(l => l.DetectedSeasonNumber ?? fallbackSeason)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            // Nothing per-season to go on: fall back to the single-season comparison, which
+            // is correct when there is only one season in play.
+            if (result.ExpectedBySeason.Count == 0)
+            {
+                if (expectedOverall > offeredOverall)
+                {
+                    Log($"--- NOTE: the databases list {expectedOverall} episode(s) for season "
+                        + $"{fallbackSeason}, so this source carries {expectedOverall - offeredOverall} "
+                        + "fewer. That is a limit of the source, not a failed download. ---",
+                        JobLogLevel.Notice);
+                }
+                else if (expectedOverall > 0 && offeredOverall > expectedOverall)
+                {
+                    Log($"--- NOTE: this source lists {offeredOverall} episode(s) but the databases "
+                        + $"expect {expectedOverall} for season {fallbackSeason}; it may include "
+                        + "specials or another season. ---", JobLogLevel.Notice);
+                }
+
+                return;
+            }
+
+            foreach (int season in offeredBySeason.Keys.OrderBy(n => n))
+            {
+                if (!result.ExpectedBySeason.TryGetValue(season, out int expected) || expected <= 0)
+                {
+                    continue;
+                }
+
+                int offered = offeredBySeason[season];
+
+                if (expected > offered)
+                {
+                    Log($"--- NOTE: season {season}: the databases list {expected} episode(s) and "
+                        + $"this source carries {offered}, so {expected - offered} are not available "
+                        + "here. That is a limit of the source, not a failed download. ---",
+                        JobLogLevel.Notice);
+                }
+                else if (offered > expected)
+                {
+                    Log($"--- NOTE: season {season}: this source lists {offered} episode(s) against "
+                        + $"the {expected} the databases expect; the extras are most likely specials "
+                        + "or alternate cuts. ---", JobLogLevel.Notice);
+                }
+            }
+        }
+
         /// <summary>
         /// Every season folder this run writes into.
         ///
@@ -1384,7 +1513,8 @@ namespace AutoDownloader.Services.Orchestration
             List<EpisodeLink> links,
             DownloadMetadata metadata,
             string outputFolder,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            Dictionary<int, int>? expectedBySeason = null)
         {
             string showTitle = metadata.OfficialTitle ?? "Unknown Show";
 
@@ -1415,6 +1545,12 @@ namespace AutoDownloader.Services.Orchestration
                         .Where(e => e.EpisodeNumber > 0)
                         .GroupBy(e => e.EpisodeNumber)
                         .ToDictionary(g => g.Key, g => g.First().EpisodeTitle);
+
+                    if (expectedBySeason != null)
+                    {
+                        expectedBySeason[season] = metadata.ExpectedEpisodeCount;
+                    }
+
                     continue;
                 }
 
@@ -1430,6 +1566,15 @@ namespace AutoDownloader.Services.Orchestration
                         .ToDictionary(g => g.Key, g => g.First().EpisodeTitle)
                         ?? new Dictionary<int, string?>();
 
+                    if (expectedBySeason != null)
+                    {
+                        // Fall back to the number of titles when the databases give no count:
+                        // knowing ten titles is itself evidence of ten episodes.
+                        int count = merged?.ExpectedEpisodeCount ?? 0;
+
+                        expectedBySeason[season] = count > 0 ? count : titlesBySeason[season].Count;
+                    }
+
                     Log($"Season {season}: {titlesBySeason[season].Count} title(s) known.",
                         JobLogLevel.Notice);
                 }
@@ -1441,6 +1586,9 @@ namespace AutoDownloader.Services.Orchestration
                         JobLogLevel.Warning);
                 }
             }
+
+            AlignNumbersToDatabase(links, titlesBySeason, metadata);
+
             int succeeded = 0;
             int failed = 0;
             int protectedCount = 0;
