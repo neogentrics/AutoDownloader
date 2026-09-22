@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using AutoDownloader.Services;
 using AutoDownloader.Services.Orchestration;
 
@@ -126,6 +126,43 @@ namespace AutoDownloader.Tests
                 1,
                 result.Single(l => l.LinkText == "alex-vs-shellfish").DetectedSeasonNumber,
                 "the earlier season keeps it");
+        }
+
+        // ------------------------------------------------- verification scope (AD-097)
+
+        [TestMethod]
+        public void AMultiSeasonRun_CountsEverySeasonFolderItWritesInto()
+        {
+            var links = new List<EpisodeLink>
+            {
+                Link(1, 1, "a"), Link(1, 2, "b"), Link(2, 1, "c"), Link(5, 1, "d"),
+            };
+
+            var folders = DownloadOrchestrator.SeasonFoldersFor(
+                Path.Combine("X:", "Shows", "Alex vs America"), links, FiveSeasons());
+
+            Assert.AreEqual(3, folders.Count, "seasons 1, 2 and 5 were written to");
+
+            CollectionAssert.AreEqual(
+                new List<string> { "Season 01", "Season 02", "Season 05" },
+                folders.Select(f => new DirectoryInfo(f).Name).ToList());
+        }
+
+        [TestMethod]
+        public void WhenNoLinkSaysItsSeason_TheTargetSeasonIsStillCounted()
+        {
+            var links = new List<EpisodeLink>
+            {
+                new EpisodeLink { Url = "https://example.com/a" },
+            };
+
+            var metadata = new DownloadMetadata { NextSeasonNumber = 3 };
+
+            var folders = DownloadOrchestrator.SeasonFoldersFor(
+                Path.Combine("X:", "Shows", "Some Show"), links, metadata);
+
+            Assert.AreEqual(1, folders.Count);
+            Assert.AreEqual("Season 03", new DirectoryInfo(folders[0]).Name);
         }
     }
 }

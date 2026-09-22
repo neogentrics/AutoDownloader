@@ -86,6 +86,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-094 | - | Episode numbers ran straight through the series instead of restarting each season | bug | high |
 | AD-095 | - | An episode listed under two seasons was planned and downloaded twice | bug | medium |
 | AD-096 | - | The download archive skipped episodes whose files were gone, and counted them as successes | bug | high |
+| AD-097 | - | Verification counted one season folder against every season's episodes | bug | medium |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
@@ -187,6 +188,12 @@ four new episodes. Three separate defects, plus one thing that was never in the 
   episodes deleted between runs were skipped as "already recorded" and counted as
   successes - which is how the totals and the content verification disagreed. The archive is
   now bypassed whenever the expected file is absent.
+
+- **AD-097.** The verification counted video files in the target season's folder but
+  measured them against every link in the plan, so a five-season run compared one folder
+  against sixty-five episodes. Against the real folders this reported 4 where 12 were
+  present - the exact number the live log showed. It now counts every season folder the run
+  writes into.
 
 The run also produced 3 GB files at roughly 10 Mbps. That was not a defect: the binary was
 built at 01:14:51 and the quality picker landed at 01:20:01, so it was never in that build,

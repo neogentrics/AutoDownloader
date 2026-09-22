@@ -432,8 +432,8 @@ namespace AutoDownloader.Services.Orchestration
                 Log($"--- COOKIE WARNING: {cookieWarning} ---", JobLogLevel.Error);
             }
 
-            string seasonFolder = Path.Combine(finalOutputFolder, $"Season {metadata.NextSeasonNumber:00}");
-            int filesBefore = CountVideoFiles(seasonFolder);
+            var seasonFolders = SeasonFoldersFor(finalOutputFolder, episodeLinks, metadata);
+            int filesBefore = seasonFolders.Sum(CountVideoFiles);
 
             // ---------------------------------------------------------------- 4. Download
             try
@@ -472,7 +472,7 @@ namespace AutoDownloader.Services.Orchestration
             }
 
             // ---------------------------------------------------------------- 5. Verify
-            int filesAfter = CountVideoFiles(seasonFolder);
+            int filesAfter = seasonFolders.Sum(CountVideoFiles);
             result.FilesPresentAfter = filesAfter;
             result.FilesAdded = filesAfter - filesBefore;
             result.EpisodesOffered = episodeLinks.Count;
@@ -828,6 +828,31 @@ namespace AutoDownloader.Services.Orchestration
         /// <summary>
         /// Counts finished video files in a season folder.
         /// </summary>
+        /// <summary>
+        /// Every season folder this run writes into.
+        ///
+        /// Counting only the target season while measuring against every link in the plan is
+        /// what made a five-season run report "4 of the 65 episode(s) are present" with
+        /// thirteen files on disk: one season's folder was being compared against five
+        /// seasons' worth of episodes.
+        /// </summary>
+        public static List<string> SeasonFoldersFor(
+            string showFolder, List<EpisodeLink> links, DownloadMetadata metadata)
+        {
+            var seasons = links
+                .Where(l => l.DetectedSeasonNumber.HasValue)
+                .Select(l => l.DetectedSeasonNumber!.Value)
+                .Distinct()
+                .ToList();
+
+            if (seasons.Count == 0) seasons.Add(metadata.NextSeasonNumber);
+
+            return seasons
+                .OrderBy(n => n)
+                .Select(n => Path.Combine(showFolder, $"Season {n:00}"))
+                .ToList();
+        }
+
         public static int CountVideoFiles(string folder)
         {
             if (!Directory.Exists(folder)) return 0;
