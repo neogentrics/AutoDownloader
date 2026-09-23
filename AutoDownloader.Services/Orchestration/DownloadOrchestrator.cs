@@ -824,6 +824,72 @@ namespace AutoDownloader.Services.Orchestration
         /// Counts finished video files in a season folder.
         /// </summary>
         /// <summary>
+        /// A name for a link the databases do not cover, fit to put in a filename.
+        ///
+        /// The scraper does not always find anchor text, and then the link text is the URL
+        /// path - which produced
+        /// "S01E05 - _video_be-my-guest-with-ina-garten-food-network-atve-us_jon-batiste.mp4".
+        /// The last segment of that path is the episode's name in every case seen so far, so
+        /// it is used instead: "Jon Batiste".
+        /// </summary>
+        /// <summary>
+        /// The last segment of a URL's or path's path portion, or an empty string when there
+        /// is none. The host is deliberately not a candidate: it names a site, not an episode.
+        /// </summary>
+        private static string LastPathSegment(string value)
+        {
+            string path = value ?? string.Empty;
+
+            if (Uri.TryCreate(path, UriKind.Absolute, out var uri)) path = uri.AbsolutePath;
+
+            var segments = path.Split(PathMarks, StringSplitOptions.RemoveEmptyEntries);
+
+            return segments.Length == 0 ? string.Empty : segments[segments.Length - 1];
+        }
+
+        /// <summary>The characters that mark a value as a path rather than a title.</summary>
+        private static readonly char[] PathMarks = { '/', (char)92 };
+
+        public static string? ReadableName(EpisodeLink link)
+        {
+            string text = (link.LinkText ?? string.Empty).Trim();
+
+            // A path or a URL is not a title; its last path segment usually is. Taken from
+            // the path proper, so a bare host gives nothing rather than "Example.com".
+            if (text.Length == 0 || text.IndexOfAny(PathMarks) >= 0)
+            {
+                text = LastPathSegment(text.Length == 0 ? link.Url : text);
+            }
+
+            if (text.Length == 0 || text.Length > 120) return null;
+
+            int dot = text.LastIndexOf('.');
+            if (dot > 0 && text.Length - dot <= 5) text = text.Substring(0, dot);
+
+            var words = text.Replace('-', ' ')
+                            .Replace('_', ' ')
+                            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (words.Length == 0) return null;
+
+            // Title case, leaving the small words alone unless they open the name - a slug is
+            // all lower case, and "jon batiste" reads worse than the file deserves.
+            var small = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "a", "an", "and", "the", "of", "or", "vs", "with", "for", "in", "on", "at", "to",
+            };
+
+            for (int w = 0; w < words.Length; w++)
+            {
+                if (w > 0 && small.Contains(words[w])) continue;
+
+                words[w] = char.ToUpperInvariant(words[w][0]) + words[w].Substring(1);
+            }
+
+            return string.Join(" ", words);
+        }
+
+        /// <summary>
         /// Settles which season a link repeated across several tabs actually belongs to, by
         /// asking which season's episode list names it.
         ///
@@ -1706,11 +1772,9 @@ namespace AutoDownloader.Services.Orchestration
                 // The databases cover a season's episodes but rarely its extras, so a page
                 // listing specials alongside them would file those as bare numbers. The link
                 // usually carries the real name, and a named file beats "S05E102.mp4".
-                if (string.IsNullOrWhiteSpace(episodeTitle)
-                    && !string.IsNullOrWhiteSpace(link.LinkText)
-                    && link.LinkText!.Length <= 120)
+                if (string.IsNullOrWhiteSpace(episodeTitle))
                 {
-                    episodeTitle = link.LinkText;
+                    episodeTitle = ReadableName(link);
                 }
 
                 _currentEpisodeIndex = i + 1;

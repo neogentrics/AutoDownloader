@@ -91,6 +91,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-099 | - | Titles assigned by position, so an episode the source lacks shifted every title after it | bug | high |
 | AD-100 | - | Strict title matching rejected differently-spelled titles and cut-heavy listings | bug | high |
 | AD-101 | - | A season tab listing another season's episodes took them for good | bug | high |
+| AD-102 | - | A link with no database title took a URL path as its name | bug | medium |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
@@ -275,6 +276,22 @@ is nothing better on offer.
 That last case is not hypothetical here. The databases spell episode one "Julianna
 Marguiles" against the site's `julianna-margulies`, so nothing recognises it and it stays
 under season 1 - which is where it belongs anyway. AD-100's gap filling gave it E01.
+
+### A URL path is not an episode title
+
+The same Be My Guest run produced
+
+    S01E05 - _video_be-my-guest-with-ina-garten-food-network-atve-us_jon-batiste.mp4
+
+**AD-102.** When the databases do not cover a link - an extra, a special, an alternate cut -
+its own link text is used instead, which is right. But the scraper does not always find
+anchor text, and the link text is then the URL path; used whole it becomes the filename
+above. The last segment of the path is the episode's name in every case seen so far, so it
+is used and title-cased: "Jon Batiste". Taken from the path proper, so a bare host gives
+nothing rather than "Example.com", and small words stay lower unless they open the name.
+
+AD-101 happens to hide this one for this show - those four links move to season 7, where the
+databases do name them - but any genuine extra would still have been named after a URL.
 
 ### Where later work overlaps
 
