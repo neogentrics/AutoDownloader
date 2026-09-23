@@ -8,7 +8,8 @@
          it. Includes the two corrections that needed - a title the databases spell
          differently takes the one number free between its neighbours, and a listing half
          made of alternate cuts is still trusted - plus a source-is-short check that reports
-         season by season. -->
+         season by season, and a season tab that carries another season's episodes no longer
+         keeps them. -->
     <VersionPrefix>2.1.2</VersionPrefix>
     <VersionSuffix></VersionSuffix>
     <Product>AutoDownloader</Product>

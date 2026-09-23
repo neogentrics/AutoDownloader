@@ -90,6 +90,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-098 | - | The source-is-short check compared the whole plan against one season's count | bug | medium |
 | AD-099 | - | Titles assigned by position, so an episode the source lacks shifted every title after it | bug | high |
 | AD-100 | - | Strict title matching rejected differently-spelled titles and cut-heavy listings | bug | high |
+| AD-101 | - | A season tab listing another season's episodes took them for good | bug | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
@@ -251,6 +252,29 @@ Southern Comfort and S05E08 Alex vs Pastry - are reported rather than papered ov
 Worth remembering: the first answer here - "the source is short, not a defect" - was wrong,
 and looked right because the file count matched the link count. Both numbers were consistent
 and both described the wrong thing.
+
+### A season tab that carries another season
+
+Be My Guest with Ina Garten, seven seasons. The run read 40 links, dropped 10 repeats, and
+then looked up titles for seasons 1 to 6 and never mentioned season 7.
+
+Food Network lists season 7's four episodes under the season 1 tab as well. Deduplication
+kept the earliest season, so Allison Janney, Jon Batiste, Hoda Kotb and Michael Barbaro
+became season 1 episodes 5 to 8 - and season 7, having nothing left, was never looked up at
+all. The numbers account for themselves exactly: one tile repeated into all seven tabs (six
+dropped) plus those four appearing twice (four dropped) is the ten, and season 1 holding
+eight links for a four-episode season is the rest of it.
+
+**AD-101.** Keeping the latest season instead would break Alex vs America, where a
+promotional tile really is repeated into every tab and belongs to season 1. Neither position
+rule is right. The repeat is still dropped, but every season that carried it is remembered,
+those seasons' titles are looked up, and the link goes to the one season whose episode list
+names it. Exactly one, or it stays where it was: two would be a guess, and none means there
+is nothing better on offer.
+
+That last case is not hypothetical here. The databases spell episode one "Julianna
+Marguiles" against the site's `julianna-margulies`, so nothing recognises it and it stays
+under season 1 - which is where it belongs anyway. AD-100's gap filling gave it E01.
 
 ### Where later work overlaps
 

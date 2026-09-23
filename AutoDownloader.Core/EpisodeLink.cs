@@ -1,4 +1,6 @@
-﻿namespace AutoDownloader.Core
+﻿using System.Collections.Generic;
+
+namespace AutoDownloader.Core
 {
     /// <summary>
     /// One episode-page link discovered on a series or season page, in the order it appeared.
@@ -38,6 +40,16 @@
         /// <summary>
         /// Zero-based position of this link within the page, preserved from document order.
         /// </summary>
+        /// <summary>
+        /// Every season whose listing carried this link, when more than one did.
+        ///
+        /// A site's season tabs are not always cleanly scoped: Food Network lists season 7 of
+        /// Be My Guest with Ina Garten under season 1 as well. Dropping the repeat and keeping
+        /// the earliest season emptied season 7 and filed its four episodes as season 1. The
+        /// candidates are kept so the databases can settle which season is really meant.
+        /// </summary>
+        public List<int> CandidateSeasons { get; set; } = new List<int>();
+
         public int Ordinal { get; set; }
 
         /// <summary>

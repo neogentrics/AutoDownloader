@@ -824,6 +824,69 @@ namespace AutoDownloader.Services.Orchestration
         /// Counts finished video files in a season folder.
         /// </summary>
         /// <summary>
+        /// Settles which season a link repeated across several tabs actually belongs to, by
+        /// asking which season's episode list names it.
+        ///
+        /// A season tab is not always cleanly scoped. Food Network lists season 7 of Be My
+        /// Guest with Ina Garten under season 1 as well, and keeping the earliest season
+        /// filed Allison Janney, Jon Batiste, Hoda Kotb and Michael Barbaro as season 1
+        /// episodes 5 to 8 while season 7 came out empty. Keeping the latest instead would
+        /// break the opposite case, where a promotional tile really is repeated into every
+        /// tab - so neither position rule is right, and the databases decide.
+        ///
+        /// Only when exactly one candidate season names the link. Two would be a guess, and
+        /// none means there is nothing better than the season it already has.
+        /// </summary>
+        public void ResolveSeasonForRepeatedLinks(
+            List<EpisodeLink> links, Dictionary<int, Dictionary<int, string?>> titlesBySeason)
+        {
+            int moved = 0;
+
+            foreach (var link in links.Where(l => l.CandidateSeasons.Count > 1))
+            {
+                var naming = link.CandidateSeasons
+                    .Where(season => titlesBySeason.TryGetValue(season, out var titles)
+                                     && NamesTheLink(titles, link))
+                    .ToList();
+
+                if (naming.Count != 1 || naming[0] == link.DetectedSeasonNumber) continue;
+
+                Log($"--- {SlugOf(link.Url)} is listed under season(s) "
+                    + string.Join(", ", link.CandidateSeasons.OrderBy(n => n))
+                    + $", and season {naming[0]} is the one that names it. ---", JobLogLevel.Notice);
+
+                link.DetectedSeasonNumber = naming[0];
+                moved++;
+            }
+
+            if (moved > 0)
+            {
+                Log($"--- {moved} link(s) listed under more than one season were moved to the "
+                    + "season the databases place them in. ---", JobLogLevel.Notice);
+            }
+        }
+
+        /// <summary>True when one of a season's episode titles is this link's own title.</summary>
+        private static bool NamesTheLink(Dictionary<int, string?> titles, EpisodeLink link)
+        {
+            var known = titles.Values
+                .Select(EpisodeTitleMatcher.Normalise)
+                .Where(t => t.Length > 0)
+                .ToHashSet();
+
+            return EpisodeTitleMatcher.CandidateTitles(link)
+                .Select(EpisodeTitleMatcher.Normalise)
+                .Any(t => t.Length > 0 && known.Contains(t));
+        }
+
+        private static string SlugOf(string url)
+        {
+            int slash = (url ?? string.Empty).TrimEnd('/').LastIndexOf('/');
+
+            return slash >= 0 && slash < url!.Length - 1 ? url.Substring(slash + 1) : url ?? string.Empty;
+        }
+
+        /// <summary>
         /// Gives each link the number of the database episode whose title it carries, season
         /// by season, instead of its position in the listing.
         ///
@@ -1237,12 +1300,36 @@ namespace AutoDownloader.Services.Orchestration
         /// </summary>
         private List<EpisodeLink> WithoutDuplicateUrls(List<EpisodeLink> links)
         {
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var keptByUrl = new Dictionary<string, EpisodeLink>(StringComparer.OrdinalIgnoreCase);
             var kept = new List<EpisodeLink>(links.Count);
 
             foreach (var link in links)
             {
-                if (!string.IsNullOrWhiteSpace(link.Url) && !seen.Add(link.Url.Trim())) continue;
+                string key = (link.Url ?? string.Empty).Trim();
+
+                if (key.Length > 0 && keptByUrl.TryGetValue(key, out var already))
+                {
+                    // The repeat is dropped, but which season carried it is not: a tab that
+                    // lists another season's episodes would otherwise take them for good.
+                    if (link.DetectedSeasonNumber.HasValue
+                        && !already.CandidateSeasons.Contains(link.DetectedSeasonNumber.Value))
+                    {
+                        already.CandidateSeasons.Add(link.DetectedSeasonNumber.Value);
+                    }
+
+                    continue;
+                }
+
+                if (key.Length > 0)
+                {
+                    keptByUrl[key] = link;
+
+                    if (link.DetectedSeasonNumber.HasValue
+                        && !link.CandidateSeasons.Contains(link.DetectedSeasonNumber.Value))
+                    {
+                        link.CandidateSeasons.Add(link.DetectedSeasonNumber.Value);
+                    }
+                }
 
                 kept.Add(link);
             }
@@ -1533,8 +1620,11 @@ namespace AutoDownloader.Services.Orchestration
                     : new Dictionary<int, string?>();
             }
 
+            // Candidate seasons are included: a link repeated across tabs may belong to a
+            // season that, after the repeats were dropped, has no links left to ask about.
             foreach (var season in links
-                .Select(l => l.DetectedSeasonNumber ?? metadata.NextSeasonNumber)
+                .SelectMany(l => l.CandidateSeasons
+                    .Concat(new[] { l.DetectedSeasonNumber ?? metadata.NextSeasonNumber }))
                 .Distinct()
                 .OrderBy(n => n))
             {
@@ -1586,6 +1676,8 @@ namespace AutoDownloader.Services.Orchestration
                         JobLogLevel.Warning);
                 }
             }
+
+            ResolveSeasonForRepeatedLinks(links, titlesBySeason);
 
             AlignNumbersToDatabase(links, titlesBySeason, metadata);
 
