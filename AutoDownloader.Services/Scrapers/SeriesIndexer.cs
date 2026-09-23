@@ -113,14 +113,37 @@ namespace AutoDownloader.Services.Scrapers
 
                 var (season, episode) = DetectSeasonAndEpisode(text, url);
 
-                candidates.Add(new EpisodeLink
+                var link = new EpisodeLink
                 {
                     Url = url,
                     LinkText = text,
                     DetectedSeasonNumber = season,
                     DetectedEpisodeNumber = episode,
                     FromDocument = fromDocument,
-                });
+                };
+
+                // A tile renders its whole caption as one run of text. Read apart, it says
+                // which episode this is, names it, and describes it - better than anything
+                // guessed from the page's order, and available for seasons the databases do
+                // not cover at all.
+                var listed = ListingTextParser.Parse(text);
+
+                if (listed != null)
+                {
+                    if (listed.SeasonNumber.HasValue && listed.EpisodeNumber.HasValue)
+                    {
+                        link.DetectedSeasonNumber = listed.SeasonNumber;
+                        link.DetectedEpisodeNumber = listed.EpisodeNumber;
+                        link.NumbersFromListing = true;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(listed.Title)) link.LinkText = listed.Title;
+
+                    link.Description = listed.Description;
+                    link.AirDate = listed.AirDate;
+                }
+
+                candidates.Add(link);
             }
         }
 

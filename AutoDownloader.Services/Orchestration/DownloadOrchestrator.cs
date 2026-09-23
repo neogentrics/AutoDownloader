@@ -908,7 +908,7 @@ namespace AutoDownloader.Services.Orchestration
         {
             int moved = 0;
 
-            foreach (var link in links.Where(l => l.CandidateSeasons.Count > 1))
+            foreach (var link in links.Where(l => l.CandidateSeasons.Count > 1 && !l.NumbersFromListing))
             {
                 var naming = link.CandidateSeasons
                     .Where(season => titlesBySeason.TryGetValue(season, out var titles)
@@ -988,13 +988,46 @@ namespace AutoDownloader.Services.Orchestration
 
                 if (seasonLinks.Count == 0) continue;
 
-                var match = EpisodeTitleMatcher.Apply(seasonLinks, episodes);
+                var stated = seasonLinks.Where(l => l.NumbersFromListing).ToList();
+                var toPlace = seasonLinks.Where(l => !l.NumbersFromListing).ToList();
 
-                // Too few matched to trust it, so the numbering already in hand stands.
-                if (!match.Applied) continue;
+                var free = episodes;
 
-                Log($"--- Season {season}: matched {match.Matched} of {match.Total} link(s) to "
-                    + "episodes by the title they carry. ---", JobLogLevel.Notice);
+                if (stated.Count > 0)
+                {
+                    Log($"--- Season {season}: the listing numbers {stated.Count} of its "
+                        + "episodes itself, so those numbers are used as given. ---",
+                        JobLogLevel.Notice);
+
+                    // The rest still need placing, against whatever numbers are left. A show
+                    // page carries one episode twice - a bare "Watch Now" tile and a full
+                    // caption - and skipping the whole season over the captioned copy left
+                    // the other one with no number at all.
+                    var taken = new HashSet<int>(
+                        stated.Where(l => l.DetectedEpisodeNumber.HasValue)
+                              .Select(l => l.DetectedEpisodeNumber!.Value));
+
+                    free = episodes.Where(e => !taken.Contains(e.EpisodeNumber)).ToList();
+                }
+
+                if (toPlace.Count == 0 || free.Count == 0) continue;
+
+                var match = EpisodeTitleMatcher.Apply(toPlace, free);
+
+                // Too few matched to trust it, so the numbering already in hand stands - but
+                // not silently: this is the path that files a season by page order, and a
+                // page ordered differently from the databases names every file wrongly.
+                if (!match.Applied)
+                {
+                    Log($"--- Season {season}: only {match.Matched} of {match.Total} link(s) "
+                        + "could be matched to an episode by title, which is too few to trust. "
+                        + "Falling back to the order the page lists them in. ---",
+                        JobLogLevel.Warning);
+                    continue;
+                }
+
+                Log($"--- Season {season}: matched {match.Matched} of {match.Total} remaining "
+                    + "link(s) to episodes by the title they carry. ---", JobLogLevel.Notice);
 
                 var gaps = episodes
                     .Select(e => e.EpisodeNumber)
@@ -1383,6 +1416,21 @@ namespace AutoDownloader.Services.Orchestration
                         already.CandidateSeasons.Add(link.DetectedSeasonNumber.Value);
                     }
 
+                    // The repeat may be the better copy. A show page lists an episode once
+                    // as a bare "Watch Now" tile and again with its full caption, and which
+                    // came first is an accident of the page - so the captioned one wins.
+                    if (link.NumbersFromListing && !already.NumbersFromListing)
+                    {
+                        already.DetectedSeasonNumber = link.DetectedSeasonNumber;
+                        already.DetectedEpisodeNumber = link.DetectedEpisodeNumber;
+                        already.NumbersFromListing = true;
+
+                        if (!string.IsNullOrWhiteSpace(link.LinkText)) already.LinkText = link.LinkText;
+
+                        already.Description ??= link.Description;
+                        already.AirDate ??= link.AirDate;
+                    }
+
                     continue;
                 }
 
@@ -1431,6 +1479,10 @@ namespace AutoDownloader.Services.Orchestration
                 .ToList();
 
             if (seasons.Count < 2) return;
+
+            // Where the listing states the numbering outright, it is not the page's running
+            // order and there is nothing to correct.
+            if (links.Any(l => l.NumbersFromListing)) return;
 
             // Continuous numbering shows up as every season after the first starting above
             // one. A single season starting at one is enough to say the page numbers per

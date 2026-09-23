@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace AutoDownloader.Core
 {
@@ -49,6 +50,22 @@ namespace AutoDownloader.Core
         /// candidates are kept so the databases can settle which season is really meant.
         /// </summary>
         public List<int> CandidateSeasons { get; set; } = new List<int>();
+
+        /// <summary>The episode summary the listing carried, when it carried one.</summary>
+        public string? Description { get; set; }
+
+        /// <summary>The air date the listing carried, when it carried one.</summary>
+        public DateTime? AirDate { get; set; }
+
+        /// <summary>
+        /// True when the season and episode numbers came from the listing saying so outright
+        /// - a tile captioned "S12 E1" - rather than from position or a title match.
+        ///
+        /// The site serving the video is the best authority on which episode it is, and it
+        /// covers seasons the databases have never heard of: Food Network numbers and names
+        /// all of Barefoot Contessa seasons 13 to 19, where TVDB returns nothing at all.
+        /// </summary>
+        public bool NumbersFromListing { get; set; }
 
         public int Ordinal { get; set; }
 

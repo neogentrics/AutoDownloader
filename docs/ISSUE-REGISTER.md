@@ -92,6 +92,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-100 | - | Strict title matching rejected differently-spelled titles and cut-heavy listings | bug | high |
 | AD-101 | - | A season tab listing another season's episodes took them for good | bug | high |
 | AD-102 | - | A link with no database title took a URL path as its name | bug | medium |
+| AD-103 | - | The listing states each episode's season, number, name and summary, and all of it was discarded | feature | high |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
@@ -292,6 +293,47 @@ nothing rather than "Example.com", and small words stay lower unless they open t
 
 AD-101 happens to hide this one for this show - those four links move to season 7, where the
 databases do name them - but any genuine extra would still have been named after a URL.
+
+### The listing was saying it all along
+
+Barefoot Contessa: Back to Basics offers 17 seasons. TVDB knows twelve of them; for seasons
+13, 14, 17, 18 and 19 it returns nothing, so 39 episodes could only be numbered by their
+position on the page. Season 12 was worse: its slugs are abbreviations of the database
+titles - `cooking-for-jeffrey-birthday` against "Cooking for Jeffrey: Jeffrey's Birthday
+Dinner" - so nothing matched, the trust check rejected the season, and it fell back to page
+order without a word in the log.
+
+The page had the answer the whole time. Each tile renders its caption as one run of text:
+
+    S12 E1Cooking for Jeffrey: Birthday21mTV-G10/16/2016Ina throws an Italian-themed
+    birthday dinner with a surprise for Jeffrey.Ina throws an Italian-themed birthday
+    dinner with a surprise for Jeffrey.
+
+Season, episode, title, runtime, rating, air date, description - the description twice,
+because the tile holds a visible copy and a screen-reader copy. The scraper was capturing
+that string and storing it whole as the link text, where it matched no database title and
+read as noise.
+
+**AD-103.** It is now taken apart, and the numbers the listing states are treated as
+authoritative: the site serving the video is the best authority on which episode it is, and
+it covers seasons the databases have never heard of. A season numbered by its own listing is
+not renumbered and not re-matched by title.
+
+Three things fell out of it:
+
+- A page lists an episode twice, once as a bare "Watch Now" tile and once captioned, and
+  which comes first is an accident. The captioned copy now upgrades the bare one rather than
+  losing to it on position.
+- Links the listing did not caption are still placed, against whatever numbers the captioned
+  ones left free. Skipping the whole season over its captions left the "Watch Now" tile as
+  "S01E - steak-and-sides", with no number at all.
+- A rejected title match is reported. That silence was how season 12 fell back to page order
+  unnoticed.
+
+Checked against the live show afterwards: 179 links, 178 numbered by the listing, the last
+placed from what was left, every one of the seventeen seasons contiguous from episode one,
+and 177 carrying a description. Before this, eight season 19 episodes were being filed as
+season 1 episodes 26 to 33.
 
 ### Where later work overlaps
 
