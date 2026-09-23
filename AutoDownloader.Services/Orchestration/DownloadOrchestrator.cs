@@ -824,6 +824,94 @@ namespace AutoDownloader.Services.Orchestration
         /// Counts finished video files in a season folder.
         /// </summary>
         /// <summary>
+        /// Writes what is known about every season this run touched into series_metadata.xml.
+        ///
+        /// The first save happens before the page has been read, so it covers one season and
+        /// carries titles alone. By now the listing has given its own name, summary, air date,
+        /// runtime and rating for most episodes - including for seasons the databases do not
+        /// cover at all - and none of that was being kept anywhere.
+        ///
+        /// The databases still win on the title where they have one: their spelling is what a
+        /// media library will match against. Everything else comes from the listing, because
+        /// nothing else has it.
+        /// </summary>
+        private async Task SaveListingMetadataAsync(
+            List<EpisodeLink> links,
+            Dictionary<int, Dictionary<int, string?>> titlesBySeason,
+            DownloadMetadata metadata,
+            string outputFolder)
+        {
+            if (string.IsNullOrWhiteSpace(metadata.OfficialTitle)) return;
+
+            int seasonsWritten = 0;
+            int described = 0;
+
+            foreach (var season in links
+                .GroupBy(l => l.DetectedSeasonNumber ?? metadata.NextSeasonNumber)
+                .OrderBy(g => g.Key))
+            {
+                var titles = titlesBySeason.TryGetValue(season.Key, out var known)
+                    ? known
+                    : new Dictionary<int, string?>();
+
+                var episodes = season
+                    .Where(l => l.DetectedEpisodeNumber.HasValue)
+                    .GroupBy(l => l.DetectedEpisodeNumber!.Value)
+                    .OrderBy(g => g.Key)
+                    .Select(g =>
+                    {
+                        var link = g.First();
+                        titles.TryGetValue(g.Key, out string? fromDatabase);
+
+                        return new DownloadEpisode
+                        {
+                            EpisodeNumber = g.Key,
+                            EpisodeTitle = !string.IsNullOrWhiteSpace(fromDatabase)
+                                ? fromDatabase
+                                : ReadableName(link),
+                            Description = link.Description,
+                            AirDate = link.AirDate,
+                            RuntimeMinutes = link.RuntimeMinutes,
+                            Rating = link.Rating,
+                        };
+                    })
+                    .ToList();
+
+                if (episodes.Count == 0) continue;
+
+                described += episodes.Count(e => !string.IsNullOrWhiteSpace(e.Description));
+
+                var forSeason = new DownloadMetadata
+                {
+                    OfficialTitle = metadata.OfficialTitle,
+                    SeriesId = metadata.SeriesId,
+                    SourceUrl = metadata.SourceUrl,
+                    NextSeasonNumber = season.Key,
+                    ExpectedEpisodeCount = titles.Count > 0 ? titles.Count : episodes.Count,
+                    Episodes = episodes,
+                };
+
+                try
+                {
+                    await _xmlService.SaveMetadataAsync(outputFolder, forSeason).ConfigureAwait(false);
+                    seasonsWritten++;
+                }
+                catch (Exception ex)
+                {
+                    Log($"--- Could not record season {season.Key} in series_metadata.xml: "
+                        + $"{ex.Message} ---", JobLogLevel.Warning);
+                }
+            }
+
+            if (seasonsWritten > 0)
+            {
+                Log($"--- series_metadata.xml now covers {seasonsWritten} season(s), "
+                    + $"{described} of them with a summary from the listing. ---",
+                    JobLogLevel.Notice);
+            }
+        }
+
+        /// <summary>
         /// A name for a link the databases do not cover, fit to put in a filename.
         ///
         /// The scraper does not always find anchor text, and then the link text is the URL
@@ -1798,6 +1886,9 @@ namespace AutoDownloader.Services.Orchestration
             ResolveSeasonForRepeatedLinks(links, titlesBySeason);
 
             AlignNumbersToDatabase(links, titlesBySeason, metadata);
+
+            await SaveListingMetadataAsync(links, titlesBySeason, metadata, outputFolder)
+                .ConfigureAwait(false);
 
             int succeeded = 0;
             int failed = 0;

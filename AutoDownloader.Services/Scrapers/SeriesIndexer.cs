@@ -141,6 +141,8 @@ namespace AutoDownloader.Services.Scrapers
 
                     link.Description = listed.Description;
                     link.AirDate = listed.AirDate;
+                    link.RuntimeMinutes = listed.RuntimeMinutes;
+                    link.Rating = listed.Rating;
                 }
 
                 candidates.Add(link);

@@ -57,6 +57,12 @@ namespace AutoDownloader.Core
         /// <summary>The air date the listing carried, when it carried one.</summary>
         public DateTime? AirDate { get; set; }
 
+        /// <summary>The runtime the listing carried, in minutes.</summary>
+        public int? RuntimeMinutes { get; set; }
+
+        /// <summary>The content rating the listing carried.</summary>
+        public string? Rating { get; set; }
+
         /// <summary>
         /// True when the season and episode numbers came from the listing saying so outright
         /// - a tile captioned "S12 E1" - rather than from position or a title match.

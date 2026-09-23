@@ -93,6 +93,7 @@ elsewhere, whereas the `AD-` ID is ours and travels across GitHub, Notion and co
 | AD-101 | - | A season tab listing another season's episodes took them for good | bug | high |
 | AD-102 | - | A link with no database title took a URL path as its name | bug | medium |
 | AD-103 | - | The listing states each episode's season, number, name and summary, and all of it was discarded | feature | high |
+| AD-104 | - | series_metadata.xml recorded a number and a title and nothing else | feature | medium |
 
 Rows with `-` in the `#` column were found and fixed in the same session, so they were
 recorded here and in the commit rather than filed on GitHub first. The `AD-` ID is still
@@ -334,6 +335,20 @@ Checked against the live show afterwards: 179 links, 178 numbered by the listing
 placed from what was left, every one of the seventeen seasons contiguous from episode one,
 and 177 carrying a description. Before this, eight season 19 episodes were being filed as
 season 1 episodes 26 to 33.
+
+### What the index file keeps
+
+**AD-104.** `series_metadata.xml` held an episode number and a title, for one season - the
+season the run started with - and was written before the page had even been read. Meanwhile
+the listing was handing over a summary, an air date, a runtime and a rating for free.
+
+It is now written again once the plan is known, covering every season the run touched. The
+databases still win on the title where they have one, since their spelling is what a media
+library matches against; everything else comes from the listing, because nothing else has
+it. Fields the source did not give are left out rather than written empty.
+
+The show's source URL is recorded too, so a show can be refreshed later without being told
+where it came from.
 
 ### Where later work overlaps
 

@@ -114,6 +114,13 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
             var episodesNode = seasonElement.Element("Episodes");
             if (episodesNode != null) episodesNode.Remove();
 
+            // Where the episodes came from, so the show can be refreshed later without being
+            // told again. Kept current on every save rather than written once.
+            if (!string.IsNullOrWhiteSpace(metadata.SourceUrl))
+            {
+                root.SetElementValue("SourceUrl", metadata.SourceUrl);
+            }
+
             if (metadata.Episodes != null && metadata.Episodes.Any())
             {
                 var eps = new XElement("Episodes");
@@ -123,6 +130,29 @@ namespace AutoDownloader.Services // <-- CORRECTED: Now part of the Services pro
                         new XAttribute("Number", ep.EpisodeNumber),
                         new XElement("Title", ep.EpisodeTitle ?? string.Empty)
                     );
+
+                    // Only what the source actually gave. An empty <Description/> on every
+                    // episode says nothing and makes the file harder to read.
+                    if (!string.IsNullOrWhiteSpace(ep.Description))
+                    {
+                        epEl.Add(new XElement("Description", ep.Description));
+                    }
+
+                    if (ep.AirDate.HasValue)
+                    {
+                        epEl.Add(new XElement("AirDate", ep.AirDate.Value.ToString("yyyy-MM-dd")));
+                    }
+
+                    if (ep.RuntimeMinutes.HasValue)
+                    {
+                        epEl.Add(new XElement("RuntimeMinutes", ep.RuntimeMinutes.Value));
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(ep.Rating))
+                    {
+                        epEl.Add(new XElement("Rating", ep.Rating));
+                    }
+
                     eps.Add(epEl);
                 }
                 seasonElement.Add(eps);
