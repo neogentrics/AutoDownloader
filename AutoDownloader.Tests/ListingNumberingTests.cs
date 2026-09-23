@@ -1,4 +1,4 @@
-using AutoDownloader.Core;
+﻿using AutoDownloader.Core;
 using AutoDownloader.Services;
 using AutoDownloader.Services.Orchestration;
 
@@ -39,6 +39,9 @@ namespace AutoDownloader.Tests
                 DetectedEpisodeNumber = episode,
                 NumbersFromListing = true,
                 Description = "A summary.",
+                AirDate = new DateTime(2016, 10, 16),
+                RuntimeMinutes = 21,
+                Rating = "TV-G",
             };
 
         private static EpisodeLink Bare(int season, int? episode, string slug, string? text = null) =>
@@ -80,6 +83,11 @@ namespace AutoDownloader.Tests
             Assert.AreEqual(1, only.DetectedEpisodeNumber);
             Assert.AreEqual("Cooking for Jeffrey: Birthday", only.LinkText);
             Assert.AreEqual("A summary.", only.Description);
+
+            // Every field, not just the two that were noticed first.
+            Assert.AreEqual(new DateTime(2016, 10, 16), only.AirDate);
+            Assert.AreEqual(21, only.RuntimeMinutes);
+            Assert.AreEqual("TV-G", only.Rating);
         }
 
         [TestMethod]

@@ -835,7 +835,7 @@ namespace AutoDownloader.Services.Orchestration
         /// media library will match against. Everything else comes from the listing, because
         /// nothing else has it.
         /// </summary>
-        private async Task SaveListingMetadataAsync(
+        public async Task SaveListingMetadataAsync(
             List<EpisodeLink> links,
             Dictionary<int, Dictionary<int, string?>> titlesBySeason,
             DownloadMetadata metadata,
@@ -1517,6 +1517,8 @@ namespace AutoDownloader.Services.Orchestration
 
                         already.Description ??= link.Description;
                         already.AirDate ??= link.AirDate;
+                        already.RuntimeMinutes ??= link.RuntimeMinutes;
+                        already.Rating ??= link.Rating;
                     }
 
                     continue;
