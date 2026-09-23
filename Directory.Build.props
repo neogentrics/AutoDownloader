@@ -3,14 +3,13 @@
   <!-- One place to set the version. Previously the title bar, the welcome text and the CLI
        each carried their own hardcoded string and disagreed with each other. -->
   <PropertyGroup>
-    <!-- 2.1.2: episodes are numbered by the title the link carries rather than by position,
-         so a season the source is missing an episode from no longer shifts every title after
-         it. Includes the two corrections that needed - a title the databases spell
-         differently takes the one number free between its neighbours, and a listing half
-         made of alternate cuts is still trusted - plus a source-is-short check that reports
-         season by season, and a season tab that carries another season's episodes no longer
-         keeps them. -->
-    <VersionPrefix>2.1.2</VersionPrefix>
+    <!-- 2.2.0: the listing is read rather than guessed at. A tile states the season, the
+         episode number, the name, the summary, the air date, the runtime and the rating, and
+         all of it was being discarded - so seasons the databases do not cover could only be
+         numbered by position. Those numbers are now authoritative, and series_metadata.xml
+         records every season the run touched along with what the listing said about each
+         episode. A feature, so the minor number moves. -->
+    <VersionPrefix>2.2.0</VersionPrefix>
     <VersionSuffix></VersionSuffix>
     <Product>AutoDownloader</Product>
     <Company>Neo Gentrics</Company>
